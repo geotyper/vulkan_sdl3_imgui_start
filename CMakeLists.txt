@@ -54,7 +54,9 @@ include_directories(
 )
 
 # === Executable ===
-add_executable(DroneVisualizer ${HEADERS} ${SRC} ${IMGUI_SRC})
+add_executable(DroneVisualizer ${HEADERS} ${SRC} ${IMGUI_SRC}
+    src/AccelerationStructures.h
+    src/AccelerationStructures.cpp)
 
 # === Link SDL3 and Vulkan ===
 target_link_libraries(DroneVisualizer
@@ -63,21 +65,25 @@ target_link_libraries(DroneVisualizer
     glm::glm
 )
 
-# === Compile Shaders ===
+# === Shader Path Macro ===
 add_compile_definitions(SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
 
-file(GLOB SHADER_SRC "shaders/*.vert" "shaders/*.frag")
+# === Gather All GLSL Shaders (Raster and Ray Tracing) ===
+file(GLOB SHADER_SRC "shaders/*.vert" "shaders/*.frag" "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rmiss")
 message("Start to compile shaders")
 foreach(SHADER ${SHADER_SRC})
     get_filename_component(FILE_NAME ${SHADER} NAME)
     set(SPIRV "${CMAKE_CURRENT_BINARY_DIR}/shaders/${FILE_NAME}.spv")
     add_custom_command(
         OUTPUT ${SPIRV}
-        COMMAND glslangValidator -V ${SHADER} -o ${SPIRV}
+        COMMAND glslangValidator --target-env vulkan1.2 -V ${SHADER} -o ${SPIRV}
         DEPENDS ${SHADER}
         COMMENT "Compiling shader: ${FILE_NAME}"
     )
     list(APPEND SPIRV_SHADERS ${SPIRV})
 endforeach()
 
+
+# === Create a Custom Target to Trigger Compilation ===
 add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
+

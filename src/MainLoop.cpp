@@ -32,6 +32,8 @@ void MainLoop::run() {
 
     //ui.uploadFonts(graphics.getCommandBuffer(0), graphics.getGraphicsQueue());
 
+    bool useRayTracing = true;
+
     // === Main loop ===
     while (!graphics.shouldClose()) {
         graphics.pollEvents();
@@ -66,10 +68,14 @@ void MainLoop::run() {
         }
 
 
-        graphics.draw([&](VkCommandBuffer cmd) {
-            graphics.drawSphere(cmd);      // <== добавь этот вызов перед UI
-            ui.renderMenu(cmd);
-        });
+        if (useRayTracing) {
+            graphics.drawRayTracedFrame();
+        } else {
+            graphics.draw([&](VkCommandBuffer cmd) {
+                graphics.drawSphere(cmd);
+                ui.renderMenu(cmd);
+            });
+        }
 
     }
 

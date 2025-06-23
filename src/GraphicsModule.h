@@ -7,9 +7,10 @@
 #include <string>
 #include <functional>
 #include <HelpStructures.h>
+#include "AccelerationStructures.h"
 #include "ArcBallCamera.h"
 #include <glm/glm.hpp>
-
+#include <memory>
 
 class GraphicsModule {
 public:
@@ -55,6 +56,11 @@ public:
 
     ArcBallCamera camera;
 
+    void createGraphicsRayTracePipeline();
+
+    std::unique_ptr<AccelerationStructureManager> accelManager;
+    void drawRayTracedFrame();
+
 private:
     // SDL related
     SDL_Window* window = nullptr;
@@ -78,6 +84,7 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<VkFramebuffer> swapchainFramebuffers;
 
+
     // Private initialization steps
     void initSDL();
     void createVulkanInstance();
@@ -97,6 +104,7 @@ private:
     // Shader pipeline members
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    VkPipeline rayTracingPipeline = VK_NULL_HANDLE;
 
     // Sphere geometry buffers
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
@@ -109,4 +117,54 @@ private:
     int lastMouseX = 0;
     int lastMouseY = 0;
 
+    void createRayTracingPipelineLayout();
+    VkShaderModule createShaderModuleFromFile(const std::string &filename);
+
+    VkDescriptorSetLayout rtDescriptorSetLayout{};
+
+    void createShaderBindingTable();
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{};
+
+    VkBuffer sbtBuffer;
+    VkDeviceMemory sbtMemory;
+
+    VkStridedDeviceAddressRegionKHR raygenRegion{};
+    VkStridedDeviceAddressRegionKHR missRegion{};
+    VkStridedDeviceAddressRegionKHR hitRegion{};
+
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    void traceRays(VkCommandBuffer commandBuffer);
+
+    PFN_vkCmdTraceRaysKHR pfnCmdTraceRaysKHR = nullptr;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR pfnGetRayTracingShaderGroupHandlesKHR = nullptr;
+
+
+    void createBufferForSBT(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+    void CreateStagingBuffer();
+
+    // === SBT related ===
+    //VkBuffer sbtBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory sbtBufferMemory = VK_NULL_HANDLE;
+
+    uint32_t sbtSize = 0;
+    std::vector<uint8_t> shaderHandleStorage;
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+
+    void createDescriptorSetLayout();
+
+    VkImage outputImage{};
+    VkDeviceMemory outputImageMemory{};
+    VkImageView outputImageView{};
+    VkDescriptorSet rtDescriptorSet{};
+
+    void createOutputImage();
+
+    VkDescriptorPool rtDescriptorPool{};
+
+    void createRayTracingDescriptorSet(VkAccelerationStructureKHR topLevelAS);
+    void recordCommandBufferRayTrace(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void createOutputImageRayTrace();
 };
