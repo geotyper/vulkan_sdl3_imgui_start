@@ -1,23 +1,18 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <memory>
 #include <vector>
 
-extern PFN_vkDestroyAccelerationStructureKHR pfnDestroyAS;
-extern PFN_vkCreateAccelerationStructureKHR pfnCreateAS;
+// Forward-declare to avoid including VulkanHelperMethods.h if not needed
+struct Vertex;
 
-extern PFN_vkGetAccelerationStructureBuildSizesKHR pfnGetASBuildSizes;
-extern PFN_vkCmdBuildAccelerationStructuresKHR pfnCmdBuildAS;
-extern PFN_vkGetAccelerationStructureDeviceAddressKHR pfnGetASDeviceAddress;
-
-
-
-void loadRayTracingFunctions(VkDevice device);
-
+// Represents a single Acceleration Structure (BLAS or TLAS)
 struct AccelerationStructure {
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
     VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkDeviceAddress deviceAddress = 0;
 };
 
 class AccelerationStructureManager {
@@ -25,15 +20,16 @@ public:
     AccelerationStructureManager(VkDevice device, VkPhysicalDevice physDevice, VkCommandPool commandPool, VkQueue queue);
     ~AccelerationStructureManager();
 
-    void createTriangleBLAS();
-    void createTLAS();
+    // Builds the BLAS and TLAS from the given vertex and index buffers
+    void build(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
 
-    const AccelerationStructure& getBLAS() const { return blas; }
     const AccelerationStructure& getTLAS() const { return tlas; }
 
-
-
 private:
+    void cleanupAS(AccelerationStructure& as);
+    void buildBLAS(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
+    void buildTLAS();
+
     VkDevice device;
     VkPhysicalDevice physDevice;
     VkCommandPool commandPool;
@@ -41,8 +37,16 @@ private:
 
     AccelerationStructure blas;
     AccelerationStructure tlas;
-
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                      VkBuffer& buffer, VkDeviceMemory& memory);
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
+
+// Functions to be loaded dynamically
+extern PFN_vkCreateAccelerationStructureKHR pfnCreateAS;
+extern PFN_vkDestroyAccelerationStructureKHR pfnDestroyAS;
+extern PFN_vkGetAccelerationStructureBuildSizesKHR pfnGetASBuildSizes;
+extern PFN_vkCmdBuildAccelerationStructuresKHR pfnCmdBuildAS;
+extern PFN_vkGetAccelerationStructureDeviceAddressKHR pfnGetASDeviceAddress;
+extern PFN_vkCreateRayTracingPipelinesKHR pfnCreateRayTracingPipelinesKHR;
+extern PFN_vkGetRayTracingShaderGroupHandlesKHR pfnGetRayTracingShaderGroupHandlesKHR;
+extern PFN_vkCmdTraceRaysKHR pfnCmdTraceRaysKHR;
+
+void loadRayTracingFunctions(VkDevice device);

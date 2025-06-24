@@ -32,7 +32,14 @@ void MainLoop::run() {
 
     //ui.uploadFonts(graphics.getCommandBuffer(0), graphics.getGraphicsQueue());
 
-    bool useRayTracing = true;
+    //graphics.rebuildAccelerationStructures(
+    //    graphics.getVertexBuffer(),
+    //    graphics.getIndexBuffer(),
+    //    static_cast<uint32_t>(vertices.size()),
+    //    static_cast<uint32_t>(indices.size())
+    //    );
+
+    bool useRayTracing = false;
 
     // === Main loop ===
     while (!graphics.shouldClose()) {
@@ -43,7 +50,6 @@ void MainLoop::run() {
         if (ui.hasGeometryChanged()) {
             vertices.clear();
             indices.clear();
-
             switch (ui.getCurrentType()) {
             case SphereType::LowPoly:
                 GeomCreate::createLowPolySphere(vertices, indices);
@@ -56,17 +62,25 @@ void MainLoop::run() {
                 break;
             }
 
-            graphics.destroySphereBuffers(); // Add this method to destroy old Vulkan buffers if needed
-
+            graphics.destroySphereBuffers();
             GeomCreate::createVertexBuffer(graphics.getDevice(), graphics.getPhysicalDevice(),
                                            vertices, graphics.getVertexBuffer(), graphics.getVertexMemory());
             GeomCreate::createIndexBuffer(graphics.getDevice(), graphics.getPhysicalDevice(),
                                           indices, graphics.getIndexBuffer(), graphics.getIndexMemory());
             graphics.setIndexCount(static_cast<uint32_t>(indices.size()));
 
+            // *** REFACTORED: Rebuild AS with new geometry data ***
+            if (useRayTracing) {
+                graphics.rebuildAccelerationStructures(
+                    graphics.getVertexBuffer(),
+                    graphics.getIndexBuffer(),
+                    static_cast<uint32_t>(vertices.size()),
+                    static_cast<uint32_t>(indices.size())
+                    );
+            }
+
             ui.resetGeometryChanged();
         }
-
 
         if (useRayTracing) {
             graphics.drawRayTracedFrame();
@@ -76,9 +90,7 @@ void MainLoop::run() {
                 ui.renderMenu(cmd);
             });
         }
-
     }
-
     ui.cleanup();
     graphics.cleanup();
 }

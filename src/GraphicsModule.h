@@ -56,11 +56,10 @@ public:
 
     ArcBallCamera camera;
 
-    void createGraphicsRayTracePipeline();
-
     std::unique_ptr<AccelerationStructureManager> accelManager;
     void drawRayTracedFrame();
 
+    void rebuildAccelerationStructures(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
 private:
     // SDL related
     SDL_Window* window = nullptr;
@@ -164,7 +163,16 @@ private:
 
     VkDescriptorPool rtDescriptorPool{};
 
-    void createRayTracingDescriptorSet(VkAccelerationStructureKHR topLevelAS);
+    //void createRayTracingDescriptorSet(VkAccelerationStructureKHR topLevelAS);
     void recordCommandBufferRayTrace(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void createOutputImageRayTrace();
+    void createRayTracingDescriptorsAndLayout();
+    void createRayTracingPipeline();
+
+    VkPipelineLayout m_graphicsPipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayout m_rayTracingPipelineLayout = VK_NULL_HANDLE;
+
+
+    void createRayTracingDescriptorSet(VkAccelerationStructureKHR topLevelAS);
+    VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, size_t codeSize);
 };
