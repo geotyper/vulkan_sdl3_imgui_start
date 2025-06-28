@@ -1,11 +1,10 @@
 #include "AccelerationStructures.h"
-#include "VulkanHelperMethods.h" // Using the generic createBuffer
-#include "GeomCreate.h" // For Vertex struct definition
+#include "VulkanHelperMethods.h"
 #include <stdexcept>
 #include <cstring>
 #include <array>
 
-// Define global function pointers
+// Global function pointers (definition remains the same)
 PFN_vkDestroyAccelerationStructureKHR pfnDestroyAS = nullptr;
 PFN_vkCreateAccelerationStructureKHR pfnCreateAS = nullptr;
 PFN_vkGetAccelerationStructureBuildSizesKHR pfnGetASBuildSizes = nullptr;
@@ -32,8 +31,7 @@ void loadRayTracingFunctions(VkDevice device) {
 }
 
 static VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer) {
-    VkBufferDeviceAddressInfo addrInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-    addrInfo.buffer = buffer;
+    VkBufferDeviceAddressInfo addrInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, buffer };
     return vkGetBufferDeviceAddress(device, &addrInfo);
 }
 
@@ -52,26 +50,43 @@ void AccelerationStructureManager::cleanupAS(AccelerationStructure& as) {
     as = {};
 }
 
-void AccelerationStructureManager::build(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount) {
-    // Clean up previous structures before rebuilding
-    cleanupAS(blas);
-    cleanupAS(tlas);
-
-    buildBLAS(vertexBuffer, indexBuffer, vertexCount, indexCount);
+// MINIMAL VERSION: This function now creates its own geometry internally.
+void AccelerationStructureManager::build() {
+    buildBLAS();
     buildTLAS();
 }
 
-void AccelerationStructureManager::buildBLAS(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount) {
-    VkDeviceAddress vertexAddress = getBufferDeviceAddress(device, vertexBuffer);
-    VkDeviceAddress indexAddress = getBufferDeviceAddress(device, indexBuffer);
+void AccelerationStructureManager::buildBLAS() {
+    // Hardcoded triangle vertices.
+    struct Vertex { float x, y, z; };
+    const std::array<Vertex, 3> vertices = {{
+        { 0.0f, -0.5f, 0.0f },
+        { 0.5f,  0.5f, 0.0f },
+        {-0.5f,  0.5f, 0.0f }
+    }};
 
-    VkAccelerationStructureGeometryTrianglesDataKHR trianglesData{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR };
+    // Create a vertex buffer for this triangle
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexMemory;
+    createBuffer(device, physDevice, sizeof(vertices),
+                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 vertexBuffer, vertexMemory, true);
+
+    void* mapped;
+    vkMapMemory(device, vertexMemory, 0, sizeof(vertices), 0, &mapped);
+    memcpy(mapped, vertices.data(), sizeof(vertices));
+    vkUnmapMemory(device, vertexMemory);
+
+    VkDeviceAddress vertexAddress = getBufferDeviceAddress(device, vertexBuffer);
+
+    VkAccelerationStructureGeometryTrianglesDataKHR trianglesData{};
+    trianglesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
     trianglesData.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
     trianglesData.vertexData.deviceAddress = vertexAddress;
     trianglesData.vertexStride = sizeof(Vertex);
-    trianglesData.maxVertex = vertexCount - 1;
-    trianglesData.indexType = VK_INDEX_TYPE_UINT32;
-    trianglesData.indexData.deviceAddress = indexAddress;
+    trianglesData.maxVertex = 2;
+    trianglesData.indexType = VK_INDEX_TYPE_NONE_KHR; // We aren't using an index buffer.
 
     VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
     geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
@@ -79,10 +94,7 @@ void AccelerationStructureManager::buildBLAS(VkBuffer vertexBuffer, VkBuffer ind
     geometry.geometry.triangles = trianglesData;
 
     VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
-    buildRangeInfo.primitiveCount = indexCount / 3;
-    buildRangeInfo.primitiveOffset = 0;
-    buildRangeInfo.firstVertex = 0;
-    buildRangeInfo.transformOffset = 0;
+    buildRangeInfo.primitiveCount = 1; // 1 triangle
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
     VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
@@ -96,17 +108,13 @@ void AccelerationStructureManager::buildBLAS(VkBuffer vertexBuffer, VkBuffer ind
     pfnGetASBuildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &buildRangeInfo.primitiveCount, &sizeInfo);
 
     createBuffer(device, physDevice, sizeInfo.accelerationStructureSize,
-                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, blas.buffer, blas.memory, true);
+                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, blas.buffer, blas.memory);
 
-    VkAccelerationStructureCreateInfoKHR asCreateInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
-    asCreateInfo.buffer = blas.buffer;
-    asCreateInfo.size = sizeInfo.accelerationStructureSize;
-    asCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    VkAccelerationStructureCreateInfoKHR asCreateInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR, nullptr, 0, blas.buffer, 0, sizeInfo.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, 0 };
     if (pfnCreateAS(device, &asCreateInfo, nullptr, &blas.handle) != VK_SUCCESS)
         throw std::runtime_error("Failed to create BLAS handle");
 
-    blas.deviceAddress = getBufferDeviceAddress(device, blas.buffer);
     buildInfo.dstAccelerationStructure = blas.handle;
 
     VkBuffer scratchBuffer;
@@ -116,18 +124,20 @@ void AccelerationStructureManager::buildBLAS(VkBuffer vertexBuffer, VkBuffer ind
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory, true);
     buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, scratchBuffer);
 
-    // Record and submit build command
     VkCommandBuffer cmd = beginSingleTimeCommands(device, commandPool);
     pfnCmdBuildAS(cmd, 1, &buildInfo, &pBuildRangeInfo);
     endSingleTimeCommands(device, commandPool, queue, cmd);
 
     vkDestroyBuffer(device, scratchBuffer, nullptr);
     vkFreeMemory(device, scratchMemory, nullptr);
+
+    // Clean up the temporary vertex buffer
+    vkDestroyBuffer(device, vertexBuffer, nullptr);
+    vkFreeMemory(device, vertexMemory, nullptr);
 }
 
 void AccelerationStructureManager::buildTLAS() {
-    VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
-    addressInfo.accelerationStructure = blas.handle;
+    VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR, nullptr, blas.handle };
     VkDeviceAddress blasAddress = pfnGetASDeviceAddress(device, &addressInfo);
 
     VkTransformMatrixKHR transformMatrix = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
@@ -151,14 +161,18 @@ void AccelerationStructureManager::buildTLAS() {
     memcpy(mapped, &instance, sizeof(instance));
     vkUnmapMemory(device, instanceMemory);
 
-    VkAccelerationStructureGeometryInstancesDataKHR instancesData{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR };
+    VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
+    instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
     instancesData.arrayOfPointers = VK_FALSE;
     instancesData.data.deviceAddress = getBufferDeviceAddress(device, instanceBuffer);
 
-    VkAccelerationStructureGeometryKHR geometry{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
+    // --- START OF THE FIX ---
+    VkAccelerationStructureGeometryKHR geometry{};
+    geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
     geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-    geometry.geometry.instances = instancesData;
+    geometry.geometry.instances = instancesData; // Assign the union member directly
     geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+    // --- END OF THE FIX ---
 
     VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{ .primitiveCount = 1 };
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
@@ -174,17 +188,13 @@ void AccelerationStructureManager::buildTLAS() {
     pfnGetASBuildSizes(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &buildRangeInfo.primitiveCount, &sizeInfo);
 
     createBuffer(device, physDevice, sizeInfo.accelerationStructureSize,
-                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, tlas.buffer, tlas.memory, true);
+                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, tlas.buffer, tlas.memory);
 
-    VkAccelerationStructureCreateInfoKHR asCreateInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
-    asCreateInfo.buffer = tlas.buffer;
-    asCreateInfo.size = sizeInfo.accelerationStructureSize;
-    asCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    VkAccelerationStructureCreateInfoKHR asCreateInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR, nullptr, 0, tlas.buffer, 0, sizeInfo.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, 0 };
     if (pfnCreateAS(device, &asCreateInfo, nullptr, &tlas.handle) != VK_SUCCESS)
         throw std::runtime_error("Failed to create TLAS handle");
 
-    tlas.deviceAddress = getBufferDeviceAddress(device, tlas.buffer);
     buildInfo.dstAccelerationStructure = tlas.handle;
 
     VkBuffer scratchBuffer;

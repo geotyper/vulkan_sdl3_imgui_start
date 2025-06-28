@@ -1,9 +1,20 @@
 #include "MainLoop.h"
+#include <stdexcept>
+#include <iostream>
 
 int main(int argc, char* argv[]) {
+    MainLoop app;
 
-    MainLoop loop;
-    loop.run();
+    try {
+        app.Initialize("Vulkan Ray Tracer");
+        app.Run();
+    } catch (const std::exception& e) {
+        std::cerr << "An error occurred: " << e.what() << std::endl;
+        // Ensure shutdown is called even if initialization fails partway
+        app.Shutdown();
+        return EXIT_FAILURE;
+    }
 
-    return 0;
+    app.Shutdown();
+    return EXIT_SUCCESS;
 }

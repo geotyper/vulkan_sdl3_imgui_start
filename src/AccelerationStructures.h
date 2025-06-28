@@ -20,14 +20,13 @@ public:
     AccelerationStructureManager(VkDevice device, VkPhysicalDevice physDevice, VkCommandPool commandPool, VkQueue queue);
     ~AccelerationStructureManager();
 
-    // Builds the BLAS and TLAS from the given vertex and index buffers
-    void build(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
 
     const AccelerationStructure& getTLAS() const { return tlas; }
 
+    void build();
 private:
     void cleanupAS(AccelerationStructure& as);
-    void buildBLAS(VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
+    void buildBLAS();
     void buildTLAS();
 
     VkDevice device;
