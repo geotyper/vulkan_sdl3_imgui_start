@@ -59,7 +59,8 @@ public:
     void RecordCommands(VkCommandBuffer cmd, VkImageView targetImageView, VkImage targetImage, VkExtent2D extent);
     void OnResize(VkExtent2D newExtent);
 
-    void LoadFromVerticesAndIndices(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+    //void LoadFromVerticesAndIndices(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+    void LoadFromSingleMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<glm::mat4>& transforms);
 
 private:
     void GetRayTracingProperties();
@@ -104,6 +105,8 @@ private:
 
     vulkanhelpers::Image m_storageImage;
     VkExtent2D m_storageImageExtent{};
+
+    std::vector<glm::mat4> m_instanceTransforms;
 
 
 

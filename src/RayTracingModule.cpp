@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 #include <vector>
+#include <glm/gtc/type_ptr.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
@@ -145,7 +146,7 @@ namespace rtx {
             }
         }
 
-        LoadFromVerticesAndIndices(vertices, indices);
+       // LoadFromVerticesAndIndices(vertices, indices);
     }
 
 
@@ -177,9 +178,10 @@ namespace rtx {
         UpdateDescriptorSets();
     }
 
-    void RayTracingModule::LoadFromVerticesAndIndices(
-        const std::vector<Vertex>&   vertices,
-        const std::vector<uint32_t>& indices)
+    void RayTracingModule::LoadFromSingleMesh(
+        const std::vector<Vertex>& vertices,
+        const std::vector<uint32_t>& indices,
+        const std::vector<glm::mat4>& transforms)
     {
         if (m_scene) {
             vkDeviceWaitIdle(device());
@@ -216,6 +218,7 @@ namespace rtx {
                  "Procedural index buffer creation failed");
 
         m_scene->meshes.push_back(std::move(mesh));
+        m_instanceTransforms = transforms;
 
         BuildAccelerationStructures();
         UpdateDescriptorSets();
@@ -694,15 +697,41 @@ namespace rtx {
     }
 
     void RayTracingModule::BuildTLAS() {
+        //std::vector<VkAccelerationStructureInstanceKHR> instances;
+        //for (const auto& mesh : m_scene->meshes) {
+        //    VkAccelerationStructureInstanceKHR instance{};
+        //    instance.transform = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+        //    instance.instanceCustomIndex = 0;
+        //    instance.mask = 0xFF;
+        //    instance.instanceShaderBindingTableRecordOffset = 0;
+        //    instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        //    instance.accelerationStructureReference = mesh->blas.deviceAddress;
+        //    instances.push_back(instance);
+        //}
+
         std::vector<VkAccelerationStructureInstanceKHR> instances;
-        for (const auto& mesh : m_scene->meshes) {
+        instances.reserve(m_instanceTransforms.size());
+
+        for (size_t i = 0; i < m_instanceTransforms.size(); ++i) {
+            const auto& transform = m_instanceTransforms[i];
+
             VkAccelerationStructureInstanceKHR instance{};
-            instance.transform = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
-            instance.instanceCustomIndex = 0;
+
+            // Копируем матрицу трансформации. GLM (column-major) нужно транспонировать для Vulkan (row-major).
+            const glm::mat4 tm = glm::transpose(transform);
+            memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
+
+            // --- КЛЮЧЕВОЙ МОМЕНТ ---
+            // Устанавливаем уникальный ID для каждого экземпляра.
+            // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
+            // Остальные получат ID 1.
+            instance.instanceCustomIndex = (i == 4) ? 0 : 1;
+
             instance.mask = 0xFF;
-            instance.instanceShaderBindingTableRecordOffset = 0;
+            instance.instanceShaderBindingTableRecordOffset = 0; // Используем одну и ту же hit-группу для всех
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            instance.accelerationStructureReference = mesh->blas.deviceAddress;
+            instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
+
             instances.push_back(instance);
         }
 
