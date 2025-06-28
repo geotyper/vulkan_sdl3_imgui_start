@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RayTracingModule.h"
+#include "GeomCreate.h"
 #include "framework/camera.h"
 #include <SDL3/SDL.h>
 #include <vector>

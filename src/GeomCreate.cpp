@@ -9,29 +9,6 @@
 #include <glm/gtx/norm.hpp>
 #include "VulkanHelperMethods.h"
 
-// === Vertex Input Descriptions ===
-VkVertexInputBindingDescription GeomCreate::getBindingDescription() {
-    VkVertexInputBindingDescription binding{};
-    binding.binding = 0;
-    binding.stride = sizeof(Vertex);
-    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-    return binding;
-}
-
-std::vector<VkVertexInputAttributeDescription> GeomCreate::getAttributeDescriptions() {
-    std::vector<VkVertexInputAttributeDescription> attrs(2);
-    attrs[0].binding = 0;
-    attrs[0].location = 0;
-    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[0].offset = offsetof(Vertex, position);
-
-    attrs[1].binding = 0;
-    attrs[1].location = 1;
-    attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attrs[1].offset = offsetof(Vertex, normal);
-
-    return attrs;
-}
 
 // === UV Sphere ===
 void GeomCreate::createUVSphere(uint32_t latDiv, uint32_t lonDiv,
@@ -169,35 +146,5 @@ void GeomCreate::createIcosphere(uint32_t subdivisions,
         outIndices.push_back(tri[1]);
         outIndices.push_back(tri[2]);
     }
-}
-
-void GeomCreate::createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-                                    const std::vector<Vertex>& vertices,
-                                    VkBuffer& vertexBuffer, VkDeviceMemory& vertexMemory) {
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-    createBuffer(device, physicalDevice, bufferSize,
-                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 vertexBuffer, vertexMemory);
-
-    void* data;
-    vkMapMemory(device, vertexMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), (size_t)bufferSize);
-    vkUnmapMemory(device, vertexMemory);
-}
-
-void GeomCreate::createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-                                   const std::vector<uint32_t>& indices,
-                                   VkBuffer& indexBuffer, VkDeviceMemory& indexMemory) {
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-    createBuffer(device, physicalDevice, bufferSize,
-                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 indexBuffer, indexMemory);
-
-    void* data;
-    vkMapMemory(device, indexMemory, 0, bufferSize, 0, &data);
-    memcpy(data, indices.data(), (size_t)bufferSize);
-    vkUnmapMemory(device, indexMemory);
 }
 

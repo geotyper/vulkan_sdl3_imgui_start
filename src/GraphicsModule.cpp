@@ -59,7 +59,6 @@ void GraphicsModule::Shutdown() {
     m_imageAvailableSemaphores.clear();
     m_inFlightFences.clear();
 
-
     if(m_commandPool) vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     if(m_device) vkDestroyDevice(m_device, nullptr);
 
@@ -172,7 +171,18 @@ void GraphicsModule::initRayTracingModule() {
     ci.shaderDir = "shaders/";
     m_rtxModule->Initialize(context, ci);
 
-    m_rtxModule->LoadScene("assets/CornellBox-Original.obj");
+    //m_rtxModule->LoadScene("assets/CornellBox-Original.obj");
+
+    // 3. Create vectors to hold your geometry data
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+
+    // 4. Call your generator to fill the vectors
+    // You can use any of your functions here: createUVSphere, createIcosphere, etc.
+    GeomCreate::createIcosphere(4, vertices, indices);
+
+    // 5. Load the generated data into the ray tracing module
+    m_rtxModule->LoadFromVerticesAndIndices(vertices, indices);
 }
 
 

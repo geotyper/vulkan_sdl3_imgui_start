@@ -67,19 +67,26 @@ Buffer::Buffer() : mBuffer(VK_NULL_HANDLE), mMemory(VK_NULL_HANDLE), mSize(0) {}
 VkResult Buffer::Create(const VulkanContext& ctx, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryProperties, const void* data) {
     mSize = size;
 
-    bool isDeviceLocal = (memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    bool isDeviceLocal = (memoryProperties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
 
     // --- Staging Buffer Logic ---
     if (data != nullptr && isDeviceLocal) {
         // Create a temporary, CPU-visible staging buffer
         vulkanhelpers::Buffer stagingBuffer;
-        stagingBuffer.Create(ctx, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, data);
+        VK_CHECK(stagingBuffer.Create(ctx, size,
+                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      data),
+                 "Staging buffer creation failed");
 
         // Create the final, GPU-only device buffer
-        // Make sure it can be a transfer destination
-        VK_CHECK(Create(ctx, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, nullptr), "Failed to create final device buffer");
+        VK_CHECK(this->Create(ctx, size,
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              nullptr),
+                 "Final device-local buffer creation failed");
 
-        // Perform the copy
+        // Copy from staging to final buffer
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -107,28 +114,38 @@ VkResult Buffer::Create(const VulkanContext& ctx, VkDeviceSize size, VkBufferUsa
 
         vkQueueSubmit(ctx.transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(ctx.transferQueue);
-
         vkFreeCommandBuffers(ctx.device, ctx.commandPool, 1, &commandBuffer);
 
         stagingBuffer.Destroy(ctx);
         return VK_SUCCESS;
     }
 
-    // --- Direct Creation Logic (for host-visible buffers or empty device buffers) ---
+    // --- Direct Creation Logic ---
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
     VK_CHECK(vkCreateBuffer(ctx.device, &bufferInfo, nullptr, &mBuffer), "Buffer creation failed");
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(ctx.device, mBuffer, &memRequirements);
 
+    // Determine if we need device address bit
+    bool needsDeviceAddress = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0;
+
+    // Memory allocation
+    VkMemoryAllocateFlagsInfo allocFlagsInfo{};
+    allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    allocFlagsInfo.flags = needsDeviceAddress ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
+    allocFlagsInfo.pNext = nullptr;
+
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = GetMemoryType(memRequirements, memoryProperties, ctx.physicalDeviceMemoryProperties);
+    allocInfo.pNext = (allocFlagsInfo.flags != 0) ? &allocFlagsInfo : nullptr;
 
     VK_CHECK(vkAllocateMemory(ctx.device, &allocInfo, nullptr, &mMemory), "Buffer memory allocation failed");
     VK_CHECK(vkBindBufferMemory(ctx.device, mBuffer, mMemory, 0), "Buffer memory binding failed");
@@ -136,7 +153,7 @@ VkResult Buffer::Create(const VulkanContext& ctx, VkDeviceSize size, VkBufferUsa
     // If data was provided for a host-visible buffer, map and copy it now
     if (data != nullptr && !isDeviceLocal) {
         void* mapped = Map(ctx, size);
-        if(mapped) {
+        if (mapped) {
             memcpy(mapped, data, size);
             Unmap(ctx);
         }
@@ -144,6 +161,7 @@ VkResult Buffer::Create(const VulkanContext& ctx, VkDeviceSize size, VkBufferUsa
 
     return VK_SUCCESS;
 }
+
 
 void Buffer::Destroy(const VulkanContext& ctx) {
     if (mBuffer) vkDestroyBuffer(ctx.device, mBuffer, nullptr);

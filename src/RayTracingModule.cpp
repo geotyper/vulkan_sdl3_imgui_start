@@ -17,6 +17,12 @@
 
 namespace rtx {
 
+
+    static inline uint32_t AlignUp(uint32_t value, uint32_t alignment)
+    {
+        return (value + alignment - 1) & ~(alignment - 1);
+    }
+
     void MeshData::Destroy(const vulkanhelpers::VulkanContext& context, VkDevice device) {
         vertexBuffer.Destroy(context);
         indexBuffer.Destroy(context);
@@ -162,6 +168,36 @@ namespace rtx {
         UpdateDescriptorSets();
     }
 
+    void RayTracingModule::LoadFromVerticesAndIndices(const std::vector<Vertex> &vertices, const std::vector<uint32_t> &indices)
+    {
+        // 1. Clean up any existing scene
+        if (m_scene) {
+            vkDeviceWaitIdle(device());
+            m_tlas.Destroy(m_context, device());
+            m_scene->Destroy(m_context, device());
+        }
+        m_scene = std::make_unique<Scene>();
+        auto mesh = std::make_unique<MeshData>();
+
+        // 2. Set vertex and index counts from the provided data
+        mesh->vertexCount = static_cast<uint32_t>(vertices.size());
+        mesh->indexCount = static_cast<uint32_t>(indices.size());
+
+        // 3. Define buffer usage flags
+        const VkBufferUsageFlags commonUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
+        // 4. Create and upload the vertex and index buffers using the provided data
+        VK_CHECK(mesh->vertexBuffer.Create(m_context, vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | commonUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertices.data()), "Procedural vertex buffer creation failed");
+        VK_CHECK(mesh->indexBuffer.Create(m_context, indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | commonUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indices.data()), "Procedural index buffer creation failed");
+
+        // 5. Add the new mesh to the scene
+        m_scene->meshes.push_back(std::move(mesh));
+
+        // 6. Build the acceleration structures and update descriptor sets for the new geometry
+        BuildAccelerationStructures();
+        UpdateDescriptorSets();
+    }
+
     void RayTracingModule::RecordCommands(VkCommandBuffer cmd, VkImageView targetImageView, VkImage targetImage, VkExtent2D extent) {
         // Recreate storage image if needed (initial run or resize)
         if (!m_storageImage.GetImage() || m_storageImageExtent.width != extent.width || m_storageImageExtent.height != extent.height) {
@@ -184,12 +220,15 @@ namespace rtx {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
 
         // 3. Define SBT regions and trace rays
-        VkStridedDeviceAddressRegionKHR raygenSbtRegion{ vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR missSbtRegion{ vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress + m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR hitSbtRegion{ vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress + 2 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR callableSbtRegion{};
+        VkDeviceAddress baseAddr = GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
-        vkCmdTraceRaysKHR(cmd, &raygenSbtRegion, &missSbtRegion, &hitSbtRegion, &callableSbtRegion, extent.width, extent.height, 1);
+        VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 2 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
+
+        vkCmdTraceRaysKHR(cmd, &rgenRegion, &missRegion, &hitRegion, &callableRegion,
+                          extent.width, extent.height, 1);
 
         // 4. Transition storage image for transfer and target image for receiving
         vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(), subresourceRange,
@@ -344,21 +383,32 @@ namespace rtx {
         rchitShader.Destroy(m_context);
     }
 
-    void RayTracingModule::CreateShaderBindingTable() {
-        uint32_t handleSize = m_rtProperties.shaderGroupHandleSize;
-        uint32_t handleSizeAligned = (handleSize + m_rtProperties.shaderGroupHandleAlignment - 1) & ~(m_rtProperties.shaderGroupHandleAlignment - 1);
-        m_sbtStride = handleSizeAligned;
+    void RayTracingModule::CreateShaderBindingTable()
+    {
+        const uint32_t handleSize    = m_rtProperties.shaderGroupHandleSize;
+        const uint32_t baseAlignment = m_rtProperties.shaderGroupBaseAlignment;
+
+        // *** FIX 1: Correct SBT Stride Calculation ***
+        // Шаг для каждой записи в SBT должен быть выровнен по shaderGroupBaseAlignment.
+        m_sbtStride = AlignUp(handleSize, baseAlignment);
+
         const uint32_t groupCount = 3; // rgen, miss, hit
-        uint32_t sbtSize = groupCount * handleSizeAligned;
+        const uint32_t sbtSize = groupCount * m_sbtStride;
 
-        std::vector<uint8_t> shaderHandleStorage(sbtSize);
-        VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(device(), m_pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()), "Failed to get ray tracing shader group handles");
+        // Получаем хендлы из драйвера
+        std::vector<uint8_t> rawHandles(groupCount * handleSize);
+        VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(device(), m_pipeline, 0, groupCount, rawHandles.size(), rawHandles.data()), "Failed to get ray tracing shader group handles");
 
-        // CORRECTED: Use 3-argument Create() then UploadData()
+        // Вручную копируем хендлы в буфер с правильным выравниванием (padding)
+        std::vector<uint8_t> sbtData(sbtSize, 0u);
+        for(uint32_t i = 0; i < groupCount; ++i) {
+            memcpy(sbtData.data() + i * m_sbtStride, rawHandles.data() + i * handleSize, handleSize);
+        }
+
         const VkBufferUsageFlags usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         const VkMemoryPropertyFlags memProps = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        VK_CHECK(m_sbt.Create(m_context,sbtSize, usage, memProps), "SBT creation failed");
-        m_sbt.UploadData(m_context,shaderHandleStorage.data(), sbtSize);
+
+        VK_CHECK(m_sbt.Create(m_context, sbtSize, usage, memProps, sbtData.data()), "SBT creation failed");
     }
 
     void rtx::RayTracingModule::UpdateDescriptorSets() {
@@ -482,7 +532,7 @@ namespace rtx {
 
         triangles.vertexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.vertexBuffer).deviceAddress;
         triangles.maxVertex = mesh.vertexCount;
-        triangles.vertexStride = sizeof(glm::vec3);
+        triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
         triangles.indexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.indexBuffer).deviceAddress;
         VkAccelerationStructureGeometryKHR asGeom{};

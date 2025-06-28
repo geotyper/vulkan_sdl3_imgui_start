@@ -4,7 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
-#include <HelpStructures.h>
+#include "HelpStructures.h"
 #define GLM_ENABLE_EXPERIMENTAL
 
 class GeomCreate {
@@ -26,16 +26,4 @@ public:
         std::vector<Vertex>& outVertices,
         std::vector<uint32_t>& outIndices);
 
-    // === Vulkan Buffer Creation ===
-    static void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-                                   const std::vector<Vertex>& vertices,
-                                   VkBuffer& vertexBuffer, VkDeviceMemory& vertexMemory);
-
-    static void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-                                  const std::vector<uint32_t>& indices,
-                                  VkBuffer& indexBuffer, VkDeviceMemory& indexMemory);
-
-    // Vertex input binding/attribute descriptions
-    static VkVertexInputBindingDescription getBindingDescription();
-    static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
 };

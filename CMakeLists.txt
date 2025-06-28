@@ -36,12 +36,12 @@ set(HEADERS
     src/framework/vulkanhelpers.h
 
     #src/ArcBallCamera.h
-    #src/HelpStructures.h
+    src/HelpStructures.h
     src/MainLoop.h
     #src/ImGuiModule.h
     src/GraphicsModule.h
     #src/VulkanHelperMethods.h
-    #src/GeomCreate.h
+    src/GeomCreate.h
     src/RayTracingModule.h
 )
 
@@ -56,7 +56,7 @@ set(SRC
     #src/ImGuiModule.cpp
     src/GraphicsModule.cpp
     #src/VulkanHelperMethods.cpp
-    #src/GeomCreate.cpp
+    src/GeomCreate.cpp
     src/RayTracingModule.cpp
     src/main.cpp
 )

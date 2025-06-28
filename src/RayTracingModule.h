@@ -1,5 +1,7 @@
 #pragma once
 
+#include "HelpStructures.h"
+
 #include "framework/vulkanhelpers.h"
 #include "framework/camera.h"
 #include <string>
@@ -56,6 +58,8 @@ public:
     void RecordCommands(VkCommandBuffer cmd, VkImageView targetImageView, VkImage targetImage, VkExtent2D extent);
     void OnResize(VkExtent2D newExtent);
 
+    void LoadFromVerticesAndIndices(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
 private:
     void GetRayTracingProperties();
     void CreateDescriptorSetLayout();
@@ -80,6 +84,9 @@ private:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     vulkanhelpers::Buffer m_sbt;
     uint32_t m_sbtStride = 0;
+    uint32_t m_sbtRaygenOffset  { 0 }; // смещение секции RayGen   (кратно shaderGroupBaseAlignment)
+    uint32_t m_sbtMissOffset    { 0 }; // смещение секции Miss     (кратно shaderGroupBaseAlignment)
+    uint32_t m_sbtHitOffset     { 0 }; // смещение секции Hit      (кратно shaderGroupBaseAlignment)
 
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
@@ -96,6 +103,9 @@ private:
 
     vulkanhelpers::Image m_storageImage;
     VkExtent2D m_storageImageExtent{};
+
+
+
 };
 
 } // namespace rtx
