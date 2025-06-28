@@ -1,14 +1,12 @@
 #include "GeomCreate.h"
 #include <cmath>
-#include <stdexcept>
-#include <cstring>
 #include <map>
 #include <array>
-#include <glm/glm.hpp>
+#include <algorithm>
 #include <glm/gtc/constants.hpp>
-#include <glm/gtx/norm.hpp>
-#include "VulkanHelperMethods.h"
 
+// Note: The Vulkan-specific functions like createVertexBuffer, getBindingDescription, etc.,
+// have been removed as they are no longer the responsibility of this class.
 
 // === UV Sphere ===
 void GeomCreate::createUVSphere(uint32_t latDiv, uint32_t lonDiv,
@@ -28,7 +26,17 @@ void GeomCreate::createUVSphere(uint32_t latDiv, uint32_t lonDiv,
             float cosPhi = cos(phi);
 
             glm::vec3 pos = glm::vec3(cosPhi * sinTheta, cosTheta, sinPhi * sinTheta);
-            outVertices.push_back({ pos, glm::normalize(pos) });
+            glm::vec3 normal = glm::normalize(pos);
+            glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default white color
+            glm::vec2 texCoord = glm::vec2(static_cast<float>(lon) / lonDiv, static_cast<float>(lat) / latDiv);
+
+            // Push the complete vertex with all attributes
+            outVertices.push_back({
+                glm::vec4(pos, 1.0f),
+                glm::vec4(normal, 0.0f),
+                glm::vec4(color, 1.0f),
+                texCoord
+            });
         }
     }
 
@@ -48,52 +56,41 @@ void GeomCreate::createUVSphere(uint32_t latDiv, uint32_t lonDiv,
     }
 }
 
-// === Low-Poly Sphere (dodecahedron-like for test) ===
-void GeomCreate::createLowPolySphere(std::vector<Vertex>& outVertices,
-                                     std::vector<uint32_t>& outIndices) {
-    std::vector<glm::vec3> positions = {
-        { 0.0f,  0.0f,  1.0f}, { 0.894f,  0.0f,  0.447f}, { 0.276f,  0.851f,  0.447f},
-        {-0.724f,  0.526f,  0.447f}, {-0.724f, -0.526f,  0.447f}, { 0.276f, -0.851f,  0.447f},
-        { 0.724f,  0.526f, -0.447f}, {-0.276f,  0.851f, -0.447f}, {-0.894f,  0.0f, -0.447f},
-        {-0.276f, -0.851f, -0.447f}, { 0.724f, -0.526f, -0.447f}, { 0.0f,  0.0f, -1.0f}
-    };
-
-    outVertices.clear();
-    for (const auto& pos : positions) {
-        outVertices.push_back({ pos, glm::normalize(pos) });
-    }
-
-    outIndices = {
-        0, 1, 2,  0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 1,
-        1, 6, 2,  2, 7, 3,  3, 8, 4,  4, 9, 5,  5,10, 1,
-        6, 7, 2,  7, 8, 3,  8, 9, 4,  9,10, 5, 10, 6, 1,
-        6,11, 7,  7,11, 8,  8,11, 9,  9,11,10, 10,11, 6
-    };
-}
 
 // === Icosphere (basic recursive subdivision of icosahedron) ===
 namespace {
-glm::vec3 normalize(const glm::vec3& v) {
-    return glm::normalize(v);
-}
+// Helper function to find or create a midpoint vertex to avoid duplicates
+uint32_t getMidpoint(uint32_t p1, uint32_t p2, std::vector<Vertex>& vertices, std::map<int64_t, uint32_t>& cache) {
+    int64_t smallerIndex = std::min(p1, p2);
+    int64_t greaterIndex = std::max(p1, p2);
+    int64_t key = (smallerIndex << 32) + greaterIndex;
 
-uint32_t addVertex(glm::vec3 v, std::vector<Vertex>& verts,
-                   std::map<std::pair<uint32_t, uint32_t>, uint32_t>& midpointCache) {
-    verts.push_back({ normalize(v), normalize(v) });
-    return static_cast<uint32_t>(verts.size() - 1);
-}
+    auto it = cache.find(key);
+    if (it != cache.end()) {
+        return it->second;
+    }
 
-uint32_t getMidpoint(uint32_t a, uint32_t b,
-                     std::vector<Vertex>& verts,
-                     std::map<std::pair<uint32_t, uint32_t>, uint32_t>& cache) {
-    auto edge = std::minmax(a, b);
-    auto it = cache.find(edge);
-    if (it != cache.end()) return it->second;
+    const Vertex& v1 = vertices[p1];
+    const Vertex& v2 = vertices[p2];
 
-    glm::vec3 mid = (verts[a].position + verts[b].position) * 0.5f;
-    uint32_t idx = addVertex(mid, verts, cache);
-    cache[edge] = idx;
-    return idx;
+    // Interpolate all vertex attributes
+    glm::vec3 pos =    glm::normalize((v1.position + v2.position) * 0.5f);
+    glm::vec3 normal = glm::normalize((v1.normal + v2.normal) * 0.5f); // Same as pos for a sphere
+    glm::vec3 color = (v1.color + v2.color) * 0.5f;
+    glm::vec2 texCoord= (v1.texCoord + v2.texCoord) * 0.5f;
+
+    //vertices.push_back({pos, norm, col, tc});
+
+    vertices.push_back({
+        glm::vec4(pos, 1.0f),
+        glm::vec4(normal, 0.0f),
+        glm::vec4(color, 1.0f),
+        texCoord
+    });
+
+    uint32_t newIndex = static_cast<uint32_t>(vertices.size() - 1);
+    cache[key] = newIndex;
+    return newIndex;
 }
 }
 
@@ -102,46 +99,51 @@ void GeomCreate::createIcosphere(uint32_t subdivisions,
                                  std::vector<uint32_t>& outIndices) {
     outVertices.clear();
     outIndices.clear();
+    std::map<int64_t, uint32_t> midpointCache;
 
-    const float X = 0.525731f;
-    const float Z = 0.850651f;
-    const glm::vec3 vdata[] = {
-        {-X, 0, Z}, {X, 0, Z}, {-X, 0, -Z}, {X, 0, -Z},
-        {0, Z, X}, {0, Z, -X}, {0, -Z, X}, {0, -Z, -X},
-        {Z, X, 0}, {-Z, X, 0}, {Z, -X, 0}, {-Z, -X, 0}
+    const float t = (1.0f + sqrt(5.0f)) / 2.0f;
+
+    // Create 12 vertices of an icosahedron
+    auto add = [&](const glm::vec3& p){
+        glm::vec3 normal = glm::normalize(p);
+        glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+        // Spherical projection for UVs
+        glm::vec2 texCoord(0.5f + atan2(normal.z, normal.x) / (2.0f * glm::pi<float>()), 0.5f - asin(normal.y) / glm::pi<float>());
+        outVertices.push_back({
+            glm::vec4(normal, 1.0f),
+            glm::vec4(normal, 0.0f),
+            glm::vec4(color, 1.0f),
+            texCoord
+        });
     };
 
-    const uint32_t tdata[][3] = {
-        {0, 4, 1}, {0, 9, 4}, {9, 5, 4}, {4, 5, 8}, {4, 8, 1},
-        {8, 10, 1}, {8, 3, 10}, {5, 3, 8}, {5, 2, 3}, {2, 7, 3},
-        {7, 10, 3}, {7, 6, 10}, {7, 11, 6}, {11, 0, 6}, {0, 1, 6},
-        {6, 1, 10}, {9, 0, 11}, {9, 11, 2}, {9, 2, 5}, {7, 2, 11}
+    add({-1,  t,  0}); add({ 1,  t,  0}); add({-1, -t,  0}); add({ 1, -t,  0});
+    add({ 0, -1,  t}); add({ 0,  1,  t}); add({ 0, -1, -t}); add({ 0,  1, -t});
+    add({ t,  0, -1}); add({ t,  0,  1}); add({-t,  0, -1}); add({-t,  0,  1});
+
+    std::vector<std::array<uint32_t, 3>> faces = {
+        {0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
+        {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+        {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
+        {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}
     };
 
-    std::map<std::pair<uint32_t, uint32_t>, uint32_t> midpointCache;
-    for (auto& v : vdata)
-        outVertices.push_back({ normalize(v), normalize(v) });
-
-    std::vector<std::array<uint32_t, 3>> faces;
-    for (auto& tri : tdata)
-        faces.push_back({tri[0], tri[1], tri[2]});
-
-    for (uint32_t i = 0; i < subdivisions; ++i) {
-        std::vector<std::array<uint32_t, 3>> newFaces;
-        for (auto& tri : faces) {
+    for (uint32_t i = 0; i < subdivisions; i++) {
+        std::vector<std::array<uint32_t, 3>> faces2;
+        for (const auto& tri : faces) {
             uint32_t a = getMidpoint(tri[0], tri[1], outVertices, midpointCache);
             uint32_t b = getMidpoint(tri[1], tri[2], outVertices, midpointCache);
             uint32_t c = getMidpoint(tri[2], tri[0], outVertices, midpointCache);
-
-            newFaces.push_back({tri[0], a, c});
-            newFaces.push_back({tri[1], b, a});
-            newFaces.push_back({tri[2], c, b});
-            newFaces.push_back({a, b, c});
+            faces2.push_back({tri[0], a, c});
+            faces2.push_back({tri[1], b, a});
+            faces2.push_back({tri[2], c, b});
+            faces2.push_back({a, b, c});
         }
-        faces = std::move(newFaces);
+        faces = faces2;
     }
 
-    for (auto& tri : faces) {
+    outIndices.clear();
+    for(const auto& tri : faces) {
         outIndices.push_back(tri[0]);
         outIndices.push_back(tri[1]);
         outIndices.push_back(tri[2]);

@@ -179,7 +179,8 @@ void GraphicsModule::initRayTracingModule() {
 
     // 4. Call your generator to fill the vectors
     // You can use any of your functions here: createUVSphere, createIcosphere, etc.
-    GeomCreate::createIcosphere(4, vertices, indices);
+    //GeomCreate::createIcosphere(2, vertices, indices);
+    GeomCreate::createUVSphere(32,32, vertices, indices);
 
     // 5. Load the generated data into the ray tracing module
     m_rtxModule->LoadFromVerticesAndIndices(vertices, indices);
@@ -241,18 +242,45 @@ void GraphicsModule::createInstance(const std::string& appName) {
     }
     std::vector<const char*> extensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
+    extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 
     const char* validationLayer = "VK_LAYER_KHRONOS_validation";
-    createInfo.enabledLayerCount = 1;
-    createInfo.ppEnabledLayerNames = &validationLayer;
 
-    VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_instance), "Failed to create Vulkan instance");
+    // 1) Debug-утилы
+    VkDebugUtilsMessengerCreateInfoEXT dbgInfo{ VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+    dbgInfo.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ;
+    dbgInfo.messageType     =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT    |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    dbgInfo.pfnUserCallback = debugCallback;          // ваша функция
+
+    // 2) Validation-features
+    static const VkValidationFeatureEnableEXT enables[] = {
+        VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT ,
+        // Временно ОТКЛЮЧИМ gpu-assisted, чтобы увидеть, исчезнет ли подвисание
+         VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT ,
+    };
+
+    VkValidationFeaturesEXT valFeatures{ VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
+    valFeatures.enabledValidationFeatureCount = std::size(enables);
+    valFeatures.pEnabledValidationFeatures    = enables;
+
+    // — цепляем —
+    dbgInfo.pNext = &valFeatures;
+
+    VkInstanceCreateInfo ci{ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+    ci.pNext                   = &dbgInfo;         // dbgInfo — «голова» цепочки
+    ci.pApplicationInfo        = &appInfo;
+    ci.enabledLayerCount       = 1;
+    ci.ppEnabledLayerNames     = &validationLayer;
+    ci.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
+    ci.ppEnabledExtensionNames = extensions.data();
+    VK_CHECK(vkCreateInstance(&ci, nullptr, &m_instance), "create instance");
+
+
 }
 
 

@@ -46,7 +46,17 @@ uint32_t GetMemoryType(const VkMemoryRequirements& memoryRequirements, VkMemoryP
     throw std::runtime_error(errorMsg.str());
 }
 
-void ImageBarrier(VkCommandBuffer commandBuffer, VkImage image, const VkImageSubresourceRange& subresourceRange, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void ImageBarrier(
+    VkCommandBuffer         commandBuffer,
+    VkImage                 image,
+    VkImageLayout           oldLayout,
+    VkImageLayout           newLayout,
+    const VkImageSubresourceRange& subresourceRange,
+    VkPipelineStageFlags    srcStageMask,
+    VkPipelineStageFlags    dstStageMask,
+    VkAccessFlags           srcAccessMask,
+    VkAccessFlags           dstAccessMask)
+{
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
@@ -58,7 +68,16 @@ void ImageBarrier(VkCommandBuffer commandBuffer, VkImage image, const VkImageSub
     barrier.srcAccessMask = srcAccessMask;
     barrier.dstAccessMask = dstAccessMask;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    // Используем точные флаги стадий вместо ALL_COMMANDS_BIT
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        srcStageMask,   // <-- Используем переданный флаг
+        dstStageMask,   // <-- Используем переданный флаг
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+        );
 }
 
 // --- Buffer Implementation ---

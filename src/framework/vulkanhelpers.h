@@ -27,9 +27,18 @@ namespace vulkanhelpers {
 
      uint32_t GetMemoryType(const VkMemoryRequirements& memoryRequirements, VkMemoryPropertyFlags memoryProperties, const VkPhysicalDeviceMemoryProperties& deviceMemoryProperties);
 
-    void ImageBarrier(VkCommandBuffer commandBuffer, VkImage image,
-                      const VkImageSubresourceRange& subresourceRange,
-                      VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask, VkImageLayout oldLayout, VkImageLayout newLayout);
+    // Теперь она принимает флаги стадий конвейера для точной синхронизации.
+    void ImageBarrier(
+        VkCommandBuffer         commandBuffer,
+        VkImage                 image,
+        VkImageLayout           oldLayout,
+        VkImageLayout           newLayout,
+        const VkImageSubresourceRange& subresourceRange,
+        VkPipelineStageFlags    srcStageMask,
+        VkPipelineStageFlags    dstStageMask,
+        VkAccessFlags           srcAccessMask,
+        VkAccessFlags           dstAccessMask
+        );
 
 
     class Buffer {

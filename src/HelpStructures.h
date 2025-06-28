@@ -5,9 +5,12 @@
 #include <glm/glm.hpp>
 
 struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    // glm::vec2 uv;
+    glm::vec4 position;
+    glm::vec4 normal;
+    glm::vec4 color;
+    glm::vec2 texCoord; // vec2 в конце структуры обычно безопасен,
+    glm::vec2 _pad {};
+
 };
 
 struct PushConstants {

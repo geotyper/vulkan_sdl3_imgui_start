@@ -32,21 +32,38 @@ void MainLoop::Initialize(const std::string& title, uint32_t width, uint32_t hei
     m_camera.LookAt({0.0f, 1.0f, 3.5f}, {0.0f, 0.5f, 0.0f});
 }
 
-void MainLoop::Run() {
-    auto lastTime = std::chrono::high_resolution_clock::now();
-    m_isRunning = true;
-    while (m_isRunning) {
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
-        lastTime = currentTime;
+void MainLoop::Run()
+{
+    using clock = std::chrono::high_resolution_clock;
 
+    auto last = clock::now();
+    m_isRunning = true;
+
+    while (m_isRunning)
+    {
+        auto  now       = clock::now();
+        float deltaTime = std::chrono::duration<float>(now - last).count();
+        last = now;
+
+        /* ---------- обработка ввода и рендер ---------- */
         handleEvents();
         update(deltaTime);
-        if (m_graphicsModule) {
+        if (m_graphicsModule)
             m_graphicsModule->RenderFrame(m_camera);
+        /* --------------------------------------------- */
+
+        /* ---------- вывод FPS/мс за кадр -------------- */
+        if (deltaTime > 0.0f)               // защита /0
+        {
+            const float fps  = 1.0f / deltaTime;
+            const float mspp = deltaTime * 1000.0f;   // milliseconds per picture
+            std::printf("FPS: %.1f  (%.2f ms)\n", fps, mspp);
+            std::fflush(stdout);             // если запускаете из IDE — чтобы сразу видно
         }
     }
 }
+
+
 
 void MainLoop::Shutdown() {
     if (m_graphicsModule) {

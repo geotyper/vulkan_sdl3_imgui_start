@@ -90,7 +90,6 @@ namespace rtx {
             m_scene->Destroy(m_context, device());
         }
 
-        m_scene = std::make_unique<Scene>();
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
         std::vector<tinyobj::material_t> materials;
@@ -100,43 +99,53 @@ namespace rtx {
             throw std::runtime_error("Failed to load OBJ file: " + warn + err);
         }
 
-        // --- THIS SECTION IS NOW CORRECT AND ROBUST ---
-
-        auto mesh = std::make_unique<MeshData>();
-
-        std::vector<glm::vec3> vertices;
-        for (size_t i = 0; i < attrib.vertices.size() / 3; ++i) {
-            vertices.emplace_back(attrib.vertices[3 * i + 0], attrib.vertices[3 * i + 1], attrib.vertices[3 * i + 2]);
-        }
-        mesh->vertexCount = static_cast<uint32_t>(vertices.size());
-
+        std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
+        std::map<tinyobj::index_t, uint32_t, bool(*)(const tinyobj::index_t&, const tinyobj::index_t&)> uniqueVertices([](const tinyobj::index_t& a, const tinyobj::index_t& b) {
+            if (a.vertex_index < b.vertex_index) return true;
+            if (a.vertex_index > b.vertex_index) return false;
+            if (a.normal_index < b.normal_index) return true;
+            if (a.normal_index > b.normal_index) return false;
+            return a.texcoord_index < b.texcoord_index;
+        });
+
         for (const auto& shape : shapes) {
-            for(const auto& index : shape.mesh.indices) {
-                indices.push_back(index.vertex_index);
+            for (const auto& index : shape.mesh.indices) {
+                if (uniqueVertices.count(index) == 0) {
+                    uniqueVertices[index] = static_cast<uint32_t>(vertices.size());
+
+                    Vertex vertex{};
+                    vertex.position = {
+                        attrib.vertices[3 * index.vertex_index + 0],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2],
+                        1.0f
+                    };
+
+                    if (!attrib.normals.empty() && index.normal_index >= 0) {
+                        vertex.normal = {
+                            attrib.normals[3 * index.normal_index + 0],
+                            attrib.normals[3 * index.normal_index + 1],
+                            attrib.normals[3 * index.normal_index + 2],
+                            0.0f
+                        };
+                    }
+
+                    if (!attrib.texcoords.empty() && index.texcoord_index >= 0) {
+                        vertex.texCoord = {
+                            attrib.texcoords[2 * index.texcoord_index + 0],
+                            1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                        };
+                    }
+
+                    vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
+                    vertices.push_back(vertex);
+                }
+                indices.push_back(uniqueVertices[index]);
             }
         }
-        mesh->indexCount = static_cast<uint32_t>(indices.size());
 
-        const VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
-        const VkBufferUsageFlags commonUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
-        // --- THIS IS THE NEW, SIMPLIFIED LOGIC ---
-        // The Create function now handles the staging buffer transfer automatically.
-
-        VK_CHECK(mesh->vertexBuffer.Create(m_context, vertices.size() * sizeof(glm::vec3),
-                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | commonUsage,
-                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertices.data()), "Vertex buffer creation failed");
-
-        VK_CHECK(mesh->indexBuffer.Create(m_context, indices.size() * sizeof(uint32_t),
-                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT | commonUsage,
-                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indices.data()), "Index buffer creation failed");
-
-        m_scene->meshes.push_back(std::move(mesh));
-
-        BuildAccelerationStructures();
-        UpdateDescriptorSets();
+        LoadFromVerticesAndIndices(vertices, indices);
     }
 
 
@@ -168,32 +177,46 @@ namespace rtx {
         UpdateDescriptorSets();
     }
 
-    void RayTracingModule::LoadFromVerticesAndIndices(const std::vector<Vertex> &vertices, const std::vector<uint32_t> &indices)
+    void RayTracingModule::LoadFromVerticesAndIndices(
+        const std::vector<Vertex>&   vertices,
+        const std::vector<uint32_t>& indices)
     {
-        // 1. Clean up any existing scene
         if (m_scene) {
             vkDeviceWaitIdle(device());
             m_tlas.Destroy(m_context, device());
             m_scene->Destroy(m_context, device());
         }
+
         m_scene = std::make_unique<Scene>();
         auto mesh = std::make_unique<MeshData>();
 
-        // 2. Set vertex and index counts from the provided data
-        mesh->vertexCount = static_cast<uint32_t>(vertices.size());
-        mesh->indexCount = static_cast<uint32_t>(indices.size());
+        mesh->vertexCount  = static_cast<uint32_t>(vertices.size());
+        mesh->indexCount   = static_cast<uint32_t>(indices.size());
+        mesh->vertexStride = sizeof(Vertex);                //  ← fix
 
-        // 3. Define buffer usage flags
-        const VkBufferUsageFlags commonUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        const VkBufferUsageFlags commonUsage =
+            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 
-        // 4. Create and upload the vertex and index buffers using the provided data
-        VK_CHECK(mesh->vertexBuffer.Create(m_context, vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | commonUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertices.data()), "Procedural vertex buffer creation failed");
-        VK_CHECK(mesh->indexBuffer.Create(m_context, indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT | commonUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indices.data()), "Procedural index buffer creation failed");
+        VK_CHECK(mesh->vertexBuffer.Create(
+                     m_context,
+                     vertices.size() * mesh->vertexStride,  // 64-байтный шаг
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | commonUsage,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     vertices.data()),
+                 "Procedural vertex buffer creation failed");
 
-        // 5. Add the new mesh to the scene
+        VK_CHECK(mesh->indexBuffer.Create(
+                     m_context,
+                     indices.size() * sizeof(uint32_t),
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT | commonUsage,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     indices.data()),
+                 "Procedural index buffer creation failed");
+
         m_scene->meshes.push_back(std::move(mesh));
 
-        // 6. Build the acceleration structures and update descriptor sets for the new geometry
         BuildAccelerationStructures();
         UpdateDescriptorSets();
     }
@@ -211,16 +234,20 @@ namespace rtx {
         VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
         // 1. Transition storage image to be writable by the shader
-        vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(), subresourceRange,
-                                    0, VK_ACCESS_SHADER_WRITE_BIT,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        // 1. Барьер перед трассировкой: убедиться, что шейдер может писать в storage-image.
+        // Источник: нет предыдущей операции. Цель: запись в шейдере трассировки.
+        vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(),
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                                    0, VK_ACCESS_SHADER_WRITE_BIT);
 
         // 2. Bind pipeline and descriptor sets
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, nullptr);
 
         // 3. Define SBT regions and trace rays
-        VkDeviceAddress baseAddr = GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
+        VkDeviceAddress baseAddr = vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
         VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
         VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, m_sbtStride };
@@ -231,13 +258,20 @@ namespace rtx {
                           extent.width, extent.height, 1);
 
         // 4. Transition storage image for transfer and target image for receiving
-        vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(), subresourceRange,
-                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        // 3. Барьеры перед копированием:
+        //    - Ждем, пока трассировка закончит писать в storage-image, и готовим его к чтению (копированию ИЗ него).
+        //    - Готовим swapchain-image к записи (копированию В него).
+        vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(),
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
 
-        vulkanhelpers::ImageBarrier(cmd, targetImage, subresourceRange,
-                                    0, VK_ACCESS_TRANSFER_WRITE_BIT,
-                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        vulkanhelpers::ImageBarrier(cmd, targetImage,
+                                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                    0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
         // 5. Copy from storage image to target (swapchain) image
         VkImageCopy copyRegion{};
@@ -249,9 +283,12 @@ namespace rtx {
                        targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
         // 6. Transition target image for presentation
-        vulkanhelpers::ImageBarrier(cmd, targetImage, subresourceRange,
-                                    VK_ACCESS_TRANSFER_WRITE_BIT, 0,
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        // 5. Финальный барьер: готовим swapchain-image к показу на экране.
+        vulkanhelpers::ImageBarrier(cmd, targetImage,
+                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                    VK_ACCESS_TRANSFER_WRITE_BIT, 0);
     }
 
     // --- RayTracingModule Private Method Implementations ---
@@ -286,7 +323,11 @@ namespace rtx {
         VkDescriptorSetLayoutBinding imageBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR };
         VkDescriptorSetLayoutBinding cameraBinding{ 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR };
 
-        std::vector<VkDescriptorSetLayoutBinding> bindings = { tlasBinding, imageBinding, cameraBinding };
+        VkDescriptorSetLayoutBinding vbBinding{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR };
+        VkDescriptorSetLayoutBinding ibBinding{ 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR };
+        std::array bindings{ tlasBinding, imageBinding, cameraBinding,
+                            vbBinding,  ibBinding };
+
         VkDescriptorSetLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
@@ -299,7 +340,8 @@ namespace rtx {
         std::vector<VkDescriptorPoolSize> poolSizes = {
             { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 },
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 }
         };
         VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -480,6 +522,33 @@ namespace rtx {
         cameraWrite.pBufferInfo = &cameraBufferInfo;
         writes.push_back(cameraWrite);
 
+        // Vertex buffer (binding 3)
+        VkDescriptorBufferInfo vbInfo{};
+        vbInfo.buffer = m_scene->meshes[0]->vertexBuffer.GetBuffer();
+        vbInfo.offset = 0;
+        vbInfo.range  = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        vbWrite.dstSet          = m_descriptorSet;
+        vbWrite.dstBinding      = 3;
+        vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        vbWrite.descriptorCount = 1;
+        vbWrite.pBufferInfo     = &vbInfo;
+
+        // Index buffer (binding 4)
+        VkDescriptorBufferInfo ibInfo{};
+        ibInfo.buffer = m_scene->meshes[0]->indexBuffer.GetBuffer();
+        ibInfo.offset = 0;
+        ibInfo.range  = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet ibWrite = vbWrite;
+        ibWrite.dstBinding  = 4;
+        ibWrite.pBufferInfo = &ibInfo;
+
+        // …push в writes
+        writes.push_back(vbWrite);
+        writes.push_back(ibWrite);
+
         // --- Perform the update in a single, batched call ---
         vkUpdateDescriptorSets(device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
@@ -514,6 +583,42 @@ namespace rtx {
         vkFreeCommandBuffers(device(), m_createInfo.commandPool, 1, &commandBuffer);
     }
 
+    //void RayTracingModule::executeImmediateCommand(const std::function<void(VkCommandBuffer)>& command) {
+    //    VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    //    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    //    allocInfo.commandPool = m_context.commandPool;
+    //    allocInfo.commandBufferCount = 1;
+    //
+    //    VkCommandBuffer commandBuffer;
+    //    VK_CHECK(vkAllocateCommandBuffers(m_context.device, &allocInfo, &commandBuffer), "Failed to allocate one-shot command buffer");
+    //
+    //    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    //    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    //    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin one-shot command buffer");
+    //
+    //    command(commandBuffer);
+    //
+    //    VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end one-shot command buffer");
+    //
+    //    // --- Новый, более надежный способ синхронизации с Fence ---
+    //    VkFence fence;
+    //    VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    //    VK_CHECK(vkCreateFence(m_context.device, &fenceInfo, nullptr, &fence), "Failed to create one-shot fence");
+    //
+    //    VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    //    submitInfo.commandBufferCount = 1;
+    //    submitInfo.pCommandBuffers = &commandBuffer;
+    //
+    //    VK_CHECK(vkQueueSubmit(m_context.transferQueue, 1, &submitInfo, fence), "Failed to submit one-shot command buffer");
+    //
+    //    // Ждем завершения именно этой команды, а не всей очереди
+    //    VK_CHECK(vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX), "Failed to wait for one-shot fence");
+    //
+    //    // Очищаем ресурсы
+    //    vkDestroyFence(m_context.device, fence, nullptr);
+    //    vkFreeCommandBuffers(m_context.device, m_context.commandPool, 1, &commandBuffer);
+    //}
+
     void RayTracingModule::BuildAccelerationStructures() {
         if (!m_scene || m_scene->meshes.empty()) return;
 
@@ -526,13 +631,13 @@ namespace rtx {
     void RayTracingModule::BuildBLAS(MeshData& mesh) {
         VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+        triangles.vertexFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
 
         assert(mesh.vertexBuffer.GetBuffer() != VK_NULL_HANDLE && "Vertex buffer is null!");
 
         triangles.vertexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.vertexBuffer).deviceAddress;
         triangles.maxVertex = mesh.vertexCount;
-        triangles.vertexStride = sizeof(Vertex);
+        triangles.vertexStride = mesh.vertexStride;
         triangles.indexType = VK_INDEX_TYPE_UINT32;
         triangles.indexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.indexBuffer).deviceAddress;
         VkAccelerationStructureGeometryKHR asGeom{};

@@ -26,6 +26,7 @@ struct MeshData {
     vulkanhelpers::Buffer indexBuffer;
     uint32_t vertexCount = 0;
     uint32_t indexCount = 0;
+    uint32_t vertexStride  = sizeof(Vertex);
     AccelerationStructure blas;
 
     void Destroy(const vulkanhelpers::VulkanContext& context, VkDevice device);
