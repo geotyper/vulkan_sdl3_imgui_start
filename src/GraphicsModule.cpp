@@ -39,36 +39,56 @@ void GraphicsModule::Initialize(SDL_Window* window, const std::string& appName) 
 }
 
 void GraphicsModule::Shutdown() {
+    // Если устройство уже было уничтожено, выходим
     if (!m_device) return;
+
+    // 1. Убеждаемся, что GPU закончил все операции.
     vkDeviceWaitIdle(m_device);
 
+    // 2. Уничтожаем все ресурсы, созданные нашими модулями.
+    //    unique_ptr сделает это автоматически при выходе из области видимости,
+    //    но явный вызов Cleanup более нагляден.
     if (m_rtxModule) {
         m_rtxModule->Cleanup();
+        m_rtxModule.reset(); // Уничтожаем объект
     }
+
+    // 3. Уничтожаем все объекты, связанные со Swapchain.
     cleanupSwapchain();
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if(m_renderFinishedSemaphores.size() > i && m_renderFinishedSemaphores[i])
-            vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
-        if(m_imageAvailableSemaphores.size() > i && m_imageAvailableSemaphores[i])
-            vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
-        if(m_inFlightFences.size() > i && m_inFlightFences[i])
-            vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
+    // 4. Уничтожаем объекты синхронизации и командный пул.
+    //    Они были созданы из VkDevice.
+    for (size_t i = 0; i < m_inFlightFences.size(); i++) {
+        vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
     }
-    m_renderFinishedSemaphores.clear();
-    m_imageAvailableSemaphores.clear();
-    m_inFlightFences.clear();
 
-    if(m_commandPool) vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-    if(m_device) vkDestroyDevice(m_device, nullptr);
+    if (m_commandPool) {
+        vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+    }
 
+    // 5. После того как все дочерние объекты уничтожены, уничтожаем само логическое устройство.
+    vkDestroyDevice(m_device, nullptr);
+    m_device = VK_NULL_HANDLE; // Обнуляем хендл
+
+    // 6. Теперь уничтожаем объекты уровня Instance, которые зависели от него.
     if (m_debugMessenger) {
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT");
-        if (func) func(m_instance, m_debugMessenger, nullptr);
+        if (func) {
+            func(m_instance, m_debugMessenger, nullptr);
+        }
     }
 
-    if(m_surface) vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-    if(m_instance) vkDestroyInstance(m_instance, nullptr);
+    if (m_surface) {
+        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+    }
+
+    // 7. В самую последнюю очередь уничтожаем сам инстанс Vulkan.
+    if (m_instance) {
+        vkDestroyInstance(m_instance, nullptr);
+        m_instance = VK_NULL_HANDLE;
+    }
 }
 
 void GraphicsModule::RenderFrame(const Camera& cam) {
@@ -226,62 +246,109 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
     VK_CHECK(vkEndCommandBuffer(cmd), "Failed to record command buffer");
 }
 
-void GraphicsModule::createInstance(const std::string& appName) {
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = appName.c_str();
+#include <array>
+#include <vector>
+#include <SDL3/SDL_vulkan.h>
+#include <volk.h>
+#include "GraphicsModule.h"
+#include "framework/vulkanhelpers.h"
+
+/* ------------------------------------------------------------
+ * GraphicsModule::createInstance
+ * ---------------------------------------------------------- */
+// GraphicsModule.cpp
+void GraphicsModule::createInstance(const std::string& appName)
+{
+    /* ------------------------------------------------- *
+     * 1.  Базовая «визитка» приложения                  *
+     * ------------------------------------------------- */
+    VkApplicationInfo appInfo{ VK_STRUCTURE_TYPE_APPLICATION_INFO };
+    appInfo.pApplicationName   = appName.c_str();
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.pEngineName        = "No Engine";
+    appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.apiVersion         = VK_API_VERSION_1_3;
 
-    uint32_t sdlExtensionCount = 0;
-    const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
-    if (!sdlExtensions) {
-        throw std::runtime_error("Failed to get Vulkan instance extensions from SDL.");
-    }
-    std::vector<const char*> extensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
-    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    extensions.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
 
-    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    /* ------------------------------------------------- *
+     * 2.  Расширения, которые требуют SDL + Debug       *
+     * ------------------------------------------------- */
+    uint32_t sdlExtCount = 0;
+    const char* const* sdlExt = SDL_Vulkan_GetInstanceExtensions(&sdlExtCount);
+    if (!sdlExt)
+        throw std::runtime_error("SDL_Vulkan_GetInstanceExtensions failed");
 
-    // 1) Debug-утилы
-    VkDebugUtilsMessengerCreateInfoEXT dbgInfo{ VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+    std::vector<const char*> instExt{ sdlExt, sdlExt + sdlExtCount };
+
+#ifndef NDEBUG
+    instExt.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    instExt.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);   // цепочка pNext
+#endif
+
+
+    /* ------------------------------------------------- *
+     * 3.  (Debug)  Messenger + validation-features chain *
+     * ------------------------------------------------- */
+#ifndef NDEBUG
+    /* 3.1 Debug messenger */
+    VkDebugUtilsMessengerCreateInfoEXT dbgInfo{
+                                               VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
     dbgInfo.messageSeverity =
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ;
-    dbgInfo.messageType     =
-        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT    |
-        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    dbgInfo.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT      |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT   |
         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    dbgInfo.pfnUserCallback = debugCallback;          // ваша функция
+    dbgInfo.pfnUserCallback = debugCallback;
 
-    // 2) Validation-features
-    static const VkValidationFeatureEnableEXT enables[] = {
-        VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT ,
-        // Временно ОТКЛЮЧИМ gpu-assisted, чтобы увидеть, исчезнет ли подвисание
-         VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT ,
+    /* 3.2 Validation-features (можно на лету конфигурировать) */
+    std::vector<VkValidationFeatureEnableEXT> enableList = {
+        VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT
     };
+#ifdef ENABLE_GPU_ASSISTED             // добавьте -DENABLE_GPU_ASSISTED в cmake/Makefile
+    enableList.push_back(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
+#endif
 
-    VkValidationFeaturesEXT valFeatures{ VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
-    valFeatures.enabledValidationFeatureCount = std::size(enables);
-    valFeatures.pEnabledValidationFeatures    = enables;
+    VkValidationFeaturesEXT valFeatures{
+                                        VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
+    valFeatures.enabledValidationFeatureCount =
+        static_cast<uint32_t>(enableList.size());
+    valFeatures.pEnabledValidationFeatures = enableList.data();
 
-    // — цепляем —
+    /* сцепляем pNext-цепочку: dbgInfo → valFeatures → nullptr */
     dbgInfo.pNext = &valFeatures;
+#endif  // !NDEBUG
+
+
+    /* ------------------------------------------------- *
+     * 4.  Сам VkInstance                                *
+     * ------------------------------------------------- */
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
 
     VkInstanceCreateInfo ci{ VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
-    ci.pNext                   = &dbgInfo;         // dbgInfo — «голова» цепочки
-    ci.pApplicationInfo        = &appInfo;
+#ifndef NDEBUG
+    ci.pNext = &dbgInfo;                        // отладочная цепочка
     ci.enabledLayerCount       = 1;
     ci.ppEnabledLayerNames     = &validationLayer;
-    ci.enabledExtensionCount   = static_cast<uint32_t>(extensions.size());
-    ci.ppEnabledExtensionNames = extensions.data();
-    VK_CHECK(vkCreateInstance(&ci, nullptr, &m_instance), "create instance");
+#else
+    ci.pNext = nullptr;
+    ci.enabledLayerCount       = 0;
+    ci.ppEnabledLayerNames     = nullptr;
+#endif
+    ci.pApplicationInfo        = &appInfo;
+    ci.enabledExtensionCount   = static_cast<uint32_t>(instExt.size());
+    ci.ppEnabledExtensionNames = instExt.data();
 
+    VK_CHECK(vkCreateInstance(&ci, nullptr, &m_instance),
+             "Failed to create Vulkan instance");
 
+    /* ------------------------------------------------- *
+     * 5.  Загрузка volk – теперь можно вызывать vk*     *
+     * ------------------------------------------------- */
+    volkLoadInstance(m_instance);
 }
+
 
 
 void GraphicsModule::setupDebugMessenger() {
@@ -352,11 +419,11 @@ void GraphicsModule::createLogicalDevice() {
     VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &asFeatures};
 
     std::vector<const char*> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+          VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+          VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+          VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+          VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+       // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     };
 
     VkDeviceCreateInfo createInfo{};

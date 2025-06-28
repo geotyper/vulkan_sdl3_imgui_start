@@ -386,10 +386,10 @@ VkDeviceOrHostAddressKHR GetBufferDeviceAddress(const VulkanContext& ctx, const 
     VkBufferDeviceAddressInfo info{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, buffer.GetBuffer() };
     VkDeviceOrHostAddressKHR result{};
 
-    assert(vkGetBufferDeviceAddressKHR && "vkGetBufferDeviceAddressKHR is NULL!");
+    assert(vkGetBufferDeviceAddress && "vkGetBufferDeviceAddress is NULL!");
 
 
-    result.deviceAddress = vkGetBufferDeviceAddressKHR(ctx.device, &info);
+    result.deviceAddress = vkGetBufferDeviceAddress(ctx.device, &info);
     return result;
 }
 

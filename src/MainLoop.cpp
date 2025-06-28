@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <chrono>
 #include <iostream>
+#include <thread>
 
 // Constructor and Destructor defined here where GraphicsModule is a complete type
 MainLoop::MainLoop() = default;
@@ -34,32 +35,40 @@ void MainLoop::Initialize(const std::string& title, uint32_t width, uint32_t hei
 
 void MainLoop::Run()
 {
-    using clock = std::chrono::high_resolution_clock;
+    using clock           = std::chrono::high_resolution_clock;
+    using seconds_f       = std::chrono::duration<float>;
+    constexpr seconds_f   kTargetFrame   { 1.0f / 60.0f };      // 16.666 ms
 
-    auto last = clock::now();
+    auto lastFrameStart = clock::now();
     m_isRunning = true;
 
     while (m_isRunning)
     {
-        auto  now       = clock::now();
-        float deltaTime = std::chrono::duration<float>(now - last).count();
-        last = now;
+        /* ---------------- time & delta ---------------- */
+        const auto thisFrameStart = clock::now();
+        const float deltaTime     = seconds_f(thisFrameStart - lastFrameStart).count();
+        lastFrameStart            = thisFrameStart;
 
-        /* ---------- обработка ввода и рендер ---------- */
+        /* ------- input, simulation, rendering --------- */
         handleEvents();
         update(deltaTime);
+
         if (m_graphicsModule)
             m_graphicsModule->RenderFrame(m_camera);
-        /* --------------------------------------------- */
 
-        /* ---------- вывод FPS/мс за кадр -------------- */
-        if (deltaTime > 0.0f)               // защита /0
-        {
-            const float fps  = 1.0f / deltaTime;
-            const float mspp = deltaTime * 1000.0f;   // milliseconds per picture
-            std::printf("FPS: %.1f  (%.2f ms)\n", fps, mspp);
-            std::fflush(stdout);             // если запускаете из IDE — чтобы сразу видно
-        }
+        /* --------------- frame throttling ------------- */
+        const auto afterRender  = clock::now();
+        const auto frameTime    = afterRender - thisFrameStart;
+
+        if (frameTime < kTargetFrame)
+            std::this_thread::sleep_for(kTargetFrame - frameTime);
+
+        /* -------------- diagnostics output ------------ */
+        const float fps  = 1.0f / std::max(seconds_f(kTargetFrame).count(),
+                                          seconds_f(frameTime).count());
+        const float mspp = 1000.0f / fps;
+        std::printf("FPS: %.1f  (%.2f ms)\n", fps, mspp);
+        std::fflush(stdout);
     }
 }
 

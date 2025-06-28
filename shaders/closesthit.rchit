@@ -41,6 +41,7 @@ void main()
     float diffuse = max(dot(normal, lightDir), 0.0);
     float ambient = 0.2; // <-- Здесь больше нет ошибки
 
-    hitValue = objectColor * (diffuse + ambient);
+    //hitValue = objectColor * (diffuse + ambient);
+     hitValue = vec3(2.0, 1.8, 1.5);
 }
 
