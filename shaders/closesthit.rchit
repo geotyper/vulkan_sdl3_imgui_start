@@ -40,10 +40,10 @@ vec3 sampleUnitSphere(inout uint s) {
 void main()
 {
     // 1) Handle the lamp itself (emissive) - no changes here
-    if (gl_InstanceCustomIndexEXT == 0u) {
-        prd.color = lampColor;
-        return;
-    }
+    //if (gl_InstanceCustomIndexEXT == 0u) {
+    //    prd.color = lampColor;
+    //    return;
+    //}
 
     // 2) Calculate the hit position and the now-correct normal vector
     vec3 hitPos = gl_WorldRayOriginEXT +

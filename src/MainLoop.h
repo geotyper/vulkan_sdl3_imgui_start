@@ -18,6 +18,7 @@ public:
     void Run();
     void Shutdown();
 
+    void handleMouseMotion(const SDL_Event &e, float deltaTime);
 private:
     void handleEvents();
     void update(float deltaTime);

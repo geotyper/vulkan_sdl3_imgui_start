@@ -42,12 +42,38 @@ void Camera::LookAt(const vec3& pos, const vec3& target) {
     this->MakeTransform();
 }
 
-void Camera::Move(const float side, const float direction) {
+void Camera::Move(const float side, const float direction, const float vertical) {
     vec3 cameraSide = normalize(cross(mDirection, sCameraUp));
 
+    // Calculate and apply horizontal movement (sideways)
     mPosition += cameraSide * side;
+
+    // Calculate and apply forward/backward movement
     mPosition += mDirection * direction;
 
+    // Apply vertical movement along the camera's up vector
+    mPosition += sCameraUp * vertical;
+
+    this->MakeTransform();
+}
+
+void Camera::RotateExp(const float angleYaw, const float anglePitch) {
+    // Calculate side vector
+    vec3 cameraSide = normalize(cross(mDirection, sCameraUp));
+
+    // Yaw rotation around global up-axis (left-right)
+    quat yawRotation = QAngleAxis(Deg2Rad(angleYaw), sCameraUp);
+
+    // Pitch rotation around camera side-axis (up-down)
+    quat pitchRotation = QAngleAxis(Deg2Rad(anglePitch), cameraSide);
+
+    // Combine rotations
+    quat rotation = normalize(yawRotation * pitchRotation);
+
+    // Rotate camera direction
+    mDirection = normalize(QRotate(rotation, mDirection));
+
+    // Update camera transform
     this->MakeTransform();
 }
 

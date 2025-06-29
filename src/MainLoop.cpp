@@ -31,6 +31,7 @@ void MainLoop::Initialize(const std::string& title, uint32_t width, uint32_t hei
 
     m_camera.SetViewport({0, 0, (int)width, (int)height});
     m_camera.LookAt({0.0f, 1.0f, 3.5f}, {0.0f, 0.5f, 0.0f});
+
 }
 
 void MainLoop::Run()
@@ -124,16 +125,39 @@ void MainLoop::handleEvents() {
 
 void MainLoop::update(float deltaTime) {
     const float cameraSpeed = 5.0f * deltaTime;
-    // CORRECTED: SDL3's SDL_GetKeyboardState returns const Uint8*
+    const float rotationSpeed = 60.0f * deltaTime; // Degrees per second
+
     const bool* keyboardState = SDL_GetKeyboardState(nullptr);
 
     float moveForward = 0.0f;
     float moveSide = 0.0f;
+    float moveVertical = 0.0f;
+    float yawRotation = 0.0f;
 
+    // Movement
     if (keyboardState[SDL_SCANCODE_W]) moveForward += cameraSpeed;
     if (keyboardState[SDL_SCANCODE_S]) moveForward -= cameraSpeed;
     if (keyboardState[SDL_SCANCODE_A]) moveSide -= cameraSpeed;
     if (keyboardState[SDL_SCANCODE_D]) moveSide += cameraSpeed;
+    if (keyboardState[SDL_SCANCODE_UP]) moveVertical += cameraSpeed;
+    if (keyboardState[SDL_SCANCODE_DOWN]) moveVertical -= cameraSpeed;
 
-    m_camera.Move(moveSide, moveForward);
+    // Rotation around Y-axis (yaw)
+    if (keyboardState[SDL_SCANCODE_Q]) yawRotation -= rotationSpeed;
+    if (keyboardState[SDL_SCANCODE_E]) yawRotation += rotationSpeed;
+
+    m_camera.Move(moveSide, moveForward, moveVertical);
+    if (yawRotation != 0.0f) {
+        m_camera.Rotate(yawRotation, 0.0f); // Yaw rotation only
+    }
+}
+
+
+void MainLoop::handleMouseMotion(const SDL_Event& e, float deltaTime) {
+    const float mouseSensitivity = 0.1f;
+
+    float deltaX = static_cast<float>(e.motion.xrel);
+    float deltaY = static_cast<float>(e.motion.yrel);
+
+    m_camera.Rotate(-deltaX * mouseSensitivity, -deltaY * mouseSensitivity);
 }

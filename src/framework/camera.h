@@ -12,8 +12,9 @@ public:
     void        SetPosition(const vec3& pos);
 
     void        LookAt(const vec3& pos, const vec3& target);
-    void        Move(const float side, const float direction);
+    void        Move(float side, float direction, float vertical);
     void        Rotate(const float angleX, const float angleY);
+    void        RotateExp(const float angleYaw, const float anglePitch);
 
     float       GetNearPlane() const;
     float       GetFarPlane() const;

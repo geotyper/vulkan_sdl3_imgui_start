@@ -204,16 +204,20 @@ void GraphicsModule::initRayTracingModule() {
 
     GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
 
-    // 4. Создаем массив трансформаций для каждой из 9 сфер.
     std::vector<glm::mat4> transforms;
-    const float spacing = 2.5f; // Расстояние между сферами
-    const float scale = 0.4f;   // Уменьшим их размер
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            glm::vec3 position = glm::vec3(x * spacing, y * spacing, 0.0f);
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-            model = glm::scale(model, glm::vec3(scale));
-            transforms.push_back(model);
+    const float spacing = 2.5f; // Distance between spheres
+    const float scale = 1.1f;   // Reduce size
+    for (int z = -2; z <= 2; ++z) {
+        for (int y = -2; y <= 2; ++y) {
+            for (int x = -2; x <= 2; ++x) {
+
+                if(x==0 and y==0)
+                    continue;
+                glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
+                model = glm::scale(model, ((z+1)/2.0f)*glm::vec3(scale));
+                transforms.push_back(model);
+            }
         }
     }
 
