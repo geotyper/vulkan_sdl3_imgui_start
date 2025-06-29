@@ -253,12 +253,18 @@ namespace rtx {
         VkDeviceAddress baseAddr = vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
         VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 2 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 2 * m_sbtStride };
+        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 3 * m_sbtStride, m_sbtStride, m_sbtStride };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
+       // VkStridedDeviceAddressRegionKHR callableRegion{};
 
-        vkCmdTraceRaysKHR(cmd, &rgenRegion, &missRegion, &hitRegion, &callableRegion,
-                          extent.width, extent.height, 1);
+        vkCmdTraceRaysKHR(cmd,
+                          &rgenRegion,
+                          &missRegion,
+                          &hitRegion,
+                          &callableRegion,
+                          extent.width, extent.height,
+                          1);
 
         // 4. Transition storage image for transfer and target image for receiving
         // 3. Барьеры перед копированием:
@@ -321,23 +327,60 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::CreateDescriptorSetLayout() {
-        VkDescriptorSetLayoutBinding tlasBinding{ 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR };
-        VkDescriptorSetLayoutBinding imageBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR };
-        VkDescriptorSetLayoutBinding cameraBinding{ 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR };
+    //------------------------------------------------------------------------------
+    //  RayTracingModule::CreateDescriptorSetLayout
+    //  – один-единственный набор, доступный из RGEN, MISS и CHIT-стадий
+    //------------------------------------------------------------------------------
+    void RayTracingModule::CreateDescriptorSetLayout()
+    {
+        /* 0 ─ TLAS -------------------------------------------------------------- */
+        VkDescriptorSetLayoutBinding tlas{};
+        tlas.binding         = 0;
+        tlas.descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        tlas.descriptorCount = 1;
+        tlas.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR      |
+                          VK_SHADER_STAGE_MISS_BIT_KHR        |  // теневой miss
+                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;    // hit-шейдер
 
-        VkDescriptorSetLayoutBinding vbBinding{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR };
-        VkDescriptorSetLayoutBinding ibBinding{ 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR };
-        std::array bindings{ tlasBinding, imageBinding, cameraBinding,
-                            vbBinding,  ibBinding };
+        /* 1 ─ Storage-image (куда пишем кадр) ---------------------------------- */
+        VkDescriptorSetLayoutBinding image{};
+        image.binding         = 1;
+        image.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        image.descriptorCount = 1;
+        image.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR      |
+                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;  // если читаете в hit
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
+        /* 2 ─ Camera UBO (матрицы) – нужен только в raygen --------------------- */
+        VkDescriptorSetLayoutBinding camera{};
+        camera.binding         = 2;
+        camera.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        camera.descriptorCount = 1;
+        camera.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-        // CORRECTED: Assign to the single m_descriptorSetLayout member
-        VK_CHECK(vkCreateDescriptorSetLayout(device(), &layoutInfo, nullptr, &m_descriptorSetLayout), "Failed to create descriptor set layout");
+        /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
+        VkDescriptorSetLayoutBinding vertices{};
+        vertices.binding         = 3;
+        vertices.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        vertices.descriptorCount = 1;
+        vertices.stageFlags      = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+        /* 4 ─ Index-buffer (as SSBO) – только для CHIT ------------------------- */
+        VkDescriptorSetLayoutBinding indices = vertices;
+        indices.binding = 4;
+
+        const std::array bindings{
+            tlas, image, camera,
+            vertices, indices
+        };
+
+        VkDescriptorSetLayoutCreateInfo info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        info.bindingCount = static_cast<uint32_t>(bindings.size());
+        info.pBindings    = bindings.data();
+
+        VK_CHECK(vkCreateDescriptorSetLayout(device(), &info, nullptr, &m_descriptorSetLayout),
+                 "Failed to create descriptor set layout");
     }
+
 
     void RayTracingModule::CreateDescriptorPool() {
         std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -360,7 +403,7 @@ namespace rtx {
         VK_CHECK(vkCreatePipelineLayout(device(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout), "Failed to create pipeline layout");
 
         // Shaders
-        vulkanhelpers::Shader rgenShader, rmissShader, rchitShader;
+        vulkanhelpers::Shader rgenShader, rmissShader, rchitShader, shadowMissShader;
 
         // --- ADDED ERROR CHECKING HERE ---
         std::string rgenPath = std::string(m_createInfo.shaderDir) + "raygen.rgen.spv";
@@ -378,15 +421,29 @@ namespace rtx {
             throw std::runtime_error("Failed to load closest hit shader: " + rchitPath);
         }
 
+        std::string shadowMissPath = std::string(m_createInfo.shaderDir) + "shadow.rmiss.spv";
+        if (!shadowMissShader.LoadFromFile(m_context, shadowMissPath.c_str())) {
+            throw std::runtime_error("Failed to load shadow miss shader: " + shadowMissPath);
+        }
+
+        // Теперь у нас 4 стадии
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
             rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
+            shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
             rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+             // Второй miss-шейдер
         };
+
+        //std::vector<VkPipelineShaderStageCreateInfo> stages = {
+        //    rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
+        //    rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
+        //    rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+        //};
 
         // Shader Groups
         // --- THIS IS THE CORRECTED SHADER GROUP SETUP ---
-        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(3);
+        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(4);
 
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -404,13 +461,31 @@ namespace rtx {
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        // Group 2: Triangle Hit Group
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[2].closestHitShader = 2; // Index of rchit shader in stages array
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        groups[2].generalShader = 2; // Index of rmiss shader in stages array
+        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        // Group 2: Triangle Hit Group
+        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[3].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[3].closestHitShader = 3; // Index of rchit shader in stages array
+        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
+        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        //groups[3] = {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, nullptr,
+        //             VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 3,
+        //             VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, nullptr}; // Теневой miss
+
+        //groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        //groups[3].generalShader = 1; // Index of rmiss shader in stages array
+        //groups[3].closestHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -418,7 +493,7 @@ namespace rtx {
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(groups.size());
         pipelineInfo.pGroups = groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 1;
+        pipelineInfo.maxPipelineRayRecursionDepth = 2;
         pipelineInfo.layout = m_pipelineLayout;
 
         VK_CHECK(vkCreateRayTracingPipelinesKHR(device(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create ray tracing pipeline");
@@ -426,6 +501,7 @@ namespace rtx {
         rgenShader.Destroy(m_context);
         rmissShader.Destroy(m_context);
         rchitShader.Destroy(m_context);
+        shadowMissShader.Destroy(m_context);
     }
 
     void RayTracingModule::CreateShaderBindingTable()
@@ -437,7 +513,7 @@ namespace rtx {
         // Шаг для каждой записи в SBT должен быть выровнен по shaderGroupBaseAlignment.
         m_sbtStride = AlignUp(handleSize, baseAlignment);
 
-        const uint32_t groupCount = 3; // rgen, miss, hit
+        const uint32_t groupCount = 4; // rgen, miss, hit
         const uint32_t sbtSize = groupCount * m_sbtStride;
 
         // Получаем хендлы из драйвера
@@ -447,7 +523,9 @@ namespace rtx {
         // Вручную копируем хендлы в буфер с правильным выравниванием (padding)
         std::vector<uint8_t> sbtData(sbtSize, 0u);
         for(uint32_t i = 0; i < groupCount; ++i) {
-            memcpy(sbtData.data() + i * m_sbtStride, rawHandles.data() + i * handleSize, handleSize);
+            memcpy(sbtData.data() + i * m_sbtStride,
+                   rawHandles.data() + i * handleSize,
+                   handleSize);
         }
 
         const VkBufferUsageFlags usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
