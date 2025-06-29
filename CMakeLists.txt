@@ -77,6 +77,7 @@ add_subdirectory(external/volk)
 
 # === Executable ===
 add_executable(DroneVisualizer ${HEADERS} ${SRC}
+    src/shared_with_shaders.h
     #${IMGUI_SRC}
     #src/AccelerationStructures.h
     #src/AccelerationStructures.cpp
@@ -120,7 +121,7 @@ target_link_libraries(DroneVisualizer
 target_compile_definitions(DroneVisualizer PRIVATE SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
 
 # === Shader Compilation Logic ===
-file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rmiss")
+file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rahit" "shaders/*.rmiss")
 set(SPIRV_SHADERS "")
 
 find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator)

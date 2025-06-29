@@ -1,4 +1,5 @@
 #include "RayTracingModule.h"
+#include "shared_with_shaders.h"
 
 #include <stdexcept>
 #include <vector>
@@ -194,7 +195,7 @@ namespace rtx {
 
         mesh->vertexCount  = static_cast<uint32_t>(vertices.size());
         mesh->indexCount   = static_cast<uint32_t>(indices.size());
-        mesh->vertexStride = sizeof(Vertex);                //  ← fix
+        mesh->vertexStride = sizeof(Vertex);
 
         const VkBufferUsageFlags commonUsage =
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
@@ -253,8 +254,8 @@ namespace rtx {
         VkDeviceAddress baseAddr = vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
         VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 1*m_sbtStride };
-        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 2 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 2 * m_sbtStride };
+        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 3 * m_sbtStride, m_sbtStride, 2* m_sbtStride };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
 
@@ -334,43 +335,47 @@ namespace rtx {
     void RayTracingModule::CreateDescriptorSetLayout()
     {
         /* 0 ─ TLAS -------------------------------------------------------------- */
-        VkDescriptorSetLayoutBinding tlas{};
-        tlas.binding         = 0;
-        tlas.descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-        tlas.descriptorCount = 1;
-        tlas.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR      |
-                          VK_SHADER_STAGE_MISS_BIT_KHR        |  // теневой miss
-                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;    // hit-шейдер
+        VkDescriptorSetLayoutBinding tlasBinding{};
+        tlasBinding.binding         = SWS_SCENE_AS_BINDING;
+        tlasBinding.descriptorType  = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        tlasBinding.descriptorCount = 1;
+        tlasBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR      |
+                                      VK_SHADER_STAGE_MISS_BIT_KHR        |  // теневой miss
+                                      VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;    // hit-шейдер
 
         /* 1 ─ Storage-image (куда пишем кадр) ---------------------------------- */
-        VkDescriptorSetLayoutBinding image{};
-        image.binding         = 1;
-        image.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        image.descriptorCount = 1;
-        image.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR      |
-                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;  // если читаете в hit
+        VkDescriptorSetLayoutBinding imageBinding{};
+        imageBinding.binding         = SWS_RESULT_IMAGE_BINDING;
+        imageBinding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        imageBinding.descriptorCount = 1;
+        imageBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR     |
+                                       VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;  // если читаете в hit
 
         /* 2 ─ Camera UBO (матрицы) – нужен только в raygen --------------------- */
-        VkDescriptorSetLayoutBinding camera{};
-        camera.binding         = 2;
-        camera.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        camera.descriptorCount = 1;
-        camera.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        VkDescriptorSetLayoutBinding cameraBinding{};
+        cameraBinding.binding         = SWS_CAMERA_BINDING;
+        cameraBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        cameraBinding.descriptorCount = 1;
+        cameraBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
         /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
-        VkDescriptorSetLayoutBinding vertices{};
-        vertices.binding         = 3;
-        vertices.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        vertices.descriptorCount = 1;
-        vertices.stageFlags      = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        VkDescriptorSetLayoutBinding verticesBinding{};
+        verticesBinding.binding         = SWS_VERTICES_BINDING;
+        verticesBinding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        verticesBinding.descriptorCount = 1;
+        verticesBinding.stageFlags      = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         /* 4 ─ Index-buffer (as SSBO) – только для CHIT ------------------------- */
-        VkDescriptorSetLayoutBinding indices = vertices;
-        indices.binding = 4;
+
+        VkDescriptorSetLayoutBinding indicesBinding{};
+        indicesBinding.binding          = SWS_INDICES_BINDING;
+        indicesBinding.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        indicesBinding.descriptorCount  = 1;
+        indicesBinding.stageFlags       = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         const std::array bindings{
-            tlas, image, camera,
-            vertices, indices
+            tlasBinding, imageBinding, cameraBinding,
+            verticesBinding, indicesBinding
         };
 
         VkDescriptorSetLayoutCreateInfo info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
@@ -384,10 +389,10 @@ namespace rtx {
 
     void RayTracingModule::CreateDescriptorPool() {
         std::vector<VkDescriptorPoolSize> poolSizes = {
-            { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 }
+            { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,    1 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,                 1 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                1 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                SWS_NUM_GEOMETRY_BUFFERS }
         };
         VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -403,9 +408,8 @@ namespace rtx {
         VK_CHECK(vkCreatePipelineLayout(device(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout), "Failed to create pipeline layout");
 
         // Shaders
-        vulkanhelpers::Shader rgenShader, rmissShader, rchitShader, shadowMissShader;
+        vulkanhelpers::Shader rgenShader, rmissShader, rchitShader, shadowMissShader, shadowAhitShader;
 
-        // --- ADDED ERROR CHECKING HERE ---
         std::string rgenPath = std::string(m_createInfo.shaderDir) + "raygen.rgen.spv";
         if (!rgenShader.LoadFromFile(m_context, rgenPath.c_str())) {
             throw std::runtime_error("Failed to load raygen shader: " + rgenPath);
@@ -421,29 +425,34 @@ namespace rtx {
             throw std::runtime_error("Failed to load closest hit shader: " + rchitPath);
         }
 
-        //std::string shadowMissPath = std::string(m_createInfo.shaderDir) + "shadow.rmiss.spv";
-        //if (!shadowMissShader.LoadFromFile(m_context, shadowMissPath.c_str())) {
-        //    throw std::runtime_error("Failed to load shadow miss shader: " + shadowMissPath);
-        //}
+        std::string shadowMissPath = std::string(m_createInfo.shaderDir) + "shadow.rmiss.spv";
+        if (!shadowMissShader.LoadFromFile(m_context, shadowMissPath.c_str())) {
+            throw std::runtime_error("Failed to load shadow miss shader: " + shadowMissPath);
+        }
 
-        // Теперь у нас 4 стадии
-        //std::vector<VkPipelineShaderStageCreateInfo> stages = {
-        //    rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
-        //    rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
-        //    shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
-        //    rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
-        //     // Второй miss-шейдер
-        //};
+        std::string shadowAhitPath = std::string(m_createInfo.shaderDir) + "shadow.rahit.spv";
+        if (!shadowAhitShader.LoadFromFile(m_context, shadowAhitPath.c_str())) {
+            throw std::runtime_error("Failed to load shadow any-hit shader: " + shadowAhitPath);
+        }
+
+        auto s_rgen       = rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        auto s_miss       = rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
+        auto s_shadowMiss = shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
+        auto s_chit       = rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+        auto a_chit       = shadowAhitShader.GetShaderStage(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
-            rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
-            rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
-            rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+            s_rgen,
+            s_miss,
+            s_shadowMiss,
+            s_chit,
+            a_chit
         };
 
         // Shader Groups
         // --- THIS IS THE CORRECTED SHADER GROUP SETUP ---
-        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(3);
+
+        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(SWS_NUM_GROUPS);
 
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -461,20 +470,28 @@ namespace rtx {
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        //groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        //groups[2].generalShader = 2; // Index of rmiss shader in stages array
-        //groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-        // Group 2: Triangle Hit Group
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[2].closestHitShader = 2; // Index of rchit shader in stages array
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        groups[2].generalShader = 2; // Index of rmiss shader in stages array
+        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        // Group 3: Triangle Hit Group
+        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[3].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[3].closestHitShader = 3;
+        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
+        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        // Group 4: Shadow Hit Group (for shadow rays) <-- NEW
+        groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[4].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[4].closestHitShader = VK_SHADER_UNUSED_KHR; // No closest-hit needed for shadows
+        groups[4].anyHitShader = 4; // Use the new shadow.rahit shader
+        groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
 
         // Ray Tracing Pipeline
@@ -483,7 +500,7 @@ namespace rtx {
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(groups.size());
         pipelineInfo.pGroups = groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 1;
+        pipelineInfo.maxPipelineRayRecursionDepth = 2;
         pipelineInfo.layout = m_pipelineLayout;
 
         VK_CHECK(vkCreateRayTracingPipelinesKHR(device(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create ray tracing pipeline");
@@ -503,7 +520,7 @@ namespace rtx {
         // Шаг для каждой записи в SBT должен быть выровнен по shaderGroupBaseAlignment.
         m_sbtStride = AlignUp(handleSize, baseAlignment);
 
-        const uint32_t groupCount = 4; // rgen, miss, hit
+        const uint32_t groupCount = SWS_NUM_GROUPS; // rgen, miss, hit
         const uint32_t sbtSize = groupCount * m_sbtStride;
 
         // Получаем хендлы из драйвера
@@ -567,7 +584,7 @@ namespace rtx {
         VkWriteDescriptorSet tlasWrite{};
         tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         tlasWrite.dstSet = m_descriptorSet;
-        tlasWrite.dstBinding = 0;
+        tlasWrite.dstBinding = SWS_SCENE_AS_BINDING;
         tlasWrite.descriptorCount = 1;
         tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         tlasWrite.pNext = &tlasWriteInfo; // Link the acceleration structure info
@@ -577,7 +594,7 @@ namespace rtx {
         VkWriteDescriptorSet imageWrite{};
         imageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         imageWrite.dstSet = m_descriptorSet;
-        imageWrite.dstBinding = 1;
+        imageWrite.dstBinding = SWS_RESULT_IMAGE_BINDING;
         imageWrite.descriptorCount = 1;
         imageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         imageWrite.pImageInfo = &storageImageInfo;
@@ -587,7 +604,7 @@ namespace rtx {
         VkWriteDescriptorSet cameraWrite{};
         cameraWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         cameraWrite.dstSet = m_descriptorSet;
-        cameraWrite.dstBinding = 2;
+        cameraWrite.dstBinding = SWS_CAMERA_BINDING;
         cameraWrite.descriptorCount = 1;
         cameraWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         cameraWrite.pBufferInfo = &cameraBufferInfo;
@@ -601,7 +618,7 @@ namespace rtx {
 
         VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
         vbWrite.dstSet          = m_descriptorSet;
-        vbWrite.dstBinding      = 3;
+        vbWrite.dstBinding      = SWS_VERTICES_BINDING;
         vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         vbWrite.descriptorCount = 1;
         vbWrite.pBufferInfo     = &vbInfo;
@@ -613,7 +630,7 @@ namespace rtx {
         ibInfo.range  = VK_WHOLE_SIZE;
 
         VkWriteDescriptorSet ibWrite = vbWrite;
-        ibWrite.dstBinding  = 4;
+        ibWrite.dstBinding  = SWS_INDICES_BINDING;
         ibWrite.pBufferInfo = &ibInfo;
 
         // …push в writes
@@ -654,42 +671,6 @@ namespace rtx {
         vkFreeCommandBuffers(device(), m_createInfo.commandPool, 1, &commandBuffer);
     }
 
-    //void RayTracingModule::executeImmediateCommand(const std::function<void(VkCommandBuffer)>& command) {
-    //    VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-    //    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    //    allocInfo.commandPool = m_context.commandPool;
-    //    allocInfo.commandBufferCount = 1;
-    //
-    //    VkCommandBuffer commandBuffer;
-    //    VK_CHECK(vkAllocateCommandBuffers(m_context.device, &allocInfo, &commandBuffer), "Failed to allocate one-shot command buffer");
-    //
-    //    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    //    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    //    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin one-shot command buffer");
-    //
-    //    command(commandBuffer);
-    //
-    //    VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end one-shot command buffer");
-    //
-    //    // --- Новый, более надежный способ синхронизации с Fence ---
-    //    VkFence fence;
-    //    VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-    //    VK_CHECK(vkCreateFence(m_context.device, &fenceInfo, nullptr, &fence), "Failed to create one-shot fence");
-    //
-    //    VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
-    //    submitInfo.commandBufferCount = 1;
-    //    submitInfo.pCommandBuffers = &commandBuffer;
-    //
-    //    VK_CHECK(vkQueueSubmit(m_context.transferQueue, 1, &submitInfo, fence), "Failed to submit one-shot command buffer");
-    //
-    //    // Ждем завершения именно этой команды, а не всей очереди
-    //    VK_CHECK(vkWaitForFences(m_context.device, 1, &fence, VK_TRUE, UINT64_MAX), "Failed to wait for one-shot fence");
-    //
-    //    // Очищаем ресурсы
-    //    vkDestroyFence(m_context.device, fence, nullptr);
-    //    vkFreeCommandBuffers(m_context.device, m_context.commandPool, 1, &commandBuffer);
-    //}
-
     void RayTracingModule::BuildAccelerationStructures() {
         if (!m_scene || m_scene->meshes.empty()) return;
 
@@ -711,6 +692,7 @@ namespace rtx {
         triangles.vertexStride = mesh.vertexStride;
         triangles.indexType = VK_INDEX_TYPE_UINT32;
         triangles.indexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.indexBuffer).deviceAddress;
+
         VkAccelerationStructureGeometryKHR asGeom{};
         asGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         asGeom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
@@ -765,17 +747,6 @@ namespace rtx {
     }
 
     void RayTracingModule::BuildTLAS() {
-        //std::vector<VkAccelerationStructureInstanceKHR> instances;
-        //for (const auto& mesh : m_scene->meshes) {
-        //    VkAccelerationStructureInstanceKHR instance{};
-        //    instance.transform = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
-        //    instance.instanceCustomIndex = 0;
-        //    instance.mask = 0xFF;
-        //    instance.instanceShaderBindingTableRecordOffset = 0;
-        //    instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-        //    instance.accelerationStructureReference = mesh->blas.deviceAddress;
-        //    instances.push_back(instance);
-        //}
 
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         instances.reserve(m_instanceTransforms.size());
@@ -796,7 +767,7 @@ namespace rtx {
             instance.instanceCustomIndex = (i == 4) ? 0 : 1;
 
             instance.mask = 0xFF;
-            instance.instanceShaderBindingTableRecordOffset = 0; // Используем одну и ту же hit-группу для всех
+            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_GROUP_IDX; // Используем одну и ту же hit-группу для всех
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
             instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
 
