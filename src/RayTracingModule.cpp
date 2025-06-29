@@ -751,6 +751,11 @@ namespace rtx {
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         instances.reserve(m_instanceTransforms.size());
 
+
+        // Define masks for different object types
+        const uint32_t MASK_LIGHT = 0x01;
+        const uint32_t MASK_OPAQUE_GEOM = 0x02;
+
         for (size_t i = 0; i < m_instanceTransforms.size(); ++i) {
             const auto& transform = m_instanceTransforms[i];
 
@@ -764,9 +769,10 @@ namespace rtx {
             // Устанавливаем уникальный ID для каждого экземпляра.
             // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
             // Остальные получат ID 1.
-            instance.instanceCustomIndex = (i == 4) ? 0 : 1;
+            bool isLight = (i == 4); // The center sphere is the light
+            instance.instanceCustomIndex = isLight ? 0 : 1;
 
-            instance.mask = 0xFF;
+            instance.mask = isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
             instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_GROUP_IDX; // Используем одну и ту же hit-группу для всех
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
             instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
