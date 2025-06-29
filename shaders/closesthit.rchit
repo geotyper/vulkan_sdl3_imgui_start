@@ -1,50 +1,53 @@
-#version 460 core
+#version 460
 #extension GL_EXT_ray_tracing : require
 
-struct RadiancePayload { vec3 color; uint depth; };
-struct ShadowPayload   { bool blocked; };
+layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
-layout(location = 0) rayPayloadEXT RadiancePayload prd;
-layout(location = 1) rayPayloadEXT ShadowPayload   shadow;
+hitAttributeEXT vec2 baryCoords;
 
-layout(set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
+// The Vertex struct must exactly match the C++ side
+struct Vertex {
+    vec4 position;
+    vec4 normal;
+    vec4 color;
+    vec2 texCoord;
+    vec2 _pad;
+};
 
-const vec3 LIGHT_EMISSION = vec3(10.0);
-const vec3 DIFFUSE_COLOR  = vec3(0.7);
+layout(binding = 3, set = 0) readonly buffer VertexBuffer { Vertex v[]; };
+layout(binding = 4, set = 0) readonly buffer IndexBuffer { uint i[]; };
 
 void main()
 {
-    //------------------------------------------------------------------
-    // 1. Позиция пересечения (EXT): gl_HitTEXT
-    //------------------------------------------------------------------
-    vec3 hitPos = gl_WorldRayOriginEXT +
-                  gl_WorldRayDirectionEXT * gl_HitTEXT;
+    // --- Get surface data ---
+    const vec3 barycentrics = vec3(1.0 - baryCoords.x - baryCoords.y, baryCoords.x, baryCoords.y);
+    uint i0 = i[gl_PrimitiveID * 3 + 0];
+    uint i1 = i[gl_PrimitiveID * 3 + 1];
+    uint i2 = i[gl_PrimitiveID * 3 + 2];
+    Vertex v0 = v[i0], v1 = v[i1], v2 = v[i2];
 
-    // Нормаль — быстрая заглушка для сфер, если нет межвершинных нормалей
-    vec3 N = normalize(hitPos);
-
-    // 2. Лампочка (instanceCustomIndex == 0)
+    vec3 pos = v0.position.xyz * barycentrics.x + v1.position.xyz * barycentrics.y + v2.position.xyz * barycentrics.z;
+    vec3 normal = normalize(v0.normal.xyz * barycentrics.x + v1.normal.xyz * barycentrics.y + v2.normal.xyz * barycentrics.z);
+    
+    // --- Check if the object is the light source ---
     if (gl_InstanceCustomIndexEXT == 0) {
-        prd.color = LIGHT_EMISSION;
+        hitValue = vec3(15.0, 12.0, 9.0); // Bright, warm light
         return;
     }
 
-    // 3. Теневой луч ---------------------------------------------------------
-    vec3 lightPos = vec3(0.0);
-    vec3 L        = normalize(lightPos - hitPos);
-    float distL   = length(lightPos - hitPos);
+    // --- Lighting calculation for other spheres ---
+    float ambient = 0.1;
+    vec3 objectColor = vec3(0.8); 
+    vec3 finalColor = objectColor * ambient;
 
-    shadow.blocked = false;    // payload #1
-
-    traceRayEXT(topLevelAS,
-                gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
-                0xFF,
-                /*offset*/0, /*stride*/1, /*miss*/2,
-                hitPos + N * 0.001, 0.001,
-                L, distL - 0.002,
-                /*payloadLocation*/1);   // ← вместо shadow
-
-    float vis = shadow.blocked ? 0.0 : 1.0;
-    prd.color = DIFFUSE_COLOR * max(dot(N, L), 0.0) * vis;
+    vec3 lightPos = vec3(0.0, 0.0, 0.0); // Position of the central light sphere
+    vec3 lightDir = normalize(lightPos - pos);
+    
+    // Calculate diffuse light
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    
+    // Add diffuse color to the final color
+    finalColor += objectColor * diffuse;
+    
+    hitValue = finalColor;
 }
-

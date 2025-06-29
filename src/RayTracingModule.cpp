@@ -253,8 +253,8 @@ namespace rtx {
         VkDeviceAddress baseAddr = vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
         VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 2 * m_sbtStride };
-        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 3 * m_sbtStride, m_sbtStride, m_sbtStride };
+        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 1*m_sbtStride };
+        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 2 * m_sbtStride, m_sbtStride, m_sbtStride };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
 
@@ -421,29 +421,29 @@ namespace rtx {
             throw std::runtime_error("Failed to load closest hit shader: " + rchitPath);
         }
 
-        std::string shadowMissPath = std::string(m_createInfo.shaderDir) + "shadow.rmiss.spv";
-        if (!shadowMissShader.LoadFromFile(m_context, shadowMissPath.c_str())) {
-            throw std::runtime_error("Failed to load shadow miss shader: " + shadowMissPath);
-        }
+        //std::string shadowMissPath = std::string(m_createInfo.shaderDir) + "shadow.rmiss.spv";
+        //if (!shadowMissShader.LoadFromFile(m_context, shadowMissPath.c_str())) {
+        //    throw std::runtime_error("Failed to load shadow miss shader: " + shadowMissPath);
+        //}
 
         // Теперь у нас 4 стадии
-        std::vector<VkPipelineShaderStageCreateInfo> stages = {
-            rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
-            rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
-            shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
-            rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
-             // Второй miss-шейдер
-        };
-
         //std::vector<VkPipelineShaderStageCreateInfo> stages = {
         //    rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
         //    rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
+        //    shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
         //    rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+        //     // Второй miss-шейдер
         //};
+
+        std::vector<VkPipelineShaderStageCreateInfo> stages = {
+            rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR),
+            rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR),
+            rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+        };
 
         // Shader Groups
         // --- THIS IS THE CORRECTED SHADER GROUP SETUP ---
-        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(4);
+        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(3);
 
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -461,31 +461,21 @@ namespace rtx {
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
+        //groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        //groups[2].generalShader = 2; // Index of rmiss shader in stages array
+        //groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        // Group 2: Triangle Hit Group
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[2].generalShader = 2; // Index of rmiss shader in stages array
-        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[2].closestHitShader = 2; // Index of rchit shader in stages array
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        // Group 2: Triangle Hit Group
-        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[3].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[3].closestHitShader = 3; // Index of rchit shader in stages array
-        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-        //groups[3] = {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, nullptr,
-        //             VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 3,
-        //             VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, nullptr}; // Теневой miss
-
-        //groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        //groups[3].generalShader = 1; // Index of rmiss shader in stages array
-        //groups[3].closestHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -493,7 +483,7 @@ namespace rtx {
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(groups.size());
         pipelineInfo.pGroups = groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 2;
+        pipelineInfo.maxPipelineRayRecursionDepth = 1;
         pipelineInfo.layout = m_pipelineLayout;
 
         VK_CHECK(vkCreateRayTracingPipelinesKHR(device(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create ray tracing pipeline");
