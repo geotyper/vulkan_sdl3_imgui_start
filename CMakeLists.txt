@@ -130,13 +130,13 @@ endif()
 
 foreach(SHADER_FILE ${SHADER_FILES})
     get_filename_component(FILE_NAME ${SHADER_FILE} NAME)
-    set(SPIRV_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shaders_temp/${FILE_NAME}.spv")
+    set(SPIRV_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/${FILE_NAME}.spv")
 
     # --- THIS IS THE CORRECTED SHADER COMPILE COMMAND ---
     # Added --target-env vulkan1.2 to match our application's API version
     add_custom_command(
         OUTPUT ${SPIRV_OUTPUT}
-        COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.2 -V ${SHADER_FILE} -o ${SPIRV_OUTPUT}
+        COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.3 -V ${SHADER_FILE} -o ${SPIRV_OUTPUT}
         DEPENDS ${SHADER_FILE}
         COMMENT "Compiling shader: ${FILE_NAME}"
     )
