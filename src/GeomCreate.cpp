@@ -9,7 +9,7 @@
 // have been removed as they are no longer the responsibility of this class.
 
 
-VkVertexInputBindingDescription GeomCreate::getBindingDescription() {
+VkVertexInputBindingDescription GeomCreate::getBindingDescription2() {
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
     binding.stride = sizeof(Vertex);
@@ -17,7 +17,7 @@ VkVertexInputBindingDescription GeomCreate::getBindingDescription() {
     return binding;
 }
 
-std::vector<VkVertexInputAttributeDescription> GeomCreate::getAttributeDescriptions() {
+std::vector<VkVertexInputAttributeDescription> GeomCreate::getAttributeDescriptions2() {
     std::vector<VkVertexInputAttributeDescription> attrs(2);
     attrs[0].binding = 0;
     attrs[0].location = 0;

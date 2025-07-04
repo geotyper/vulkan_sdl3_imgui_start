@@ -623,7 +623,7 @@ void GraphicsModule::createLogicalDevice() {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     };
 
     VkDeviceCreateInfo createInfo{};
@@ -859,8 +859,8 @@ void GraphicsModule::createGraphicsPipeline() {
 
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertStage, fragStage };
 
-    auto binding = GeomCreate::getBindingDescription();
-    auto attributes = GeomCreate::getAttributeDescriptions();
+    auto binding = GeomCreate::getBindingDescription2();
+    auto attributes = GeomCreate::getAttributeDescriptions2();
 
     VkPipelineVertexInputStateCreateInfo vertexInput{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
     vertexInput.vertexBindingDescriptionCount = 1;

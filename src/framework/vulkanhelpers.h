@@ -1,8 +1,8 @@
 #pragma once
-//#define VK_NO_PROTOTYPES
+#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
-//#include "volk.h"
+#include "volk.h"
 #include <cassert>
 #include <stdexcept> // For std::runtime_error
 
