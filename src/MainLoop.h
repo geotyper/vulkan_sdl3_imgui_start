@@ -23,12 +23,9 @@ private:
     void handleEvents();
     void update(float deltaTime);
 
-    SDL_Window* m_window = nullptr;
     bool m_isRunning = true;
 
-    // Use unique_ptr to an incomplete type to fully break the circular dependency
-    // and solve the sizeof error chain.
-    std::unique_ptr<GraphicsModule> m_graphicsModule;
+    GraphicsModule m_graphicsModule;
     Camera m_camera;
 
     bool m_relativeMouseMode = false;

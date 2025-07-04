@@ -38,7 +38,7 @@ set(HEADERS
     #src/ArcBallCamera.h
     src/HelpStructures.h
     src/MainLoop.h
-    #src/ImGuiModule.h
+    src/ImGuiModule.h
     src/GraphicsModule.h
     #src/VulkanHelperMethods.h
     src/GeomCreate.h
@@ -53,7 +53,7 @@ set(SRC
 
     #src/ArcBallCamera.cpp
     src/MainLoop.cpp
-    #src/ImGuiModule.cpp
+    src/ImGuiModule.cpp
     src/GraphicsModule.cpp
     #src/VulkanHelperMethods.cpp
     src/GeomCreate.cpp
@@ -63,22 +63,22 @@ set(SRC
 
 # === Include dirs ===
 include_directories(
-    #external/imgui
-    #external/imgui/backends
+    external/imgui
+    external/imgui/backends
     external/stb
     external/tinyobjloader
-    external/volk
-    external/vulkan/include
+    #external/volk
+    #external/vulkan/include
     #src
 )
 
-add_subdirectory(external/vulkan)   # Vulkan::Headers
-add_subdirectory(external/volk)
+#add_subdirectory(external/vulkan)   # Vulkan::Headers
+#add_subdirectory(external/volk)
 
 # === Executable ===
 add_executable(DroneVisualizer ${HEADERS} ${SRC}
     src/shared_with_shaders.h
-    #${IMGUI_SRC}
+    ${IMGUI_SRC}
     #src/AccelerationStructures.h
     #src/AccelerationStructures.cpp
 
@@ -87,12 +87,16 @@ add_executable(DroneVisualizer ${HEADERS} ${SRC}
 
 target_link_options(DroneVisualizer PRIVATE -no-pie)
 
+#target_compile_definitions(DroneVisualizer PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK)
+
+
+
 # === Link SDL3 and Vulkan ===
 target_link_libraries(DroneVisualizer
     SDL3::SDL3
     Vulkan::Vulkan
     glm::glm
-    volk::volk
+    #volk::volk
 )
 
 ## === Shader Path Macro ===
@@ -117,11 +121,13 @@ target_link_libraries(DroneVisualizer
 ## === Create a Custom Target to Trigger Compilation ===
 #add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 
+add_compile_definitions(SHADER_PATH_GLSL="${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/")
+
 # === Shader Path Definition ===
 target_compile_definitions(DroneVisualizer PRIVATE SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
 
 # === Shader Compilation Logic ===
-file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rahit" "shaders/*.rmiss")
+file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rahit" "shaders/*.rmiss" "shaders/*.vert" "shaders/*.frag")
 set(SPIRV_SHADERS "")
 
 find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator)

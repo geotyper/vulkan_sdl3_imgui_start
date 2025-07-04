@@ -22,7 +22,7 @@ void ImGuiModule::init(SDL_Window* window,
     device = inDevice;
     physicalDevice = inPhysicalDevice;
 
-    // 1. Descriptor pool
+    //// 1. Descriptor pool
     VkDescriptorPoolSize poolSizes[] = {
         { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
@@ -43,8 +43,12 @@ void ImGuiModule::init(SDL_Window* window,
     poolInfo.poolSizeCount = static_cast<uint32_t>(std::size(poolSizes));
     poolInfo.pPoolSizes = poolSizes;
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+    VkDescriptorPool m_descriptorPool;
+
+    if(vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
         throw std::runtime_error("Failed to create ImGui descriptor pool");
+
+    std::cout << "[ImGui] Descriptor pool created successfully" << std::endl;
 
     // 2. Context
     IMGUI_CHECKVERSION();
@@ -63,7 +67,7 @@ void ImGuiModule::init(SDL_Window* window,
     initInfo.MinImageCount = imageCount;
     initInfo.ImageCount = imageCount;
     initInfo.QueueFamily = queueFamilyIndex;
-    initInfo.RenderPass = renderPass; // 👈 добавили
+    initInfo.RenderPass = renderPass;
 
     ImGui_ImplVulkan_Init(&initInfo);
 }

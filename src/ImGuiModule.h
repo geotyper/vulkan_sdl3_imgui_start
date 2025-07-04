@@ -51,8 +51,10 @@ public:
     int getSubdiv() const { return icoSubdiv; }
     void resetGeometryChanged() { geometryChanged = false; }
 
+VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+
 private:
     VkDevice device = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    //VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 };

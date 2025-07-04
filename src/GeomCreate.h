@@ -26,4 +26,6 @@ public:
         std::vector<Vertex>& outVertices,
         std::vector<uint32_t>& outIndices);
 
+    static VkVertexInputBindingDescription getBindingDescription();
+    static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
 };

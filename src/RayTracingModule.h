@@ -9,6 +9,7 @@
 #include <memory>
 #include <functional>
 
+
 namespace rtx {
 
 // A RAII wrapper for Vulkan's Acceleration Structure
