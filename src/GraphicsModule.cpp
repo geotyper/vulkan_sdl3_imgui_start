@@ -206,7 +206,7 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     //createFramebuffers();
 
     //createGraphicsPipeline();
-    //initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
+    initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
 
     std::cout << "Window @GraphicsModule: " << m_window << std::endl;
 
@@ -282,6 +282,15 @@ void GraphicsModule::initImgui()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
+    ImGui_ImplVulkan_LoadFunctions(
+        VK_API_VERSION_1_3,
+        /* loader_func = */ [](const char* name, void* user_data) -> PFN_vkVoidFunction
+        {
+            VkInstance inst = reinterpret_cast<VkInstance>(user_data);
+            return vkGetInstanceProcAddr(inst, name);
+        },
+        /* user_data = */ m_instance);
+
     ImGui_ImplVulkan_InitInfo info{};
     info.Instance       = m_instance;
     info.PhysicalDevice = m_physicalDevice;
@@ -300,6 +309,8 @@ void GraphicsModule::initImgui()
         if (err) std::cerr << "[ImGui/Vk] error = " << err << std::endl;
     };
 
+
+    ImGui_ImplSDL3_InitForVulkan(m_window);
     ImGui_ImplVulkan_Init(&info);
 
    // /* шрифты */
