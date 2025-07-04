@@ -276,6 +276,22 @@ void GraphicsModule::initRayTracingModule() {
 }
 
 
+//void GraphicsModule::recreateSwapchain() {
+//    int width = 0, height = 0;
+//    SDL_GetWindowSizeInPixels(m_window, &width, &height);
+//    while (width == 0 || height == 0) {
+//        SDL_GetWindowSizeInPixels(m_window, &width, &height);
+//        SDL_WaitEvent(nullptr);
+//    }
+//
+//    vkDeviceWaitIdle(m_device);
+//    cleanupSwapchain();
+//    createSwapchain();
+//    if (m_rtxModule) {
+//        m_rtxModule->OnResize(m_swapchainExtent);
+//    }
+//}
+
 void GraphicsModule::recreateSwapchain() {
     int width = 0, height = 0;
     SDL_GetWindowSizeInPixels(m_window, &width, &height);
@@ -285,18 +301,56 @@ void GraphicsModule::recreateSwapchain() {
     }
 
     vkDeviceWaitIdle(m_device);
+
+    // This now cleans up framebuffers and the render pass as well
     cleanupSwapchain();
-    createSwapchain();
+
+    // Recreate the full stack
+    createSwapchain();      // Recreates the swapchain and its images
+    createImageViews();     // Re-populates m_swapchainImageViews
+    createRenderPass();     // **KEY:** Recreate the render pass
+    createFramebuffers();   // **KEY:** Recreate framebuffers for the new image views
+
+    // Notify other modules that depend on the swapchain size/images
     if (m_rtxModule) {
         m_rtxModule->OnResize(m_swapchainExtent);
     }
+
+    // You'll likely need to notify ImGui as well so it can recreate its
+    // own framebuffers and pipelines if they depend on the swapchain.
+    // m_imguiModule.OnResize(...);
 }
 
+//void GraphicsModule::cleanupSwapchain() {
+//    for (auto imageView : m_swapchainImageViews) {
+//        vkDestroyImageView(m_device, imageView, nullptr);
+//    }
+//    m_swapchainImageViews.clear();
+//    if (m_swapchain != VK_NULL_HANDLE) {
+//        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+//        m_swapchain = VK_NULL_HANDLE;
+//    }
+//}
 void GraphicsModule::cleanupSwapchain() {
+    // 1. Destroy Framebuffers
+    for (auto framebuffer : m_framebuffers) {
+        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    }
+    m_framebuffers.clear();
+
+    // 2. Destroy Render Pass (Good Practice)
+    if (m_renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+        m_renderPass = VK_NULL_HANDLE;
+    }
+
+    // 3. Destroy ImageViews (as before)
     for (auto imageView : m_swapchainImageViews) {
         vkDestroyImageView(m_device, imageView, nullptr);
     }
     m_swapchainImageViews.clear();
+
+    // 4. Destroy Swapchain (as before)
     if (m_swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
@@ -304,63 +358,110 @@ void GraphicsModule::cleanupSwapchain() {
 }
 
 
+
 //void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
 //    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
 //
-//    VkCommandBufferBeginInfo beginInfo{};
-//    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+//    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+//    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Begin command buffer");
 //
-//    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Failed to begin recording command buffer");
+//    // --- Begin render pass ---
+//    VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
 //
-//    // 1. Record ray tracing rendering to swapchain image
-//    m_rtxModule->RecordCommands(
-//        cmd,
-//        m_swapchainImageViews[imageIndex],
-//        m_swapchainImages[imageIndex],
-//        m_swapchainExtent
-//        );
+//    VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+//    renderPassInfo.renderPass = m_renderPass;
+//    renderPassInfo.framebuffer = m_framebuffers[imageIndex];
+//    renderPassInfo.renderArea.offset = {0, 0};
+//    renderPassInfo.renderArea.extent = m_swapchainExtent;
+//    renderPassInfo.clearValueCount = 1;
+//    renderPassInfo.pClearValues = &clearColor;
 //
-//    // 2. Record ImGui UI rendering pass
-//    m_imguiModule.renderMenu(cmd, imageIndex);
+//    assert(imageIndex < m_framebuffers.size());
+//    assert(m_framebuffers[imageIndex] != VK_NULL_HANDLE);
+//    assert(m_renderPass != VK_NULL_HANDLE);
 //
-//    // 3. End the command buffer
-//    VK_CHECK(vkEndCommandBuffer(cmd), "Failed to record command buffer");
+//
+//    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+//
+//    // --- Draw your main scene ---
+//    //m_rtxModule->Render(cmd);
+//
+//    // --- Draw ImGui ---
+//    m_imguiModule.renderMenu(cmd);
+//
+//    // --- End render pass ---
+//    vkCmdEndRenderPass(cmd);
+//
+//    VK_CHECK(vkEndCommandBuffer(cmd), "End command buffer");
 //}
 
 void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
     VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
 
     VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Begin command buffer");
+    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Failed to begin recording command buffer");
 
-    // --- Begin render pass ---
+    // --- 1. Execute Ray Tracing ---
+    // This will trace the scene into an internal storage image and then
+    // copy the final result into the swapchain image.
+    // The final barrier in RecordCommands leaves the swapchain image in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
+    m_rtxModule->RecordCommands(
+        cmd,
+        m_swapchainImageViews[imageIndex], // Target view
+        m_swapchainImages[imageIndex],     // Target image
+        m_swapchainExtent
+        );
+
+    // --- 2. Render ImGui on top of the Ray-Traced Image ---
+    // The previous call left the swapchain image in PRESENT_SRC_KHR layout.
+    // The render pass for ImGui requires it to be in COLOR_ATTACHMENT_OPTIMAL.
+    // We must insert a barrier to handle this transition.
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    // No need to specify old/new queues if they are the same
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // The last operation was a copy (transfer)
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // Next operation is rendering
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // IMPORTANT: The layout after the rtx copy
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.image = m_swapchainImages[imageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,           // Wait for the copy to finish
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // Before color output stage
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+        );
+
+    // Now, begin the render pass for ImGui
     VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
-
     VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
     renderPassInfo.renderPass = m_renderPass;
     renderPassInfo.framebuffer = m_framebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = m_swapchainExtent;
     renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
-
-    assert(imageIndex < m_framebuffers.size());
-    assert(m_framebuffers[imageIndex] != VK_NULL_HANDLE);
-    assert(m_renderPass != VK_NULL_HANDLE);
-
+    renderPassInfo.pClearValues = &clearColor; // This value is now ignored due to the loadOp change below
 
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // --- Draw your main scene ---
-    //m_rtxModule->Render(cmd);
-
-    // --- Draw ImGui ---
+    // Draw the UI
     m_imguiModule.renderMenu(cmd);
 
-    // --- End render pass ---
     vkCmdEndRenderPass(cmd);
 
-    VK_CHECK(vkEndCommandBuffer(cmd), "End command buffer");
+    // The render pass's finalLayout will automatically transition the image
+    // back to VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, so we are done.
+
+    VK_CHECK(vkEndCommandBuffer(cmd), "Failed to record command buffer");
 }
 
 /* ------------------------------------------------------------
@@ -666,7 +767,9 @@ void GraphicsModule::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_swapchainFormat ;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    //colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    //not clear
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // <-- CRITICAL CHANGE
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
