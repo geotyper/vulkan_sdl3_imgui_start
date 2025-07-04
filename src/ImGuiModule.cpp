@@ -1,100 +1,168 @@
-#include <vulkan/vulkan.h>
-
+#include "ImGuiModule.h"
+#include "VulkanCheck.h"
+#include "volk.h"
+#include <imgui.h>
+#include "backends/imgui_impl_sdl3.h"
+#include "backends/imgui_impl_vulkan.h"
 #include <SDL3/SDL.h>
 #include "imgui.h"
-#include "imgui_impl_sdl3.h"
-//#define IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-#include "imgui_impl_vulkan.h"
 
-#include "ImGuiModule.h"
+
 #include <stdexcept>
 
 
+/* ---------------------- ImGui helpers ----------------------- */
+void ImGuiModule::createDescriptorPool()
+{
+    VkDescriptorPoolSize poolSizes[] = {
+                                        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1000 },
+                                        { VK_DESCRIPTOR_TYPE_SAMPLER,                1000 },
+                                        };
+    VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets       = 1000 * (uint32_t)std::size(poolSizes);
+    poolInfo.poolSizeCount = (uint32_t)std::size(poolSizes);
+    poolInfo.pPoolSizes    = poolSizes;
+    VkResult result = vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptorPool);
+    if (result != VK_SUCCESS)
+        throw std::runtime_error("ImGui descriptor pool failed: " + std::to_string(result));
+
+
+}
+
+void ImGuiModule::createRenderPass(VkFormat swapchainFormat, VkExtent2D swapchainExtent, const std::vector<VkImageView>& swapchainImageViews)
+{
+    VkAttachmentDescription color{};
+    color.format         = swapchainFormat;
+    color.samples        = VK_SAMPLE_COUNT_1_BIT;
+    color.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;        // сохраняем RT-картинку
+    color.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    color.initialLayout  = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference ref{ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments    = &ref;
+
+    VkRenderPassCreateInfo rp{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+    rp.attachmentCount = 1;
+    rp.pAttachments    = &color;
+    rp.subpassCount    = 1;
+    rp.pSubpasses      = &subpass;
+    VK_CHECK(vkCreateRenderPass(m_device, &rp, nullptr, &m_renderPass),
+             "ImGui render pass");
+
+    /* framebuffers */
+    m_framebuffers.resize(swapchainImageViews.size());
+    for (size_t i = 0; i < swapchainImageViews.size(); ++i)
+    {
+        VkImageView att[]{ swapchainImageViews[i] };
+        VkFramebufferCreateInfo fb{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+        fb.renderPass      = m_renderPass;
+        fb.attachmentCount = 1;
+        fb.pAttachments    = att;
+        fb.width  = swapchainExtent.width;
+        fb.height = swapchainExtent.height;
+        fb.layers = 1;
+        VK_CHECK(vkCreateFramebuffer(m_device, &fb, nullptr, &m_framebuffers[i]),
+                 "ImGui framebuffer");
+    }
+}
+
 void ImGuiModule::init(SDL_Window* window,
                        VkInstance instance,
-                       VkPhysicalDevice inPhysicalDevice,
-                       VkDevice inDevice,
+                       VkPhysicalDevice physicalDevice,
+                       VkDevice device,
                        VkQueue graphicsQueue,
                        uint32_t queueFamilyIndex,
-                       VkRenderPass renderPass,
-                       uint32_t imageCount)
+                       VkFormat swapchainFormat,
+                       VkExtent2D swapchainExtent,
+                       const std::vector<VkImageView>& swapchainImageViews,
+                       VkRenderPass renderPass)
 {
-    device = inDevice;
-    physicalDevice = inPhysicalDevice;
+    m_window = window;
+    m_instance = instance;
+    m_physicalDevice = physicalDevice;
+    m_device = device;
+    m_graphicsQueue = graphicsQueue;
+    m_extent = swapchainExtent;
+    m_renderPass = renderPass;
 
-    //// 1. Descriptor pool
-    VkDescriptorPoolSize poolSizes[] = {
-        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
-    };
+    if (!m_device) {
+        throw std::runtime_error("ImGuiModule: device is null before creating descriptor pool");
+    }
 
-    VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = 1000 * static_cast<uint32_t>(std::size(poolSizes));
-    poolInfo.poolSizeCount = static_cast<uint32_t>(std::size(poolSizes));
-    poolInfo.pPoolSizes = poolSizes;
+    volkLoadDevice(device);
 
-    VkDescriptorPool m_descriptorPool;
+    createDescriptorPool();
+    //createRenderPass(swapchainFormat, swapchainExtent, swapchainImageViews);
 
-    if(vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create ImGui descriptor pool");
+    //createFramebuffers(m_extent, swapchainImageViews);
 
-    std::cout << "[ImGui] Descriptor pool created successfully" << std::endl;
-
-    // 2. Context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
-    // 3. SDL3 binding
-    ImGui_ImplSDL3_InitForVulkan(window);
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
-    // 4. Vulkan binding
-    ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.Instance = instance;
-    initInfo.PhysicalDevice = physicalDevice;
-    initInfo.Device = device;
-    initInfo.Queue = graphicsQueue;
-    initInfo.DescriptorPool = descriptorPool;
-    initInfo.MinImageCount = imageCount;
-    initInfo.ImageCount = imageCount;
-    initInfo.QueueFamily = queueFamilyIndex;
-    initInfo.RenderPass = renderPass;
+    ImGui_ImplVulkan_LoadFunctions(
+        VK_API_VERSION_1_3,
+        [](const char* name, void* user_data) -> PFN_vkVoidFunction {
+            return vkGetInstanceProcAddr(reinterpret_cast<VkInstance>(user_data), name);
+        },
+        m_instance);
 
-    ImGui_ImplVulkan_Init(&initInfo);
+    ImGui_ImplSDL3_InitForVulkan(m_window);
+
+    ImGui_ImplVulkan_InitInfo info{};
+    info.Instance = m_instance;
+    info.PhysicalDevice = m_physicalDevice;
+    info.Device = m_device;
+    info.Queue = m_graphicsQueue;
+    info.QueueFamily = queueFamilyIndex;
+    info.DescriptorPool = m_descriptorPool;
+    info.RenderPass = m_renderPass;
+    info.MinImageCount = 2;
+    info.ImageCount = static_cast<uint32_t>(swapchainImageViews.size());
+    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    info.CheckVkResultFn = [](VkResult err) {
+        if (err) std::cerr << "[ImGui/Vulkan] Error: " << err << std::endl;
+    };
+
+    ImGui_ImplVulkan_Init(&info);
 }
 
+void ImGuiModule::createFramebuffers(VkExtent2D extent, const std::vector<VkImageView>& imageViews) {
+    m_framebuffers.resize(imageViews.size());
+    for (size_t i = 0; i < imageViews.size(); ++i) {
+        VkImageView attachments[] = { imageViews[i] };
+
+        VkFramebufferCreateInfo fbInfo{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+        fbInfo.renderPass = m_renderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = attachments;
+        fbInfo.width = extent.width;
+        fbInfo.height = extent.height;
+        fbInfo.layers = 1;
+
+        VK_CHECK(vkCreateFramebuffer(m_device, &fbInfo, nullptr, &m_framebuffers[i]),
+                 "Failed to create ImGui framebuffer");
+    }
+}
 
 void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer) {
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
     ImGui::Begin("Drone Menu");
     ImGui::Text("Sphere Options");
-
-    const char* types[] = { "LowPoly", "UV Sphere", "Icosphere" };
-    int typeIndex = static_cast<int>(currentType);
-
-    if (ImGui::Combo("Sphere Type", &typeIndex, types, IM_ARRAYSIZE(types))) {
-        currentType = static_cast<SphereType>(typeIndex);
-        geometryChanged = true;
-    }
-
-    if (currentType == SphereType::UVSphere) {
-        if (ImGui::SliderInt("Lat Div", &latDiv, 3, 64)) geometryChanged = true;
-        if (ImGui::SliderInt("Lon Div", &lonDiv, 3, 64)) geometryChanged = true;
-    } else if (currentType == SphereType::Icosphere) {
-        if (ImGui::SliderInt("Subdiv", &icoSubdiv, 0, 5)) geometryChanged = true;
-    }
 
     ImGui::End();
 
@@ -109,7 +177,7 @@ void ImGuiModule::cleanup() {
     ImGui::DestroyContext();
 
     if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+        vkDestroyDescriptorPool(m_device, descriptorPool, nullptr);
         descriptorPool = VK_NULL_HANDLE;
     }
 }
@@ -163,11 +231,11 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkImage fontImage;
-    VkResult err = vkCreateImage(device, &imageInfo, nullptr, &fontImage);
+    VkResult err = vkCreateImage(m_device, &imageInfo, nullptr, &fontImage);
     if (err != VK_SUCCESS) throw std::runtime_error("Failed to create font image");
 
     VkMemoryRequirements memReq;
-    vkGetImageMemoryRequirements(device, fontImage, &memReq);
+    vkGetImageMemoryRequirements(m_device, fontImage, &memReq);
 
     VkMemoryAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
     allocInfo.allocationSize = memReq.size;
@@ -175,7 +243,7 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
 
     // Find memory type
     VkPhysicalDeviceMemoryProperties memProps;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProps);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
         if ((memReq.memoryTypeBits & (1 << i)) &&
             (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
@@ -185,10 +253,10 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
     }
 
     VkDeviceMemory fontMemory;
-    err = vkAllocateMemory(device, &allocInfo, nullptr, &fontMemory);
+    err = vkAllocateMemory(m_device, &allocInfo, nullptr, &fontMemory);
     if (err != VK_SUCCESS) throw std::runtime_error("Failed to allocate font image memory");
 
-    vkBindImageMemory(device, fontImage, fontMemory, 0);
+    vkBindImageMemory(m_device, fontImage, fontMemory, 0);
 
     // Create staging buffer
     VkBuffer stagingBuffer;
@@ -198,10 +266,10 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
     bufInfo.size = uploadSize;
     bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-    err = vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer);
+    err = vkCreateBuffer(m_device, &bufInfo, nullptr, &stagingBuffer);
     if (err != VK_SUCCESS) throw std::runtime_error("Failed to create staging buffer");
 
-    vkGetBufferMemoryRequirements(device, stagingBuffer, &memReq);
+    vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memReq);
 
     allocInfo.allocationSize = memReq.size;
     for (uint32_t i = 0; i < memProps.memoryTypeCount; i++) {
@@ -213,15 +281,15 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
         }
     }
 
-    err = vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory);
+    err = vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingMemory);
     if (err != VK_SUCCESS) throw std::runtime_error("Failed to allocate staging buffer memory");
 
-    vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+    vkBindBufferMemory(m_device, stagingBuffer, stagingMemory, 0);
 
     void* mapped;
-    vkMapMemory(device, stagingMemory, 0, uploadSize, 0, &mapped);
+    vkMapMemory(m_device, stagingMemory, 0, uploadSize, 0, &mapped);
     memcpy(mapped, pixels, uploadSize);
-    vkUnmapMemory(device, stagingMemory);
+    vkUnmapMemory(m_device, stagingMemory);
 
     // Record command buffer
     VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
@@ -279,7 +347,7 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
     viewInfo.subresourceRange.layerCount = 1;
 
     VkImageView fontImageView;
-    err = vkCreateImageView(device, &viewInfo, nullptr, &fontImageView);
+    err = vkCreateImageView(m_device, &viewInfo, nullptr, &fontImageView);
     if (err != VK_SUCCESS) throw std::runtime_error("Failed to create font image view");
 
     // Create sampler
@@ -290,14 +358,14 @@ void ImGuiModule::uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue)
     samplerInfo.addressModeU = samplerInfo.addressModeV = samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
     VkSampler fontSampler;
-    vkCreateSampler(device, &samplerInfo, nullptr, &fontSampler);
+    vkCreateSampler(m_device, &samplerInfo, nullptr, &fontSampler);
 
     // Store in ImGui font texture
     io.Fonts->SetTexID(ImGui_ImplVulkan_AddTexture(fontSampler, fontImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
 
     // Clean up staging
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingMemory, nullptr);
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingMemory, nullptr);
 
     // NOTE: you can optionally store and destroy `fontImage`, `fontImageView`, `fontSampler` in your cleanup later
 }

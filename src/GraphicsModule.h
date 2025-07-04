@@ -2,7 +2,7 @@
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-
+#include "ImGuiModule.h"
 #include <SDL3/SDL.h>
 #include <memory>
 #include <vector>
@@ -105,13 +105,13 @@ private:
     // Command Execution
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
-    std::vector<VkFramebuffer> m_swapchainFramebuffers;
+    std::vector<VkFramebuffer> m_framebuffers;
 
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
 
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
-      VkFormat m_swapchainImageFormat;
+    VkFormat m_swapchainImageFormat;
 
     // Synchronization
     std::vector<VkSemaphore> m_imageAvailableSemaphores;
@@ -129,6 +129,7 @@ private:
     VkDescriptorPool          m_imguiPool        = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> m_imguiFramebuffers;
 
+    ImGuiModule m_imguiModule;
 
     int instanceId = 0;
 };

@@ -84,7 +84,7 @@ void MainLoop::handleEvents() {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
 
-        //ImGui_ImplSDL3_ProcessEvent(&ev);
+        ImGui_ImplSDL3_ProcessEvent(&ev);
 
 
         switch (ev.type) {

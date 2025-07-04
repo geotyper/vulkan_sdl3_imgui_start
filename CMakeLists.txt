@@ -85,6 +85,7 @@ include_directories(${glm_SOURCE_DIR}/src)
 set(TARGET DroneVisualizer)
 set(HEADERS
 
+    src/VulkanCheck.h
     src/shared_with_shaders.h
     src/framework/camera.h
     src/framework/common.h
@@ -133,6 +134,7 @@ add_subdirectory(external/volk)
 
 # === Executable ===
 add_executable(${TARGET} ${HEADERS} ${SRC}
+
 
 )
 

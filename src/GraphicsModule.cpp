@@ -1,8 +1,7 @@
 #include "GraphicsModule.h"
+#include "VulkanCheck.h"
 #include "volk.h"
 #include <imgui.h>
-#include "backends/imgui_impl_sdl3.h"
-#include "backends/imgui_impl_vulkan.h"
 
 #include "RayTracingModule.h" // Full definition of RayTracingModule now included
 #include <SDL3/SDL_vulkan.h>
@@ -13,14 +12,6 @@
 #include "GeomCreate.h"
 #include <fstream>
 
-
-#define VK_CHECK(x, msg)                                            \
-do {                                                            \
-        VkResult err = (x);                                         \
-        if (err != VK_SUCCESS) {                                    \
-            throw std::runtime_error(std::string(msg) + " failed: " + std::to_string(err)); \
-    }                                                           \
-} while (0)
 
 // Forward declaration for the debug callback
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -200,10 +191,10 @@ void GraphicsModule::initVulkan(const std::string& appName) {
 
     createCommandPool();
     createSwapchain();
-    //createImageViews();
-    //createRenderPass();
+    createImageViews();
+    createRenderPass();
 
-    //createFramebuffers();
+    createFramebuffers();
 
     //createGraphicsPipeline();
     initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
@@ -213,154 +204,22 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     createSyncObjects();
 }
 
-
-/* ---------------------- ImGui helpers ----------------------- */
-void GraphicsModule::createImGuiDescriptorPool()
-{
-    VkDescriptorPoolSize poolSizes[] = {
-                                        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1000 },
-                                        { VK_DESCRIPTOR_TYPE_SAMPLER,                1000 },
-                                        };
-    VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets       = 1000 * (uint32_t)std::size(poolSizes);
-    poolInfo.poolSizeCount = (uint32_t)std::size(poolSizes);
-    poolInfo.pPoolSizes    = poolSizes;
-    VK_CHECK(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_imguiPool),
-             "ImGui descriptor pool");
-}
-
-void GraphicsModule::createImGuiRenderPass()
-{
-    VkAttachmentDescription color{};
-    color.format         = m_swapchainFormat;
-    color.samples        = VK_SAMPLE_COUNT_1_BIT;
-    color.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;        // сохраняем RT-картинку
-    color.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    color.initialLayout  = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference ref{ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments    = &ref;
-
-    VkRenderPassCreateInfo rp{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-    rp.attachmentCount = 1;
-    rp.pAttachments    = &color;
-    rp.subpassCount    = 1;
-    rp.pSubpasses      = &subpass;
-    VK_CHECK(vkCreateRenderPass(m_device, &rp, nullptr, &m_imguiRenderPass),
-             "ImGui render pass");
-
-    /* framebuffers */
-    m_imguiFramebuffers.resize(m_swapchainImageViews.size());
-    for (size_t i = 0; i < m_swapchainImageViews.size(); ++i)
-    {
-        VkImageView att[]{ m_swapchainImageViews[i] };
-        VkFramebufferCreateInfo fb{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
-        fb.renderPass      = m_imguiRenderPass;
-        fb.attachmentCount = 1;
-        fb.pAttachments    = att;
-        fb.width  = m_swapchainExtent.width;
-        fb.height = m_swapchainExtent.height;
-        fb.layers = 1;
-        VK_CHECK(vkCreateFramebuffer(m_device, &fb, nullptr, &m_imguiFramebuffers[i]),
-                 "ImGui framebuffer");
-    }
-}
-
 /* ---------------------- initImGui --------------------------- */
 void GraphicsModule::initImgui()
 {
-    createImGuiDescriptorPool();     // <--
-    createImGuiRenderPass();         // <--
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
-    ImGui_ImplVulkan_LoadFunctions(
-        VK_API_VERSION_1_3,
-        /* loader_func = */ [](const char* name, void* user_data) -> PFN_vkVoidFunction
-        {
-            VkInstance inst = reinterpret_cast<VkInstance>(user_data);
-            return vkGetInstanceProcAddr(inst, name);
-        },
-        /* user_data = */ m_instance);
-
-    ImGui_ImplVulkan_InitInfo info{};
-    info.Instance       = m_instance;
-    info.PhysicalDevice = m_physicalDevice;
-    info.Device         = m_device;
-    info.QueueFamily    = m_graphicsQueueFamilyIndex;
-    info.Queue          = m_graphicsQueue;
-    info.DescriptorPool = m_imguiPool;
-    info.MinImageCount  = std::max(2u, (uint32_t)m_swapchainImages.size());
-    info.ImageCount     = (uint32_t)m_swapchainImages.size();
-    info.MSAASamples    = VK_SAMPLE_COUNT_1_BIT;   // ОБЯЗАТЕЛЬНО
-    info.Subpass        = 0;
-    info.RenderPass     = m_imguiRenderPass;
-
-    info.CheckVkResultFn = +[](VkResult err)
-    {
-        if (err) std::cerr << "[ImGui/Vk] error = " << err << std::endl;
-    };
+    m_imguiModule.init(m_window,
+                     m_instance,
+                     m_physicalDevice,
+                     m_device,
+                     m_graphicsQueue,
+                     m_graphicsQueueFamilyIndex,
+                     m_swapchainFormat,
+                     m_swapchainExtent,
+                     m_swapchainImageViews,
+                     m_renderPass);
 
 
-    ImGui_ImplSDL3_InitForVulkan(m_window);
-    ImGui_ImplVulkan_Init(&info);
-
-   // /* шрифты */
-   // VkCommandBuffer cmd = beginOneTimeCommands();
-   // ImGui_ImplVulkan_CreateFontsTexture(cmd);
-   // endOneTimeCommands(cmd);
-   // ImGui_ImplVulkan_DestroyFontUploadObjects();
-}
-
-
-void GraphicsModule::createImGuiFramebuffers()
-{
-    VkAttachmentDescription color{};
-    color.format         = m_swapchainFormat;
-    color.samples        = VK_SAMPLE_COUNT_1_BIT;
-    color.loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD;              // Keep raytraced content
-    color.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    color.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color.initialLayout  = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorRef{};
-    colorRef.attachment = 0;
-    colorRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments    = &colorRef;
-
-    // Optional: subpass dependency (recommended for ImGui)
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo rpInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
-    rpInfo.attachmentCount = 1;
-    rpInfo.pAttachments    = &color;
-    rpInfo.subpassCount    = 1;
-    rpInfo.pSubpasses      = &subpass;
-    rpInfo.dependencyCount = 1;
-    rpInfo.pDependencies   = &dependency;
-
-    VK_CHECK(vkCreateRenderPass(m_device, &rpInfo, nullptr, &m_imguiRenderPass),
-             "Failed to create ImGui render pass");
 }
 
 
@@ -445,27 +304,63 @@ void GraphicsModule::cleanupSwapchain() {
 }
 
 
+//void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
+//    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
+//
+//    VkCommandBufferBeginInfo beginInfo{};
+//    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+//
+//    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Failed to begin recording command buffer");
+//
+//    // 1. Record ray tracing rendering to swapchain image
+//    m_rtxModule->RecordCommands(
+//        cmd,
+//        m_swapchainImageViews[imageIndex],
+//        m_swapchainImages[imageIndex],
+//        m_swapchainExtent
+//        );
+//
+//    // 2. Record ImGui UI rendering pass
+//    m_imguiModule.renderMenu(cmd, imageIndex);
+//
+//    // 3. End the command buffer
+//    VK_CHECK(vkEndCommandBuffer(cmd), "Failed to record command buffer");
+//}
+
 void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
     VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Begin command buffer");
 
-    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Failed to begin recording command buffer");
+    // --- Begin render pass ---
+    VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
 
-    // 1. Record ray tracing rendering to swapchain image
-    m_rtxModule->RecordCommands(
-        cmd,
-        m_swapchainImageViews[imageIndex],
-        m_swapchainImages[imageIndex],
-        m_swapchainExtent
-        );
+    VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+    renderPassInfo.renderPass = m_renderPass;
+    renderPassInfo.framebuffer = m_framebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_swapchainExtent;
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
 
-    // 2. Record ImGui UI rendering pass
-    //imguiModule.renderMenu(cmd);
+    assert(imageIndex < m_framebuffers.size());
+    assert(m_framebuffers[imageIndex] != VK_NULL_HANDLE);
+    assert(m_renderPass != VK_NULL_HANDLE);
 
-    // 3. End the command buffer
-    VK_CHECK(vkEndCommandBuffer(cmd), "Failed to record command buffer");
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // --- Draw your main scene ---
+    //m_rtxModule->Render(cmd);
+
+    // --- Draw ImGui ---
+    m_imguiModule.renderMenu(cmd);
+
+    // --- End render pass ---
+    vkCmdEndRenderPass(cmd);
+
+    VK_CHECK(vkEndCommandBuffer(cmd), "End command buffer");
 }
 
 /* ------------------------------------------------------------
@@ -808,7 +703,7 @@ void GraphicsModule::createRenderPass() {
 }
 
 void GraphicsModule::createFramebuffers() {
-    m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+    m_framebuffers.resize(m_swapchainImageViews.size());
 
     for (size_t i = 0; i < m_swapchainImageViews.size(); ++i) {
         VkImageView attachments[] = { m_swapchainImageViews[i] };
@@ -821,7 +716,7 @@ void GraphicsModule::createFramebuffers() {
         framebufferInfo.height = m_swapchainExtent.height;
         framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]) != VK_SUCCESS)
+        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS)
             throw std::runtime_error("Failed to create framebuffer");
     }
 }

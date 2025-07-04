@@ -1,8 +1,10 @@
 #pragma once
 
 #include <iostream>
+#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL.h>
+#include <vector>
 
 static void check_vk_result(VkResult err)
 {
@@ -23,38 +25,31 @@ public:
               VkDevice device,
               VkQueue graphicsQueue,
               uint32_t queueFamilyIndex,
-              VkRenderPass renderPass,
-              uint32_t imageCount);
+              VkFormat swapchainFormat,
+              VkExtent2D swapchainExtent,
+              const std::vector<VkImageView>& swapchainImageViews,
+              VkRenderPass renderPass);
 
     void renderMenu(VkCommandBuffer commandBuffer);
     void cleanup();
+    void uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue);
 
-    void uploadFonts(VkCommandBuffer cmd, VkQueue queue);
-    //void uploadFonts2(VkCommandBuffer cmd, VkQueue queue);
+    VkRenderPass getRenderPass() const { return m_renderPass; }
 
-    // === Sphere selection ===
-
-
-    SphereType currentType = SphereType::LowPoly;
-    SphereType lastType = SphereType::LowPoly;
-
-    int latDiv = 16, lonDiv = 16;
-    int icoSubdiv = 1;
-
-    bool geometryChanged = false;  // Set to true if user modifies sphere parameters
-
-    // Getter for geometry change
-    bool hasGeometryChanged() const { return geometryChanged; }
-    SphereType getCurrentType() const { return currentType; }
-    int getLatDiv() const { return latDiv; }
-    int getLonDiv() const { return lonDiv; }
-    int getSubdiv() const { return icoSubdiv; }
-    void resetGeometryChanged() { geometryChanged = false; }
-
-VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
 
 private:
-    VkDevice device = VK_NULL_HANDLE;
-    //VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    void createDescriptorPool();
+    void createRenderPass(VkFormat swapchainFormat, VkExtent2D swapchainExtent, const std::vector<VkImageView>& swapchainImageViews);
+    void createFramebuffers(VkExtent2D extent, const std::vector<VkImageView>& imageViews);
+
+    SDL_Window*      m_window = nullptr;
+    VkInstance       m_instance = VK_NULL_HANDLE;
+    VkDevice         m_device = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+    VkQueue          m_graphicsQueue = VK_NULL_HANDLE;
+    VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+    VkRenderPass     m_renderPass = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer> m_framebuffers;
+    VkExtent2D m_extent{};
 };
