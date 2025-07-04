@@ -1,25 +1,12 @@
 #pragma once
-#define VK_ENABLE_BETA_EXTENSIONS     // ray-tracing structs & enums
+
+#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 
 #include <SDL3/SDL.h>
 #include <memory>
 #include <vector>
 #include <stdexcept>
-
-// in RayTracingModule.h  (or a dedicated header)
-struct RtProcs {
-    PFN_vkCreateAccelerationStructureKHR  CreateAS;
-    PFN_vkDestroyAccelerationStructureKHR DestroyAS;
-    PFN_vkGetAccelerationStructureBuildSizesKHR GetASBuildSizes;
-    PFN_vkBuildAccelerationStructuresKHR  BuildAS;
-    PFN_vkCreateRayTracingPipelinesKHR    CreateRTPipelines;
-    PFN_vkCmdTraceRaysKHR                 CmdTraceRays;
-    PFN_vkGetRayTracingShaderGroupHandlesKHR GetRTShaderGroupHandles;
-    PFN_vkGetBufferDeviceAddressKHR       GetBufferDeviceAddress;
-    PFN_vkGetAccelerationStructureDeviceAddressKHR GetASDeviceAddress;
-};
-extern RtProcs g_rt;          // one global for simplicity
 
 
 class Camera;

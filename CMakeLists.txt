@@ -1,35 +1,91 @@
-cmake_minimum_required(VERSION 3.16)
-project(DroneVisualizer)
+cmake_minimum_required(VERSION 3.5.0)
+project (
+    "Vulkan RayTracer"
+    VERSION 0.1.0
+    DESCRIPTION "Vulkan RayTracing API"
+    LANGUAGES CXX
+)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-#set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-#add_compile_options(-fPIE)
+message("Compiler: " ${CMAKE_CXX_COMPILER_ID})
+
+add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options(-Wno-nullability-completeness)
+endif()
 
 # === Output paths (optional) ===
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>")
 
+#--------------------------------- Find VulkanSDK ---------------------------------#
 find_package(Vulkan REQUIRED)
-find_package(glm REQUIRED)
-find_package(SDL3 REQUIRED CONFIG)
+message("Vulkan_INCLUDE_DIR: " ${Vulkan_INCLUDE_DIR})
 
-# === ImGui sources ===
-set(IMGUI_SRC
-    external/imgui/imgui.cpp
-    external/imgui/imgui_draw.cpp
-    external/imgui/imgui_tables.cpp
-    external/imgui/imgui_widgets.cpp
-    external/imgui/imgui_demo.cpp
-    external/imgui/backends/imgui_impl_sdl3.cpp
-    external/imgui/backends/imgui_impl_vulkan.cpp
+set(VULKAN $ENV{VULKAN_SDK}) #set to Vulkan SDK; needed to find SDL2 if installed with Vulkan SDK
+message("VULKAN SDK: " ${VULKAN})
+
+include(FetchContent) # enable Fetch Content
+
+#--------------------------------- Fetch SDL3 ---------------------------------#
+set(SDL_STATIC ON)
+set(SDL_SHARED OFF)
+FetchContent_Declare(sdl3
+                     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+                     GIT_TAG main
 )
+FetchContent_MakeAvailable(sdl3)
+include_directories (${sdl3_SOURCE_DIR}/include)
 
-# === Your project headers & sources ===
+#--------------------------------- Fetch ImGui ---------------------------------#
+FetchContent_Declare(imgui
+                     GIT_REPOSITORY https://github.com/ocornut/imgui.git
+                     GIT_TAG master)
+
+FetchContent_MakeAvailable(Imgui)
+# ImGui does not provide CMakeLists.txt
+add_library(imgui)
+target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_include_directories(imgui SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES)
+target_link_libraries(imgui SDL3::SDL3)
+target_sources(imgui PRIVATE
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+# available now as imgui
+
+
+##--------------------------------- Fetch vk-bootstrap ---------------------------------#
+#FetchContent_Declare(vkbootstrap
+#                     GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
+#                     GIT_TAG main)
+#FetchContent_MakeAvailable(vkbootstrap)
+## available now as vk-bootstrap::vk-bootstrap
+
+#--------------------------------- Fetch glm ---------------------------------#
+
+FetchContent_Declare(glm
+                     GIT_REPOSITORY https://github.com/g-truc/glm.git
+                     GIT_TAG master)
+FetchContent_MakeAvailable(glm)
+include_directories(${glm_SOURCE_DIR}/src)
+
+
+
+#--------------------------------- Main Target ---------------------------------#
+
+set(TARGET DroneVisualizer)
 set(HEADERS
 
+    src/shared_with_shaders.h
     src/framework/camera.h
     src/framework/common.h
     #src/framework/vulkanapp.h
@@ -63,41 +119,29 @@ set(SRC
 
 # === Include dirs ===
 include_directories(
-    external/imgui
-    external/imgui/backends
-    external/stb
-    external/tinyobjloader
-    #external/volk
-    #external/vulkan/include
-    #src
+#    external/imgui
+#    external/imgui/backends
+     external/stb
+     external/tinyobjloader
+     external/volk
+     external/vulkan/include
+#    #src
 )
 
-#add_subdirectory(external/vulkan)   # Vulkan::Headers
-#add_subdirectory(external/volk)
+add_subdirectory(external/vulkan)   # Vulkan::Headers
+add_subdirectory(external/volk)
 
 # === Executable ===
-add_executable(DroneVisualizer ${HEADERS} ${SRC}
-    src/shared_with_shaders.h
-    ${IMGUI_SRC}
-    #src/AccelerationStructures.h
-    #src/AccelerationStructures.cpp
+add_executable(${TARGET} ${HEADERS} ${SRC}
 
-    )
-
-
-target_link_options(DroneVisualizer PRIVATE -no-pie)
-
-#target_compile_definitions(DroneVisualizer PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK)
-
-
-
-# === Link SDL3 and Vulkan ===
-target_link_libraries(DroneVisualizer
-    SDL3::SDL3
-    Vulkan::Vulkan
-    glm::glm
-    #volk::volk
 )
+
+
+target_include_directories(${TARGET} PRIVATE stb)
+target_include_directories(${TARGET} PRIVATE external/volk)
+target_include_directories(${TARGET} PRIVATE ${Vulkan_INCLUDE_DIR}/vma)
+target_include_directories(${TARGET} SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui )
 
 ## === Shader Path Macro ===
 #add_compile_definitions(SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")

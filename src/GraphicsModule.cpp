@@ -1,7 +1,5 @@
-
 #include "GraphicsModule.h"
-
-#include <vulkan/vulkan.h>
+#include "volk.h"
 #include <imgui.h>
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
@@ -24,35 +22,17 @@ do {                                                            \
     }                                                           \
 } while (0)
 
-    // Forward declaration for the debug callback
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-        VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* pUserData);
-
+// Forward declaration for the debug callback
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData);
 
 // --- Constructor and Destructor Definitions ---
 // These MUST be defined in the .cpp file where RayTracingModule is a complete type.
 GraphicsModule::GraphicsModule() = default;
 GraphicsModule::~GraphicsModule() = default;
-
-#define LOAD(name) \
-g_rt.name = (PFN_##name)vkGetDeviceProcAddr(m_device, #name); \
-    if (!g_rt.name) throw std::runtime_error("Missing " #name);
-
-void GraphicsModule::loadRayTracingProcs()
-{
-    LOAD(vkCreateAccelerationStructureKHR)
-    LOAD(vkDestroyAccelerationStructureKHR)
-    LOAD(vkGetAccelerationStructureBuildSizesKHR)
-    LOAD(vkBuildAccelerationStructuresKHR)
-    LOAD(vkCreateRayTracingPipelinesKHR)
-    LOAD(vkCmdTraceRaysKHR)
-    LOAD(vkGetRayTracingShaderGroupHandlesKHR)
-    LOAD(vkGetBufferDeviceAddressKHR)
-    LOAD(vkGetAccelerationStructureDeviceAddressKHR)
-}
 
 // --- Public API Implementations ---
 
@@ -204,9 +184,10 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     instanceId = ++s_instanceCounter;
     std::cout << "[GraphicsModule] initVulkan() called for instance ID: " << instanceId << " @ " << this << std::endl;
 
-    // Vulkan bootstrap
+    VK_CHECK(volkInitialize(), "Failed to initialize Volk");
 
     createInstance(appName);
+    volkLoadInstance(m_instance);
 
     setupDebugMessenger();
     createSurface();
@@ -215,15 +196,17 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     pickPhysicalDevice();
     findQueueFamilies();
     createLogicalDevice();
+    volkLoadDevice(m_device);
 
-    createSwapchain();
-    createImageViews();
-    createRenderPass();
     createCommandPool();
-    createFramebuffers();
+    createSwapchain();
+    //createImageViews();
+    //createRenderPass();
 
-    createGraphicsPipeline();
-    initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
+    //createFramebuffers();
+
+    //createGraphicsPipeline();
+    //initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
 
     std::cout << "Window @GraphicsModule: " << m_window << std::endl;
 
@@ -657,28 +640,28 @@ void GraphicsModule::createLogicalDevice() {
 
 
 void GraphicsModule::createCommandPool() {
-    //VkCommandPoolCreateInfo poolInfo{};
-    //poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    //poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    //poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
-    //VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool), "Failed to create command pool");
-
-    VkCommandPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
-    poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+    VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool), "Failed to create command pool");
 
-    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create command pool");
+    //VkCommandPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+    //poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+    //poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-    m_commandBuffers.resize(m_swapchainImageViews.size());
+    //if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS)
+    //    throw std::runtime_error("Failed to create command pool");
 
-    VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-    allocInfo.commandPool = m_commandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
+    //m_commandBuffers.resize(m_swapchainImageViews.size());
 
-    if (vkAllocateCommandBuffers(m_device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS)
-        throw std::runtime_error("Failed to allocate command buffers");
+    //VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    //allocInfo.commandPool = m_commandPool;
+    //allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    //allocInfo.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
+
+    //if (vkAllocateCommandBuffers(m_device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS)
+    //    throw std::runtime_error("Failed to allocate command buffers");
 }
 
 
@@ -689,62 +672,66 @@ void GraphicsModule::createSwapchain() {
     uint32_t formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
+    if(formatCount != 0) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, formats.data());
+    }
 
-    VkSurfaceFormatKHR chosenFormat = formats[0];
+    VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& availableFormat : formats) {
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
-            availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            chosenFormat = availableFormat;
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            surfaceFormat = availableFormat;
             break;
         }
     }
+    m_swapchainFormat = surfaceFormat.format;
 
-    uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
-    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+        m_swapchainExtent = capabilities.currentExtent;
+    } else {
+        int width, height;
+        SDL_GetWindowSizeInPixels(m_window, &width, &height);
+        m_swapchainExtent.width = std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        m_swapchainExtent.height = std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    }
 
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR; // guaranteed available
+    uint32_t imageCount = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
+        imageCount = capabilities.maxImageCount;
+    }
 
-    m_swapchainExtent = capabilities.currentExtent;
-    m_swapchainImageFormat = chosenFormat.format;
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = m_surface;
+    createInfo.minImageCount = imageCount;
+    createInfo.imageFormat = m_swapchainFormat;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    createInfo.imageExtent = m_swapchainExtent;
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.preTransform = capabilities.currentTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    createInfo.clipped = VK_TRUE;
 
-    VkSwapchainCreateInfoKHR swapchainInfo{ VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
-    swapchainInfo.surface = m_surface;
-    swapchainInfo.minImageCount = capabilities.minImageCount + 1;
-    swapchainInfo.imageFormat = m_swapchainImageFormat;
-    swapchainInfo.imageColorSpace = chosenFormat.colorSpace;
-    swapchainInfo.imageExtent = m_swapchainExtent;
-    swapchainInfo.imageArrayLayers = 1;
-    swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    swapchainInfo.preTransform = capabilities.currentTransform;
-    swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchainInfo.presentMode = presentMode;
-    swapchainInfo.clipped = VK_TRUE;
-    swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
+    VK_CHECK(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain), "Failed to create swap chain");
 
-    if (vkCreateSwapchainKHR(m_device, &swapchainInfo, nullptr, &m_swapchain) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create swapchain");
-
-    uint32_t imageCount = 0;
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
     m_swapchainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_swapchainImages.data());
 
-    //m_swapchainImageViews.resize(m_swapchainImages.size());
-    //for (size_t i = 0; i < m_swapchainImages.size(); i++) {
-    //    VkImageViewCreateInfo viewInfo{};
-    //    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    //    viewInfo.image = m_swapchainImages[i];
-    //    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    //    viewInfo.format = m_swapchainFormat;
-    //    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    //    viewInfo.subresourceRange.levelCount = 1;
-    //    viewInfo.subresourceRange.layerCount = 1;
-    //    VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &m_swapchainImageViews[i]), "Failed to create image views");
-    //}
+    m_swapchainImageViews.resize(m_swapchainImages.size());
+    for (size_t i = 0; i < m_swapchainImages.size(); i++) {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_swapchainImages[i];
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = m_swapchainFormat;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.layerCount = 1;
+        VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &m_swapchainImageViews[i]), "Failed to create image views");
+    }
 }
 
 void GraphicsModule::createImageViews() {
