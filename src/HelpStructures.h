@@ -8,8 +8,8 @@ struct Vertex {
     glm::vec4 position;
     glm::vec4 normal;
     glm::vec4 color;
-    glm::vec2 texCoord; // vec2 в конце структуры обычно безопасен,
-    glm::vec2 _pad {};
+    //glm::vec2 texCoord; // vec2 в конце структуры обычно безопасен,
+   // glm::vec2 _pad;
 
 };
 

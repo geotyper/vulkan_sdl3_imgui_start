@@ -161,7 +161,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("Drone Menu");
+    ImGui::Begin("Solver Menu");
     ImGui::Text("Sphere Options");
 
     ImGui::End();

@@ -5,34 +5,41 @@
 #include "framework/common.h"
 #endif
 
-// SBT-индексы
-#define SWS_PRIMARY_MISS_SHADERS_IDX    0
-#define SWS_SHADOW_MISS_SHADERS_IDX     1
-#define SWS_DEFAULT_HIT_GROUP_IDX       0
+// Смещения внутри missRegion
+// missRegion начинается с Группы 1
+#define SWS_PRIMARY_MISS_IDX      0
+#define SWS_SHADOW_MISS_IDX       1
+#define SWS_SECONDARY_MISS_IDX    2
 
-// Сеты/биндинги
-#define SWS_SCENE_AS_SET           0
-#define SWS_SCENE_AS_BINDING       0
+#define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
+//#define SWS_SHADOW_HIT_GROUP_IDX          1 // Вторая группа в hitRegion
 
-#define SWS_RESULT_IMAGE_SET       0
-#define SWS_RESULT_IMAGE_BINDING   1
+// --- ОБЩИЕ КОНСТАНТЫ ---
+#define SWS_NUM_GROUPS                    5 // Общее количество групп шейдеров
 
-#define SWS_CAMERA_SET            0
-#define SWS_CAMERA_BINDING        2
+// Сеты/биндинги (без изменений)
+#define SWS_SCENE_AS_SET                  0
+#define SWS_SCENE_AS_BINDING              0
 
-#define SWS_VERTICES_SET          0
-#define SWS_VERTICES_BINDING      3
+#define SWS_RESULT_IMAGE_SET              0
+#define SWS_RESULT_IMAGE_BINDING          1
 
-#define SWS_INDICES_SET          0
-#define SWS_INDICES_BINDING      4
+#define SWS_CAMERA_SET                    0
+#define SWS_CAMERA_BINDING                2
 
-#define SWS_NUM_GEOMETRY_BUFFERS   2 // Vertex and Index buffers
+#define SWS_VERTICES_SET                  0
+#define SWS_VERTICES_BINDING              3
 
-// payload-локации
-#define SWS_LOC_PRIMARY_RAY        0
-#define SWS_LOC_SHADOW_RAY         1
+#define SWS_INDICES_SET                   0
+#define SWS_INDICES_BINDING               4
 
-#define  SWS_NUM_GROUPS  5
+#define SWS_NUM_GEOMETRY_BUFFERS          2
+
+// payload-локации (без изменений)
+#define SWS_LOC_PRIMARY_RAY               0
+#define SWS_LOC_SHADOW_RAY                1
+#define SWS_LOC2_SHADOW_RAY               2
+
 
 
 struct ShadowPayload {

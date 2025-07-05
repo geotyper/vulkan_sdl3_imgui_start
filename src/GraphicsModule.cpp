@@ -207,7 +207,6 @@ void GraphicsModule::initVulkan(const std::string& appName) {
 /* ---------------------- initImGui --------------------------- */
 void GraphicsModule::initImgui()
 {
-
     m_imguiModule.init(m_window,
                      m_instance,
                      m_physicalDevice,
@@ -218,8 +217,6 @@ void GraphicsModule::initImgui()
                      m_swapchainExtent,
                      m_swapchainImageViews,
                      m_renderPass);
-
-
 }
 
 
@@ -250,7 +247,7 @@ void GraphicsModule::initRayTracingModule() {
     // 4. Call your generator to fill the vectors
     // You can use any of your functions here: createUVSphere, createIcosphere, etc.
     //GeomCreate::createIcosphere(2, vertices, indices);
-    //GeomCreate::createUVSphere(32,32, vertices, indices);
+    //GeomCreate::createUVSphere(132,132, vertices, indices);
 
     GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
 
@@ -265,7 +262,18 @@ void GraphicsModule::initRayTracingModule() {
                     continue;
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, ((z+1)/2.0f)*glm::vec3(scale));
+
+                // --- Правильный расчёт масштаба ---
+
+                // 1. Нормализуем z из диапазона [-2, 2] в диапазон [0, 1]
+                float t = (static_cast<float>(z) + 2.0f) / 4.0f;
+
+                // 2. Интерполируем масштаб, например, от 0.5 до 1.5, используя t
+                float current_scale = 0.5f + t * 1.0f;
+
+                // 3. Применяем всегда положительный и однородный масштаб
+                model = glm::scale(model, glm::vec3(current_scale));
+
                 transforms.push_back(model);
             }
         }
@@ -274,23 +282,6 @@ void GraphicsModule::initRayTracingModule() {
     // 5. Load the generated data into the ray tracing module
     m_rtxModule->LoadFromSingleMesh(vertices, indices, transforms);
 }
-
-
-//void GraphicsModule::recreateSwapchain() {
-//    int width = 0, height = 0;
-//    SDL_GetWindowSizeInPixels(m_window, &width, &height);
-//    while (width == 0 || height == 0) {
-//        SDL_GetWindowSizeInPixels(m_window, &width, &height);
-//        SDL_WaitEvent(nullptr);
-//    }
-//
-//    vkDeviceWaitIdle(m_device);
-//    cleanupSwapchain();
-//    createSwapchain();
-//    if (m_rtxModule) {
-//        m_rtxModule->OnResize(m_swapchainExtent);
-//    }
-//}
 
 void GraphicsModule::recreateSwapchain() {
     int width = 0, height = 0;
@@ -321,16 +312,6 @@ void GraphicsModule::recreateSwapchain() {
     // m_imguiModule.OnResize(...);
 }
 
-//void GraphicsModule::cleanupSwapchain() {
-//    for (auto imageView : m_swapchainImageViews) {
-//        vkDestroyImageView(m_device, imageView, nullptr);
-//    }
-//    m_swapchainImageViews.clear();
-//    if (m_swapchain != VK_NULL_HANDLE) {
-//        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-//        m_swapchain = VK_NULL_HANDLE;
-//    }
-//}
 void GraphicsModule::cleanupSwapchain() {
     // 1. Destroy Framebuffers
     for (auto framebuffer : m_framebuffers) {
@@ -357,43 +338,6 @@ void GraphicsModule::cleanupSwapchain() {
     }
 }
 
-
-
-//void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
-//    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
-//
-//    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-//    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Begin command buffer");
-//
-//    // --- Begin render pass ---
-//    VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
-//
-//    VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-//    renderPassInfo.renderPass = m_renderPass;
-//    renderPassInfo.framebuffer = m_framebuffers[imageIndex];
-//    renderPassInfo.renderArea.offset = {0, 0};
-//    renderPassInfo.renderArea.extent = m_swapchainExtent;
-//    renderPassInfo.clearValueCount = 1;
-//    renderPassInfo.pClearValues = &clearColor;
-//
-//    assert(imageIndex < m_framebuffers.size());
-//    assert(m_framebuffers[imageIndex] != VK_NULL_HANDLE);
-//    assert(m_renderPass != VK_NULL_HANDLE);
-//
-//
-//    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-//
-//    // --- Draw your main scene ---
-//    //m_rtxModule->Render(cmd);
-//
-//    // --- Draw ImGui ---
-//    m_imguiModule.renderMenu(cmd);
-//
-//    // --- End render pass ---
-//    vkCmdEndRenderPass(cmd);
-//
-//    VK_CHECK(vkEndCommandBuffer(cmd), "End command buffer");
-//}
 
 void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam) {
     VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];

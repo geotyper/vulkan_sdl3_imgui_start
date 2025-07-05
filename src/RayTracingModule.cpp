@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <vector>
+#include <iostream>
 #include <glm/gtc/type_ptr.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -133,12 +134,12 @@ namespace rtx {
                         };
                     }
 
-                    if (!attrib.texcoords.empty() && index.texcoord_index >= 0) {
-                        vertex.texCoord = {
-                            attrib.texcoords[2 * index.texcoord_index + 0],
-                            1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                        };
-                    }
+                   // if (!attrib.texcoords.empty() && index.texcoord_index >= 0) {
+                   //     vertex.texCoord = {
+                   //         attrib.texcoords[2 * index.texcoord_index + 0],
+                   //         1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                   //     };
+                   // }
 
                     vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
                     vertices.push_back(vertex);
@@ -253,9 +254,26 @@ namespace rtx {
         // 3. Define SBT regions and trace rays
         VkDeviceAddress baseAddr = vulkanhelpers::GetBufferDeviceAddress(m_context, m_sbt).deviceAddress;
 
-        VkStridedDeviceAddressRegionKHR rgenRegion{ baseAddr + 0 * m_sbtStride, m_sbtStride, m_sbtStride };
-        VkStridedDeviceAddressRegionKHR missRegion{ baseAddr + 1 * m_sbtStride, m_sbtStride, 2 * m_sbtStride };
-        VkStridedDeviceAddressRegionKHR hitRegion { baseAddr + 3 * m_sbtStride, m_sbtStride, 2* m_sbtStride };
+        // Указывает на Группу 0. Размер = 1 шейдер.
+        VkStridedDeviceAddressRegionKHR rgenRegion{
+            baseAddr + 0 * m_sbtStride,
+            m_sbtStride,
+            1 * m_sbtStride
+        };
+
+        // Указывает на Группу 1 и должен покрывать 3 шейдера (группы 1, 2, 3).
+        VkStridedDeviceAddressRegionKHR missRegion{
+            baseAddr + 1 * m_sbtStride, // Начало - группа 1
+            m_sbtStride,
+            3 * m_sbtStride             // Размер - 3 шейдера
+        };
+
+        // Указывает на Группу 4 и должен покрывать 1 группу (группу 4).
+        VkStridedDeviceAddressRegionKHR hitRegion {
+            baseAddr + 4 * m_sbtStride, // Начало - группа 4
+            m_sbtStride,
+            1 * m_sbtStride             // Размер - 2 shaders
+        };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
 
@@ -435,19 +453,30 @@ namespace rtx {
             throw std::runtime_error("Failed to load shadow any-hit shader: " + shadowAhitPath);
         }
 
+        vulkanhelpers::Shader secondaryMissShader;
+        std::string secondaryMissPath = std::string(m_createInfo.shaderDir) + "miss_secondary.rmiss.spv";
+        if (!secondaryMissShader.LoadFromFile(m_context, secondaryMissPath.c_str())) {
+            throw std::runtime_error("Failed to load secondary miss shader: " + secondaryMissPath);
+        }
+
+
         auto s_rgen       = rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         auto s_miss       = rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
         auto s_shadowMiss = shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
         auto s_chit       = rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
         auto a_chit       = shadowAhitShader.GetShaderStage(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+        auto s_secondaryMiss = secondaryMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
+
 
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             s_rgen,
             s_miss,
             s_shadowMiss,
+            s_secondaryMiss,
             s_chit,
-            a_chit
+            a_chit,
         };
+
 
         // Shader Groups
         // --- THIS IS THE CORRECTED SHADER GROUP SETUP ---
@@ -457,7 +486,7 @@ namespace rtx {
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[0].generalShader = 0; // Index of rgen shader in stages array
+        groups[0].generalShader = 0; // s_rgen
         groups[0].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[0].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[0].intersectionShader = VK_SHADER_UNUSED_KHR;
@@ -465,34 +494,41 @@ namespace rtx {
         // Group 1: Miss
         groups[1].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[1].generalShader = 1; // Index of rmiss shader in stages array
+        groups[1].generalShader = 1; // s_primaryMiss
         groups[1].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[2].generalShader = 2; // Index of rmiss shader in stages array
+        groups[2].generalShader = 2; // s_shadowMiss
         groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        // Group 3: Triangle Hit Group
+        //// Group 5: Secondary Miss Shader
         groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[3].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[3].closestHitShader = 3;
+        groups[3].type =  VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        groups[3].generalShader = 3; // s_secondaryMiss
+        groups[3].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        // Group 4: Shadow Hit Group (for shadow rays) <-- NEW
+        //// Group 3: Triangle Hit Group
         groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
         groups[4].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[4].closestHitShader = VK_SHADER_UNUSED_KHR; // No closest-hit needed for shadows
-        groups[4].anyHitShader = 4; // Use the new shadow.rahit shader
+        groups[4].closestHitShader = 4; // s_chit
+        groups[4].anyHitShader =    5;
         groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
+        // Group 4: Shadow Hit Group (for shadow rays)
+        //groups[5].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[5].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        //groups[5].generalShader = VK_SHADER_UNUSED_KHR;
+        //groups[5].closestHitShader = VK_SHADER_UNUSED_KHR; // No closest-hit needed for shadows
+        //groups[5].anyHitShader = 5; // Use the new shadow.rahit shader
+        //groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -500,15 +536,23 @@ namespace rtx {
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(groups.size());
         pipelineInfo.pGroups = groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 2;
+        pipelineInfo.maxPipelineRayRecursionDepth = 5;
         pipelineInfo.layout = m_pipelineLayout;
 
         VK_CHECK(vkCreateRayTracingPipelinesKHR(device(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create ray tracing pipeline");
+
+        for (size_t i = 0; i < groups.size(); ++i)
+            std::cout << "Group[" << i << "]: type=" << groups[i].type
+                      << ", general=" << groups[i].generalShader
+                      << ", chit=" << groups[i].closestHitShader
+                      << ", ahit=" << groups[i].anyHitShader << std::endl;
 
         rgenShader.Destroy(m_context);
         rmissShader.Destroy(m_context);
         rchitShader.Destroy(m_context);
         shadowMissShader.Destroy(m_context);
+        shadowAhitShader.Destroy(m_context);
+        secondaryMissShader.Destroy(m_context);
     }
 
     void RayTracingModule::CreateShaderBindingTable()
@@ -693,6 +737,7 @@ namespace rtx {
         triangles.indexType = VK_INDEX_TYPE_UINT32;
         triangles.indexData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, mesh.indexBuffer).deviceAddress;
 
+
         VkAccelerationStructureGeometryKHR asGeom{};
         asGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         asGeom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
@@ -770,10 +815,10 @@ namespace rtx {
             // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
             // Остальные получат ID 1.
             bool isLight = (i == 4); // The center sphere is the light
-            instance.instanceCustomIndex = isLight ? 0 : 1;
+            instance.instanceCustomIndex = static_cast<uint32_t>(i);//isLight ? 0 : 1;
 
-            instance.mask = isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
-            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_GROUP_IDX; // Используем одну и ту же hit-группу для всех
+            instance.mask = 0xFF;;//isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
+            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX; // Используем одну и ту же hit-группу для всех
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
             instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
 

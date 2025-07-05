@@ -53,13 +53,16 @@ void GeomCreate::createUVSphere(uint32_t latDiv, uint32_t lonDiv,
             glm::vec3 normal = glm::normalize(pos);
             glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // Default white color
             glm::vec2 texCoord = glm::vec2(static_cast<float>(lon) / lonDiv, static_cast<float>(lat) / latDiv);
+            glm::vec2 pad = glm::vec2(0, 0);
 
             // Push the complete vertex with all attributes
             outVertices.push_back({
                 glm::vec4(pos, 1.0f),
                 glm::vec4(normal, 0.0f),
                 glm::vec4(color, 1.0f),
-                texCoord
+                //texCoord
+
+                //,pad
             });
         }
     }
@@ -102,15 +105,16 @@ uint32_t getMidpoint(uint32_t p1, uint32_t p2, std::vector<Vertex>& vertices, st
     glm::vec3 pos = glm::normalize(glm::vec3(v1.position + v2.position) * 0.5f);
     glm::vec3 norm = pos; // For a perfect sphere, normal is the same as normalized position
     glm::vec3 col = glm::vec3(v1.color + v2.color) * 0.5f;
-    glm::vec2 tc = (v1.texCoord + v2.texCoord) * 0.5f;
+   // glm::vec2 tc = (v1.texCoord + v2.texCoord) * 0.5f;
 
     // Create a new vertex with the correct vec4 format
     vertices.push_back({
         glm::vec4(pos, 1.0f),
         glm::vec4(norm, 0.0f),
-        glm::vec4(col, 1.0f),
-        tc,
-        {} // Padding to match the struct layout
+        glm::vec4(col, 1.0f)
+        //,
+       // tc,
+       // {} // Padding to match the struct layout
     });
     uint32_t newIndex = static_cast<uint32_t>(vertices.size() - 1);
     cache[key] = newIndex;
@@ -135,9 +139,10 @@ void GeomCreate::createIcosphere(uint32_t subdivisions,
         outVertices.push_back({
             glm::vec4(normal, 1.0f),                    // position (w=1 for points)
             glm::vec4(normal, 0.0f),                    // normal (w=0 for vectors)
-            glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),          // color (white)
-            texCoord,                                   // uv
-            {}                                          // padding to match the struct layout
+            glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)
+            //,          // color (white)
+            //texCoord,                                   // uv
+            //{}                                          // padding to match the struct layout
         });
     };
 
