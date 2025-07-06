@@ -7,9 +7,6 @@
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING) uniform accelerationStructureEXT topLevelAS;
 layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D resultImage;
-//layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING) readonly buffer InstanceMetadata {
-//    InstanceData data[];
-//} instanceBuffer;
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
@@ -70,10 +67,21 @@ bool traceShadowRay(vec3 origin, vec3 dir) {
     return !shadow.blocked;
 }
 
+vec3 getInstanceWorldPosition(uint instanceID) {
+    // You can replace this with instanceBuffer.data[instanceID].transform if available
+    // For now, assume meshId = instanceID and average 3 vertices
+    vec3 sum = vec3(0.0);
+    for (int j = 0; j < 3; ++j) {
+        sum += vertices[instanceID].v[j].position.xyz;
+    }
+    return (gl_InstanceID == 0)
+        ? (gl_ObjectToWorldEXT * vec4(sum / 3.0, 1.0)).xyz
+        : sum / 3.0;
+}
+
 void main() {
     uint instanceID = gl_InstanceCustomIndexEXT;
-    //uint meshId = instanceBuffer.data[instanceID].meshId;
-    uint meshId = gl_InstanceCustomIndexEXT;
+    uint meshId = instanceID;
 
     uvec3 tri = getTriangleIndices(meshId, gl_PrimitiveID);
     vec3 normalObj = interpolateNormal(meshId, tri, attribs);
@@ -85,21 +93,56 @@ void main() {
 
     vec3 baseColor = vertices[meshId].v[tri.x].color.rgb;
 
-    // === Lambert Point Light ===
-    vec3 lightPos = vec3(0.0, 0.0, 0.0);
-    vec3 lightColor = vec3(1.0, 0.95, 0.8); // warm light
+    // === Light source from instance 0 ===
+    vec3 lightPos = getInstanceWorldPosition(0);
+    vec3 lightColor = vec3(1.0, 0.95, 0.8); // warm
     float lightIntensity = 20.0;
 
     vec3 toLight = lightPos - posWorld;
     float dist = length(toLight);
     vec3 lightDir = normalize(toLight);
-
     float NdotL = max(dot(normalWorld, lightDir), 0.0);
     float attenuation = 1.0 / (dist * dist + 1.0);
 
-    vec3 diffuse = baseColor * lightColor * lightIntensity * NdotL * attenuation;
+    bool isSelfLit = (instanceID == 0);
+    bool lit = isSelfLit || traceShadowRay(posWorld + normalWorld * 0.01, lightDir);
+
+    vec3 diffuse = vec3(0.0);
+    if (lit) {
+        diffuse = baseColor * lightColor * lightIntensity * NdotL * attenuation;
+    }
 
     vec3 resultColor = diffuse;
+
+    // === Reflection ===
+    if (prd.depth < 2) {
+        vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normalWorld);
+        reflectDir = normalize(reflectDir);
+        vec3 reflectOrigin = posWorld + reflectDir * 0.01;
+
+        reflectionPayload.color = vec3(0);
+        reflectionPayload.depth = prd.depth + 1;
+
+        traceRayEXT(
+            topLevelAS,
+            gl_RayFlagsOpaqueEXT,
+            0xFF,
+            SWS_SECONDARY_MISS_IDX,
+            SWS_SECONDARY_MISS_IDX,
+            SWS_DEFAULT_HIT_IDX,
+            reflectOrigin, 0.001, reflectDir, 1e20,
+            SWS_LOC3_REFLECTION_RAY
+        );
+
+        float fresnel = 0.2;
+        resultColor += reflectionPayload.color * fresnel;
+    }
+    
+    vec3 emission = vec3(0.0);
+    if (instanceID == 0) {
+        emission = lightColor * lightIntensity * 0.05;
+    }
+    resultColor = emission + diffuse;
 
     prd.color = resultColor;
 }
