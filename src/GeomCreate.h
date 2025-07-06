@@ -28,4 +28,8 @@ public:
 
     static VkVertexInputBindingDescription getBindingDescription2();
     static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions2();
+
+    static void createCube(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
+    static void createCube2(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
+    static void createCube3(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
 };

@@ -185,3 +185,170 @@ void GeomCreate::createIcosphere(uint32_t subdivisions,
     }
 }
 
+void GeomCreate::createCube(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices) {
+    outVertices.clear();
+    outIndices.clear();
+
+    glm::vec3 positions[] = {
+        // Front face
+        {-0.5f, -0.5f,  0.5f},  // 0
+        { 0.5f, -0.5f,  0.5f},  // 1
+        { 0.5f,  0.5f,  0.5f},  // 2
+        {-0.5f,  0.5f,  0.5f},  // 3
+
+        // Back face
+        {-0.5f, -0.5f, -0.5f},  // 4
+        { 0.5f, -0.5f, -0.5f},  // 5
+        { 0.5f,  0.5f, -0.5f},  // 6
+        {-0.5f,  0.5f, -0.5f},  // 7
+    };
+
+    glm::vec3 normals[] = {
+        { 0,  0,  1},  // Front
+        { 0,  0, -1},  // Back
+        { 1,  0,  0},  // Right
+        {-1,  0,  0},  // Left
+        { 0,  1,  0},  // Top
+        { 0, -1,  0},  // Bottom
+    };
+
+    auto addQuad = [&](int i0, int i1, int i2, int i3, const glm::vec3& normal) {
+        uint32_t baseIndex = static_cast<uint32_t>(outVertices.size());
+
+        outVertices.push_back({ glm::vec4(positions[i0], 1.0f), glm::vec4(normal, 0.0f), glm::vec4(1.0f), });
+        outVertices.push_back({ glm::vec4(positions[i1], 1.0f), glm::vec4(normal, 0.0f), glm::vec4(1.0f), });
+        outVertices.push_back({ glm::vec4(positions[i2], 1.0f), glm::vec4(normal, 0.0f), glm::vec4(1.0f), });
+        outVertices.push_back({ glm::vec4(positions[i3], 1.0f), glm::vec4(normal, 0.0f), glm::vec4(1.0f), });
+
+        outIndices.push_back(baseIndex);
+        outIndices.push_back(baseIndex + 1);
+        outIndices.push_back(baseIndex + 2);
+
+        outIndices.push_back(baseIndex);
+        outIndices.push_back(baseIndex + 2);
+        outIndices.push_back(baseIndex + 3);
+    };
+
+    // Faces: front, back, right, left, top, bottom
+    addQuad(0, 1, 2, 3, normals[0]);  // Front
+    addQuad(5, 4, 7, 6, normals[1]);  // Back
+    addQuad(1, 5, 6, 2, normals[2]);  // Right
+    addQuad(4, 0, 3, 7, normals[3]);  // Left
+    addQuad(3, 2, 6, 7, normals[4]);  // Top
+    addQuad(4, 5, 1, 0, normals[5]);  // Bottom
+}
+
+
+void GeomCreate::createCube2(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices) {
+    outVertices.clear();
+    outIndices.clear();
+
+    const glm::vec3 faceNormals[] = {
+        { 0,  0,  1},  // Front
+        { 0,  0, -1},  // Back
+        { 1,  0,  0},  // Right
+        {-1,  0,  0},  // Left
+        { 0,  1,  0},  // Top
+        { 0, -1,  0}   // Bottom
+    };
+
+    const glm::vec3 faceVertices[][4] = {
+        // Front (+Z)
+        { {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f} },
+        // Back (-Z)
+        { { 0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f} },
+        // Right (+X)
+        { { 0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f,  0.5f} },
+        // Left (-X)
+        { {-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f, -0.5f} },
+        // Top (+Y)
+        { {-0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f} },
+        // Bottom (-Y)
+        { {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f,  0.5f}, {-0.5f, -0.5f,  0.5f} },
+        };
+
+    for (int face = 0; face < 6; ++face) {
+        glm::vec4 normal = glm::vec4(faceNormals[face], 0.0f);
+        glm::vec4 color  = glm::vec4(1.0f); // White color
+
+        uint32_t baseIndex = static_cast<uint32_t>(outVertices.size());
+
+        // Add 4 vertices per face
+        for (int i = 0; i < 4; ++i) {
+            outVertices.push_back({
+                glm::vec4(faceVertices[face][i], 1.0f),
+                normal,
+                color
+            });
+        }
+
+        // Two triangles per face (0-1-2 and 0-2-3)
+        outIndices.push_back(baseIndex + 0);
+        outIndices.push_back(baseIndex + 1);
+        outIndices.push_back(baseIndex + 2);
+
+        outIndices.push_back(baseIndex + 0);
+        outIndices.push_back(baseIndex + 2);
+        outIndices.push_back(baseIndex + 3);
+    }
+}
+
+// === Единичный куб ===
+// Создает единичный куб с центром в начале координат и длиной ребра 1.0.
+// Генерирует 24 вершины, чтобы у каждой грани были правильные нормали.
+void GeomCreate::createCube3(std::vector<Vertex>& outVertices,
+                            std::vector<uint32_t>& outIndices) {
+    outVertices.clear();
+    outIndices.clear();
+
+    // Определяем 24 вершины. Каждая грань имеет 4 уникальные вершины
+    // с одинаковой нормалью, направленной перпендикулярно грани.
+    // Позиции вершин находятся в диапазоне от -0.5 до 0.5.
+    outVertices = {
+        // Передняя грань (+Z)
+        { {-0.5f, -0.5f,  0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f, -0.5f,  0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f,  0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f,  0.5f,  0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+
+        // Задняя грань (-Z)
+        { {-0.5f, -0.5f, -0.5f, 1.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f,  0.5f, -0.5f, 1.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f, -0.5f, 1.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f, -0.5f, -0.5f, 1.0f}, {0.0f, 0.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+
+        // Левая грань (-X)
+        { {-0.5f, -0.5f, -0.5f, 1.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f, -0.5f,  0.5f, 1.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f,  0.5f,  0.5f, 1.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f,  0.5f, -0.5f, 1.0f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+
+        // Правая грань (+X)
+        { { 0.5f, -0.5f, -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f, -0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f,  0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f, -0.5f,  0.5f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+
+        // Нижняя грань (-Y)
+        { {-0.5f, -0.5f, -0.5f, 1.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f, -0.5f, -0.5f, 1.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f, -0.5f,  0.5f, 1.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f, -0.5f,  0.5f, 1.0f}, {0.0f, -1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+
+        // Верхняя грань (+Y)
+        { {-0.5f,  0.5f, -0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { {-0.5f,  0.5f,  0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f,  0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        { { 0.5f,  0.5f, -0.5f, 1.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} },
+        };
+
+    // Определяем 36 индексов для создания 12 треугольников (2 на грань)
+    outIndices = {
+        0, 1, 2,   2, 3, 0,       // Передняя грань
+        4, 5, 6,   6, 7, 4,       // Задняя грань
+        8, 9, 10,  10, 11, 8,      // Левая грань
+        12, 13, 14, 14, 15, 12,    // Правая грань
+        16, 17, 18, 18, 19, 16,    // Нижняя грань
+        20, 21, 22, 22, 23, 20     // Верхняя грань
+    };
+}

@@ -249,7 +249,9 @@ void GraphicsModule::initRayTracingModule() {
     //GeomCreate::createIcosphere(2, vertices, indices);
     //GeomCreate::createUVSphere(132,132, vertices, indices);
 
-    GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
+    //GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
+
+    GeomCreate::createCube2( vertices, indices);
 
     std::vector<glm::mat4> transforms;
     const float spacing = 2.5f; // Distance between spheres
@@ -261,7 +263,7 @@ void GraphicsModule::initRayTracingModule() {
                 if(x==0 and y==0)
                     continue;
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
-                glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
+                glm::mat4 model =glm::mat4(1.0f);// glm::translate(glm::mat4(1.0f), position);
 
                 // --- Правильный расчёт масштаба ---
 
@@ -272,11 +274,14 @@ void GraphicsModule::initRayTracingModule() {
                 float current_scale = 0.5f + t * 1.0f;
 
                 // 3. Применяем всегда положительный и однородный масштаб
-                model = glm::scale(model, glm::vec3(current_scale));
+                //model = glm::scale(model, glm::vec3(current_scale));
 
                 transforms.push_back(model);
+                break;
             }
+            break;
         }
+        break;
     }
 
     // 5. Load the generated data into the ray tracing module
