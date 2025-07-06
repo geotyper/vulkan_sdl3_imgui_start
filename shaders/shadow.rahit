@@ -5,15 +5,9 @@
 
 #include "../src/shared_with_shaders.h"
 
-// The payload for the shadow ray
-layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
+layout(location = SWS_LOC_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
 
-void main()
-{
-    // Mark the light as blocked
+void main() {
     shadow.blocked = true;
-
-    // Terminate the ray immediately. No other shaders (including
-    // a closest-hit shader) will be run for this ray.
     terminateRayEXT;
 }

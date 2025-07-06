@@ -10,11 +10,11 @@
 #define SWS_PRIMARY_MISS_IDX      0
 #define SWS_SHADOW_MISS_IDX       1
 #define SWS_SECONDARY_MISS_IDX    2
+#define SWS_REFLECTION_MISS_IDX   3
 
 #define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
-//#define SWS_SHADOW_HIT_GROUP_IDX          1 // Вторая группа в hitRegion
+//#define SWS_SHADOW_HIT_GROUP_IDX  1 // Вторая группа в hitRegion
 
-// --- ОБЩИЕ КОНСТАНТЫ ---
 #define SWS_NUM_GROUPS                    5 // Общее количество групп шейдеров
 
 // Сеты/биндинги (без изменений)

@@ -296,7 +296,9 @@ void GraphicsModule::CreateScene() {
     // 2. Create Cube Geometry
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
-    GeomCreate::createCube2(cubeVertices, cubeIndices);
+    //GeomCreate::createCube2(cubeVertices, cubeIndices);
+     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+    //GeomCreate::createIcosphere(2, cubeVertices, cubeIndices);
 
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
@@ -309,7 +311,7 @@ void GraphicsModule::CreateScene() {
 
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, glm::vec3(1.1f));
+                model = glm::scale(model, glm::vec3(0.5f));
                 cubeInstances.push_back({model});
             }
         }

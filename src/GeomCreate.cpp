@@ -352,3 +352,82 @@ void GeomCreate::createCube3(std::vector<Vertex>& outVertices,
         20, 21, 22, 22, 23, 20     // Верхняя грань
     };
 }
+
+void GeomCreate::createCubeGrid(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices, int N) {
+    outVertices.clear();
+    outIndices.clear();
+
+    const glm::vec3 faceNormals[] = {
+        { 0,  0,  1},  // Front
+        { 0,  0, -1},  // Back
+        { 1,  0,  0},  // Right
+        {-1,  0,  0},  // Left
+        { 0,  1,  0},  // Top
+        { 0, -1,  0}   // Bottom
+    };
+
+    const glm::vec3 faceCorners[][4] = {
+        // Front (+Z)
+        { {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f} },
+        // Back (-Z)
+        { { 0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f} },
+        // Right (+X)
+        { { 0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f,  0.5f} },
+        // Left (-X)
+        { {-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f, -0.5f} },
+        // Top (+Y)
+        { {-0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f} },
+        // Bottom (-Y)
+        { {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f,  0.5f}, {-0.5f, -0.5f,  0.5f} },
+        };
+
+    for (int face = 0; face < 6; ++face) {
+        glm::vec3 normal = faceNormals[face];
+        glm::vec4 color  = glm::vec4(1.0f); // white
+
+        glm::vec3 v00 = faceCorners[face][0]; // bottom-left
+        glm::vec3 v10 = faceCorners[face][1]; // bottom-right
+        glm::vec3 v11 = faceCorners[face][2]; // top-right
+        glm::vec3 v01 = faceCorners[face][3]; // top-left
+
+        uint32_t baseIndex = static_cast<uint32_t>(outVertices.size());
+
+        // Generate (N+1)*(N+1) grid points per face
+        for (int y = 0; y <= N; ++y) {
+            float fy = static_cast<float>(y) / N;
+            for (int x = 0; x <= N; ++x) {
+                float fx = static_cast<float>(x) / N;
+
+                // Bilinear interpolation
+                glm::vec3 bottom = glm::mix(v00, v10, fx);
+                glm::vec3 top    = glm::mix(v01, v11, fx);
+                glm::vec3 pos    = glm::mix(bottom, top, fy);
+
+                outVertices.push_back({
+                    glm::vec4(pos, 1.0f),
+                    glm::vec4(normal, 0.0f),
+                    color
+                });
+            }
+        }
+
+        // Generate 2 triangles per cell
+        for (int y = 0; y < N; ++y) {
+            for (int x = 0; x < N; ++x) {
+                uint32_t i0 = baseIndex + (y    ) * (N + 1) + x;
+                uint32_t i1 = baseIndex + (y    ) * (N + 1) + x + 1;
+                uint32_t i2 = baseIndex + (y + 1) * (N + 1) + x + 1;
+                uint32_t i3 = baseIndex + (y + 1) * (N + 1) + x;
+
+                outIndices.push_back(i0);
+                outIndices.push_back(i1);
+                outIndices.push_back(i2);
+
+                outIndices.push_back(i0);
+                outIndices.push_back(i2);
+                outIndices.push_back(i3);
+            }
+        }
+    }
+}
+

@@ -4,10 +4,9 @@
 
 #include "../src/shared_with_shaders.h"
 
-layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT RadiancePayload prd;
+layout(location = SWS_LOC3_REFLECTION_RAY) rayPayloadInEXT RadiancePayload prd;
 
 void main() {
-    // В случае, если отражённый луч никуда не попал — возвращаем слабый фон
-    prd.color = vec3(0.02); // тёмный "ambient" вместо полного чёрного
+    prd.color = vec3(0.02); // темный отражающий фон
+    prd.blocked = false;
 }
-

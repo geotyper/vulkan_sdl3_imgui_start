@@ -7,9 +7,9 @@
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING) uniform accelerationStructureEXT topLevelAS;
 layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D resultImage;
-layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING) readonly buffer InstanceMetadata {
-    InstanceData data[];
-} instanceBuffer;
+//layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING) readonly buffer InstanceMetadata {
+//    InstanceData data[];
+//} instanceBuffer;
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
@@ -57,14 +57,6 @@ vec3 getHitPosition(uint meshId, uvec3 tri, vec2 baryUV) {
     return p0 * w + p1 * u + p2 * v;
 }
 
-bool isEmissiveInstance(uint instanceId) {
-    return (instanceId % 5 == 0);
-}
-
-vec3 getEmissionColor(uint instanceId) {
-    return vec3(5.0);
-}
-
 bool traceShadowRay(vec3 origin, vec3 dir) {
     shadow.blocked = false;
     traceRayEXT(topLevelAS,
@@ -80,7 +72,8 @@ bool traceShadowRay(vec3 origin, vec3 dir) {
 
 void main() {
     uint instanceID = gl_InstanceCustomIndexEXT;
-    uint meshId = instanceBuffer.data[instanceID].meshId;
+    //uint meshId = instanceBuffer.data[instanceID].meshId;
+    uint meshId = gl_InstanceCustomIndexEXT;
 
     uvec3 tri = getTriangleIndices(meshId, gl_PrimitiveID);
     vec3 normalObj = interpolateNormal(meshId, tri, attribs);
@@ -91,44 +84,22 @@ void main() {
     vec3 normalWorld = normalize(transpose(inverse(objToWorld)) * normalObj);
 
     vec3 baseColor = vertices[meshId].v[tri.x].color.rgb;
-    vec3 resultColor = vec3(0.1);
 
-    for (uint i = 0; i < 100; ++i) {
-        if (!isEmissiveInstance(i) || i == instanceID) continue;
-        vec3 lightPos = vec3(float(i) * 3.0, 5.0, 0.0);
-        vec3 toLight = lightPos - posWorld;
-        float dist = length(toLight);
-        toLight = normalize(toLight);
+    // === Lambert Point Light ===
+    vec3 lightPos = vec3(0.0, 0.0, 0.0);
+    vec3 lightColor = vec3(1.0, 0.95, 0.8); // warm light
+    float lightIntensity = 20.0;
 
-        if (traceShadowRay(posWorld + normalWorld * 0.01, toLight)) {
-            float NdotL = max(dot(normalWorld, toLight), 0.0);
-            vec3 emission = getEmissionColor(i);
-            float attenuation = 1.0 / (dist * dist + 1.0);
-            resultColor += baseColor * emission * NdotL * attenuation;
-        }
-    }
+    vec3 toLight = lightPos - posWorld;
+    float dist = length(toLight);
+    vec3 lightDir = normalize(toLight);
 
-    // Reflection
-    if (prd.depth < 2) {
-        vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normalWorld);
-        reflectDir = normalize(reflectDir);
-        vec3 reflectOrigin = posWorld + reflectDir * 0.01;
+    float NdotL = max(dot(normalWorld, lightDir), 0.0);
+    float attenuation = 1.0 / (dist * dist + 1.0);
 
-        reflectionPayload.color = vec3(0);
-        reflectionPayload.depth = prd.depth + 1;
+    vec3 diffuse = baseColor * lightColor * lightIntensity * NdotL * attenuation;
 
-        traceRayEXT(topLevelAS,
-            gl_RayFlagsOpaqueEXT,
-            0xFF,
-            SWS_SECONDARY_MISS_IDX,
-            SWS_SECONDARY_MISS_IDX,
-            SWS_DEFAULT_HIT_IDX,
-            reflectOrigin, 0.001, reflectDir, 1e20,
-            SWS_LOC3_REFLECTION_RAY);
-
-        float fresnel = 0.2;
-        resultColor += reflectionPayload.color * fresnel;
-    }
+    vec3 resultColor = diffuse;
 
     prd.color = resultColor;
 }

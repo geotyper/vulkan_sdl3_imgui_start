@@ -958,7 +958,8 @@ namespace rtx {
             const glm::mat4 tm = glm::transpose(instanceData.transform);
             memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
 
-            instance.instanceCustomIndex = static_cast<uint32_t>(vkInstances.size());
+           // instance.instanceCustomIndex = static_cast<uint32_t>(vkInstances.size());
+            instance.instanceCustomIndex = instanceData.meshId;
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;

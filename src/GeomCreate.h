@@ -32,4 +32,5 @@ public:
     static void createCube(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
     static void createCube2(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
     static void createCube3(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
+    static void createCubeGrid(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices, int N);
 };
