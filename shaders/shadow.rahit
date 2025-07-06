@@ -6,7 +6,7 @@
 #include "../src/shared_with_shaders.h"
 
 // The payload for the shadow ray
-layout(location = SWS_LOC_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
 
 void main()
 {

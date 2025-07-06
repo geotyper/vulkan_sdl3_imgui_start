@@ -4,9 +4,10 @@
 
 #include "../src/shared_with_shaders.h"
 
-layout(location = 2) rayPayloadInEXT RadiancePayload secondaryPrd;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT RadiancePayload secondaryPrd;
 
 void main() {
-    secondaryPrd.color = vec3(0.0, 1.0, 0.0); // Зелёный — значит, свет достигнут
+    //secondaryPrd.color = vec3(0.0, 1.0, 0.0); // Зелёный — значит, свет достигнут
+     secondaryPrd.blocked = false; // луч не встретил препятствий
 }
 

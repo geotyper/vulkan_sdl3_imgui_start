@@ -4,9 +4,10 @@
 
 #include "../src/shared_with_shaders.h"
 
-layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload secondaryPrd;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT RadiancePayload prd;
 
 void main() {
-    // Просто возвращаем зелёный цвет
-    secondaryPrd.color = vec3(0.0, 1.0, 0.0);
+    // В случае, если отражённый луч никуда не попал — возвращаем слабый фон
+    prd.color = vec3(0.02); // тёмный "ambient" вместо полного чёрного
 }
+

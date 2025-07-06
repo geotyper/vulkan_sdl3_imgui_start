@@ -49,6 +49,7 @@ struct ShadowPayload {
 struct RadiancePayload {
     vec3  color;
     uint  depth;
+    bool blocked;
 };
 
 // shaders helper functions
