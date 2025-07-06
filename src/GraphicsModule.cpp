@@ -272,7 +272,7 @@ void GraphicsModule::CreateScene() {
 
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, glm::vec3(0.5f));
+                model = glm::scale(model, glm::vec3(1.5f));
                 cubeInstances.push_back({model});
             }
         }

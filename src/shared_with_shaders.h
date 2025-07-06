@@ -59,7 +59,7 @@ struct RadiancePayload {
     bool blocked;
 };
 
-struct alignas(16) UniformData {
+struct UniformData {
     float uTime;
     float _padding1, _padding2, _padding3;
     vec3 lightColor;

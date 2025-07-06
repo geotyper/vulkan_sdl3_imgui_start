@@ -83,6 +83,24 @@ vec3 getInstanceWorldPosition(uint instanceID) {
         : sum / 3.0;
 }
 
+const vec3 PALETTE[7] = vec3[7](
+    vec3(0.945, 0.769, 0.059), // Sunflower (жёлтый)
+    vec3(0.203, 0.286, 0.368), // Midnight Blue
+    vec3(0.576, 0.439, 0.859), // Wisteria (фиолетовый)
+    vec3(0.945, 0.392, 0.392), // Alizarin (красный)
+    vec3(0.180, 0.800, 0.443), // Emerald (зелёный)
+    vec3(0.203, 0.596, 0.858), // Peter River (голубой)
+    vec3(1.000, 0.768, 0.000)  // Bright Orange
+);
+
+vec3 colorFromInstanceID(uint instanceID) {
+    return PALETTE[instanceID % 7];
+}
+
+layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING ) readonly buffer InstanceInfo {
+    InstanceData ids[];
+} instanceInfo[];
+
 void main() {
     uint instanceID = gl_InstanceCustomIndexEXT;
     uint meshId = instanceID;
@@ -95,7 +113,15 @@ void main() {
     mat3 objToWorld = mat3(gl_ObjectToWorldEXT);
     vec3 normalWorld = normalize(transpose(inverse(objToWorld)) * normalObj);
 
-    vec3 baseColor = vertices[meshId].v[tri.x].color.rgb;
+    //vec3 baseColor = vertices[meshId].v[tri.x].color.rgb;
+    //vec3 baseColor = colorFromInstanceID(instanceID);
+    
+    //uint cubeID = instanceInfo[gl_InstanceID].meshId;
+    vec3 objectPos = gl_ObjectToWorldEXT[3].xyz;
+    uint cubeIndex = uint(abs(objectPos.x * 13.37 + objectPos.y * 7.17 + objectPos.z * 3.14));
+    vec3 baseColor = colorFromInstanceID(cubeIndex);
+
+
 
     // === Light source from instance 0 ===
     vec3 lightPos = getInstanceWorldPosition(0);
@@ -117,6 +143,44 @@ void main() {
     }
 
     vec3 resultColor = diffuse;
+    
+    // В функции main() после основного diffuse-освещения:
+    if (prd.depth < 3) {
+        // Hemisphere sampling: направление немного рандомное, но ориентировано по нормали
+        vec3 randomSeed = vec3(
+            // Добавляем uTime, чтобы "сдвигать" шум в каждом кадре
+            fract(sin(dot(posWorld.xy + prd.depth + uniformBuffer.uni.uTime, vec2(12.9898, 78.233))) * 43758.5453),
+            fract(sin(dot(posWorld.yz + prd.depth, vec2(93.9898, 67.345))) * 24634.6345),
+            fract(sin(dot(posWorld.zx + prd.depth, vec2(45.332, 54.234))) * 12453.2542)
+        );
+    vec3 randomDir = normalize(normalWorld + (randomSeed * 2.0 - 1.0));
+
+    // Убедимся, что луч не уходит "под" поверхность
+    if (dot(randomDir, normalWorld) < 0) {
+        randomDir = reflect(randomDir, normalWorld);
+    }
+    
+    vec3 bounceOrigin = posWorld + normalWorld * 0.001; 
+
+        reflectionPayload.color = vec3(0);
+        reflectionPayload.depth = prd.depth + 1;
+
+        traceRayEXT(
+            topLevelAS,
+            gl_RayFlagsOpaqueEXT,
+            0xFF,
+            SWS_PRIMARY_MISS_IDX,
+            SWS_SECONDARY_MISS_IDX,
+            SWS_DEFAULT_HIT_IDX,
+            bounceOrigin, 0.001, randomDir, 1e20,
+            SWS_LOC3_REFLECTION_RAY
+        );
+
+        // Добавляем вклад bounced света
+        float bounceStrength = 0.4; // можно сделать зависимым от roughness или rand()
+        resultColor += reflectionPayload.color * baseColor * bounceStrength;
+    }
+
 
     // === Reflection ===
     if (prd.depth < 2) {
@@ -141,7 +205,6 @@ void main() {
         float fresnel = 0.2;
         resultColor += reflectionPayload.color * fresnel;
     }
-    
 
     vec3 emission = vec3(0.0);
     if (instanceID == 0) {
