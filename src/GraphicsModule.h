@@ -44,6 +44,8 @@ public:
     void createImGuiDescriptorPool();
     void loadRayTracingProcs();
     void CreateScene();
+
+    float currentTime=0.0f;
 private:
     // Initialization Steps
     void initSDL();

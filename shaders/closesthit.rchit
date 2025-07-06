@@ -8,6 +8,10 @@
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING) uniform accelerationStructureEXT topLevelAS;
 layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D resultImage;
 
+layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING) uniform UniformBlock {
+    UniformData uni;
+} uniformBuffer;
+
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
 layout(location = SWS_LOC3_REFLECTION_RAY) rayPayloadEXT RadiancePayload reflectionPayload;
@@ -95,8 +99,8 @@ void main() {
 
     // === Light source from instance 0 ===
     vec3 lightPos = getInstanceWorldPosition(0);
-    vec3 lightColor = vec3(1.0, 0.95, 0.8); // warm
-    float lightIntensity = 20.0;
+    vec3 lightColor = uniformBuffer.uni.lightColor;
+    float lightIntensity = uniformBuffer.uni.lightIntensity;
 
     vec3 toLight = lightPos - posWorld;
     float dist = length(toLight);
@@ -138,11 +142,22 @@ void main() {
         resultColor += reflectionPayload.color * fresnel;
     }
     
+
     vec3 emission = vec3(0.0);
     if (instanceID == 0) {
-        emission = lightColor * lightIntensity * 0.05;
+        // The emission is now directly controlled by the uniform's intensity
+        // You can scale it or modify it further if needed.
+        emission = lightColor * lightIntensity * 0.3; // Or just lightColor * some_emissive_factor
     }
-    resultColor = emission + diffuse;
+    resultColor = emission + resultColor;
+
+    // === Volumetric fog (to camera)
+    float viewDist = length(gl_WorldRayOriginEXT - posWorld);
+    float fogDensity = 0.05;
+    float fogAmount = 1.0 - exp(-fogDensity * viewDist);
+
+    vec3 fogColor = lightColor * 0.2; // или любой: vec3(0.8, 0.75, 0.6);
+    resultColor = mix(resultColor, fogColor, fogAmount);
 
     prd.color = resultColor;
 }

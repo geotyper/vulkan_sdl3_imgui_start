@@ -64,6 +64,7 @@ public:
     void LoadFromSingleMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<glm::mat4>& transforms);
 
     void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
+    void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity);
 private:
     void GetRayTracingProperties();
     void CreateDescriptorSetLayout();
@@ -107,6 +108,8 @@ private:
     };
     vulkanhelpers::Buffer m_cameraUBO;
 
+    vulkanhelpers::Buffer m_uniformDataUBO;
+
     vulkanhelpers::Image m_storageImage;
     VkExtent2D m_storageImageExtent{};
 
@@ -114,6 +117,7 @@ private:
 
 
 
+    void CreateUniformDataBuffer();
 };
 
 } // namespace rtx

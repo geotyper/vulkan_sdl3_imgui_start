@@ -36,6 +36,7 @@
 #define SWS_NUM_GEOMETRY_BUFFERS          2
 
 #define SWS_INSTANCE_DATA_BINDING         5
+#define SWS_UNIFORM_DATA_BINDING          6
 
 // payload-локации (без изменений)
 #define SWS_LOC_PRIMARY_RAY               0
@@ -56,6 +57,13 @@ struct RadiancePayload {
     vec3  color;
     uint  depth;
     bool blocked;
+};
+
+struct UniformData {
+    float uTime;
+    float _padding1, _padding2, _padding3;
+    vec3 lightColor;
+    float lightIntensity;
 };
 
 // shaders helper functions

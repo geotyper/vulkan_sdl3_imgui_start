@@ -60,6 +60,7 @@ namespace rtx {
         m_createInfo = createInfo;
         GetRayTracingProperties();
         CreateCameraBuffer();
+        CreateUniformDataBuffer();
         CreateDescriptorSetLayout();
         CreateDescriptorPool();
         CreatePipeline();
@@ -78,12 +79,34 @@ namespace rtx {
 
         m_storageImage.Destroy(m_context);
         m_cameraUBO.Destroy(m_context);
+        m_uniformDataUBO.Destroy(m_context);
         m_sbt.Destroy(m_context);
 
         if (m_pipeline) vkDestroyPipeline(device(), m_pipeline, nullptr);
         if (m_pipelineLayout) vkDestroyPipelineLayout(device(), m_pipelineLayout, nullptr);
         if (m_descriptorPool) vkDestroyDescriptorPool(device(), m_descriptorPool, nullptr);
         if (m_descriptorSetLayout) vkDestroyDescriptorSetLayout(device(), m_descriptorSetLayout, nullptr);
+    }
+
+
+    void RayTracingModule::CreateUniformDataBuffer() // <<< NEW
+    {
+        m_uniformDataUBO.Create(
+            m_context,
+            sizeof(UniformData),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+            );
+    }
+
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity) {
+        UniformData ubo;
+        ubo.uTime = time;
+        ubo.lightColor = lightColor;
+        ubo.lightIntensity = lightIntensity;
+
+        // The rest of the function remains the same
+        m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
     }
 
     void RayTracingModule::LoadScene(const std::string& objFilePath) {
@@ -424,7 +447,15 @@ namespace rtx {
         cameraBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 
-        const uint32_t MAX_MESHES = 16;
+        /* UniformData UBO (time, etc.) - for raygen and hit shaders */
+        VkDescriptorSetLayoutBinding uniformDataBinding{};
+        uniformDataBinding.binding         = SWS_UNIFORM_DATA_BINDING; // Use new binding point
+        uniformDataBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniformDataBinding.descriptorCount = 1;
+        uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+
+        const uint32_t MAX_MESHES = 2;
 
         /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
         VkDescriptorSetLayoutBinding verticesBinding{};
@@ -443,7 +474,7 @@ namespace rtx {
 
         const std::array bindings{
             tlasBinding, imageBinding, cameraBinding,
-            verticesBinding, indicesBinding
+            verticesBinding, indicesBinding, uniformDataBinding
         };
 
         VkDescriptorSetLayoutCreateInfo info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
@@ -459,8 +490,8 @@ namespace rtx {
         std::vector<VkDescriptorPoolSize> poolSizes = {
             { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,    1 },
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,                 1 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                1 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                SWS_NUM_GEOMETRY_BUFFERS }
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                2 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                2* SWS_NUM_GEOMETRY_BUFFERS }  //2?
         };
         VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -635,109 +666,6 @@ namespace rtx {
         VK_CHECK(m_sbt.Create(m_context, sbtSize, usage, memProps, sbtData.data()), "SBT creation failed");
     }
 
-    //void rtx::RayTracingModule::UpdateDescriptorSets() {
-    //    // Don't attempt to update if the core resources aren't ready yet.
-    //    // This function will be called again when they are (e.g., after a scene load or resize).
-    //    if (!m_scene || m_tlas.handle == VK_NULL_HANDLE || !m_storageImage.GetImageView()) {
-    //        return;
-    //    }
-
-    //    // --- Allocate the single descriptor set if it hasn't been already ---
-    //    if (m_descriptorSet == VK_NULL_HANDLE) {
-    //        VkDescriptorSetAllocateInfo allocInfo{};
-    //        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    //        allocInfo.descriptorPool = m_descriptorPool;
-    //        allocInfo.descriptorSetCount = 1;
-    //        allocInfo.pSetLayouts = &m_descriptorSetLayout;
-    //        VK_CHECK(vkAllocateDescriptorSets(device(), &allocInfo, &m_descriptorSet), "Failed to allocate ray tracing descriptor set");
-    //    }
-
-    //    // --- Prepare descriptor writes for all bindings ---
-
-    //    // 1. Top-Level Acceleration Structure (Binding 0)
-    //    VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{};
-    //    tlasWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-    //    tlasWriteInfo.accelerationStructureCount = 1;
-    //    tlasWriteInfo.pAccelerationStructures = &m_tlas.handle;
-
-    //    // 2. Storage Image (Binding 1)
-    //    VkDescriptorImageInfo storageImageInfo{};
-    //    storageImageInfo.imageView = m_storageImage.GetImageView();
-    //    storageImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-    //    // 3. Camera Uniform Buffer (Binding 2)
-    //    VkDescriptorBufferInfo cameraBufferInfo{};
-    //    cameraBufferInfo.buffer = m_cameraUBO.GetBuffer();
-    //    cameraBufferInfo.offset = 0;
-    //    cameraBufferInfo.range = VK_WHOLE_SIZE;
-
-    //    // --- Create a list of write operations ---
-    //    std::vector<VkWriteDescriptorSet> writes;
-
-    //    // Write for TLAS
-    //    VkWriteDescriptorSet tlasWrite{};
-    //    tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    //    tlasWrite.dstSet = m_descriptorSet;
-    //    tlasWrite.dstBinding = SWS_SCENE_AS_BINDING;
-    //    tlasWrite.descriptorCount = 1;
-    //    tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-    //    tlasWrite.pNext = &tlasWriteInfo; // Link the acceleration structure info
-    //    writes.push_back(tlasWrite);
-
-    //    // Write for Storage Image
-    //    VkWriteDescriptorSet imageWrite{};
-    //    imageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    //    imageWrite.dstSet = m_descriptorSet;
-    //    imageWrite.dstBinding = SWS_RESULT_IMAGE_BINDING;
-    //    imageWrite.descriptorCount = 1;
-    //    imageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    //    imageWrite.pImageInfo = &storageImageInfo;
-    //    writes.push_back(imageWrite);
-
-    //    // Write for Camera UBO
-    //    VkWriteDescriptorSet cameraWrite{};
-    //    cameraWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    //    cameraWrite.dstSet = m_descriptorSet;
-    //    cameraWrite.dstBinding = SWS_CAMERA_BINDING;
-    //    cameraWrite.descriptorCount = 1;
-    //    cameraWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    //    cameraWrite.pBufferInfo = &cameraBufferInfo;
-    //    writes.push_back(cameraWrite);
-    //
-    //
-    //
-
-    //    // Vertex buffer (binding 3)
-    //    VkDescriptorBufferInfo vbInfo{};
-    //    vbInfo.buffer = m_scene->meshes[0]->vertexBuffer.GetBuffer();
-    //    vbInfo.offset = 0;
-    //    vbInfo.range  = VK_WHOLE_SIZE;
-
-    //    VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-    //    vbWrite.dstSet          = m_descriptorSet;
-    //    vbWrite.dstBinding      = SWS_VERTICES_BINDING;
-    //    vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    //    vbWrite.descriptorCount = 1;
-    //    vbWrite.pBufferInfo     = &vbInfo;
-
-    //    // Index buffer (binding 4)
-    //    VkDescriptorBufferInfo ibInfo{};
-    //    ibInfo.buffer = m_scene->meshes[0]->indexBuffer.GetBuffer();
-    //    ibInfo.offset = 0;
-    //    ibInfo.range  = VK_WHOLE_SIZE;
-
-    //    VkWriteDescriptorSet ibWrite = vbWrite;
-    //    ibWrite.dstBinding  = SWS_INDICES_BINDING;
-    //    ibWrite.pBufferInfo = &ibInfo;
-
-    //    // …push в writes
-    //    writes.push_back(vbWrite);
-    //    writes.push_back(ibWrite);
-
-    //    // --- Perform the update in a single, batched call ---
-    //    vkUpdateDescriptorSets(device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    //}
-
     void rtx::RayTracingModule::UpdateDescriptorSets() {
         // Don't attempt to update if the core resources aren't ready yet.
         // This function will be called again when they are (e.g., after a scene load or resize).
@@ -774,6 +702,12 @@ namespace rtx {
         cameraBufferInfo.offset = 0;
         cameraBufferInfo.range = VK_WHOLE_SIZE;
 
+        // UniformData UBO
+        VkDescriptorBufferInfo uniformDataBufferInfo{};
+        uniformDataBufferInfo.buffer = m_uniformDataUBO.GetBuffer();
+        uniformDataBufferInfo.offset = 0;
+        uniformDataBufferInfo.range  = VK_WHOLE_SIZE;
+
         // --- Create a list of write operations ---
         std::vector<VkWriteDescriptorSet> writes;
 
@@ -806,6 +740,16 @@ namespace rtx {
         cameraWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         cameraWrite.pBufferInfo = &cameraBufferInfo;
         writes.push_back(cameraWrite);
+
+         // Write for UniformData UBO
+        VkWriteDescriptorSet uniformDataWrite{};
+        uniformDataWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uniformDataWrite.dstSet          = m_descriptorSet;
+        uniformDataWrite.dstBinding      = SWS_UNIFORM_DATA_BINDING;
+        uniformDataWrite.descriptorCount = 1;
+        uniformDataWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniformDataWrite.pBufferInfo     = &uniformDataBufferInfo;
+        writes.push_back(uniformDataWrite);
 
         // --- Prepare descriptor info for multiple mesh buffers ---
         std::vector<VkDescriptorBufferInfo> vertexBufferInfos;

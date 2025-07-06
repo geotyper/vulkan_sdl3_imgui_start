@@ -114,6 +114,13 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
     VK_CHECK(result, "Failed to acquire swap chain image");
 
     m_rtxModule->UpdateCamera(cam);
+    currentTime +=0.01;
+    // Example: Make the light pulse
+    float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
+    float currentIntensity = 10.0f + pulse * 20.0f; // Varies between 10.0 and 30.0
+
+    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
 
     vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
