@@ -9,14 +9,6 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
-//// Convenience macro for Vulkan error checking
-//#define VK_CHECK(x, msg)                                            \
-//do {                                                            \
-//        VkResult err = (x);                                         \
-//        if (err != VK_SUCCESS) {                                    \
-//            throw std::runtime_error(std::string(msg) + " failed with error: " + std::to_string(err)); \
-//    }                                                           \
-//} while (0)
 
 namespace rtx {
 
@@ -969,93 +961,5 @@ namespace rtx {
         scratchBuffer.Destroy(m_context);
         instanceBuffer.Destroy(m_context);
     }
-
-    //void RayTracingModule::BuildTLAS() {
-
-    //    std::vector<VkAccelerationStructureInstanceKHR> instances;
-    //    instances.reserve(m_instanceTransforms.size());
-
-
-    //    // Define masks for different object types
-    //    const uint32_t MASK_LIGHT = 0x01;
-    //    const uint32_t MASK_OPAQUE_GEOM = 0x02;
-
-    //    for (size_t i = 0; i < m_instanceTransforms.size(); ++i) {
-    //        const auto& transform = m_instanceTransforms[i];
-
-    //        VkAccelerationStructureInstanceKHR instance{};
-
-    //        // Копируем матрицу трансформации. GLM (column-major) нужно транспонировать для Vulkan (row-major).
-    //        const glm::mat4 tm = glm::transpose(transform);
-    //        memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
-
-    //        // --- КЛЮЧЕВОЙ МОМЕНТ ---
-    //        // Устанавливаем уникальный ID для каждого экземпляра.
-    //        // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
-    //        // Остальные получат ID 1.
-    //        bool isLight = (i == 4); // The center sphere is the light
-    //        instance.instanceCustomIndex = static_cast<uint32_t>(i);//isLight ? 0 : 1;
-
-    //        instance.mask = 0xFF;;//isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
-    //        instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX; // Используем одну и ту же hit-группу для всех
-    //        instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-    //        instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
-
-    //        instances.push_back(instance);
-    //    }
-
-    //    vulkanhelpers::Buffer instanceBuffer;
-    //    instanceBuffer.Create(m_context, sizeof(VkAccelerationStructureInstanceKHR) * instances.size(), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    //    instanceBuffer.UploadData(m_context, instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * instances.size());
-
-    //    VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
-    //    instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-    //    instancesData.arrayOfPointers = VK_FALSE;
-    //    instancesData.data.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, instanceBuffer).deviceAddress;
-
-    //    VkAccelerationStructureGeometryKHR asGeom{};
-    //    asGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-    //    asGeom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-    //    asGeom.geometry.instances = instancesData;
-
-    //    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
-    //    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-    //    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-    //    buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-    //    buildInfo.geometryCount = 1;
-    //    buildInfo.pGeometries = &asGeom;
-
-    //    uint32_t primitive_count = static_cast<uint32_t>(instances.size());
-    //    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
-    //    sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-    //    vkGetAccelerationStructureBuildSizesKHR(device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitive_count, &sizeInfo);
-
-    //    m_tlas.buffer.Create(m_context, sizeInfo.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    //    VkAccelerationStructureCreateInfoKHR createInfo{};
-    //    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-    //    createInfo.buffer = m_tlas.buffer.GetBuffer();
-    //    createInfo.size = sizeInfo.accelerationStructureSize;
-    //    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-    //    vkCreateAccelerationStructureKHR(device(), &createInfo, nullptr, &m_tlas.handle);
-
-    //    vulkanhelpers::Buffer scratchBuffer;
-    //    scratchBuffer.Create(m_context, sizeInfo.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    //    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-    //    buildInfo.dstAccelerationStructure = m_tlas.handle;
-    //    buildInfo.scratchData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, scratchBuffer).deviceAddress;
-
-    //    VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
-    //    rangeInfo.primitiveCount = primitive_count;
-    //    const VkAccelerationStructureBuildRangeInfoKHR* pRangeInfo = &rangeInfo;
-
-    //    executeImmediateCommand([&](VkCommandBuffer cmd) {
-    //        vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pRangeInfo);
-    //    });
-
-    //    scratchBuffer.Destroy(m_context);
-    //    instanceBuffer.Destroy(m_context);
-    //}
 
 } // namespace rtx
