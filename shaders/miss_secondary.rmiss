@@ -7,6 +7,6 @@
 layout(location = SWS_LOC3_REFLECTION_RAY) rayPayloadInEXT RadiancePayload prd;
 
 void main() {
-    prd.color = vec3(0.12); // темный отражающий фон
+    prd.color = vec3(0.02); // темный отражающий фон
     prd.blocked = false;
 }

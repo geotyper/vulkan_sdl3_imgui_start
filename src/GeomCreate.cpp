@@ -431,3 +431,261 @@ void GeomCreate::createCubeGrid(std::vector<Vertex>& outVertices, std::vector<ui
     }
 }
 
+
+
+void GeomCreate::createHollowCube(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices, int N, float holeSize) {
+    outVertices.clear();
+    outIndices.clear();
+
+    if (N < 3) N = 3;
+
+    // ========================================================================
+    // Часть 1: Внешние грани с отверстиями (этот блок остался без изменений)
+    // ========================================================================
+    const glm::vec3 faceNormals[] = {
+        { 0,  0,  1}, { 0,  0, -1}, { 1,  0,  0}, {-1,  0,  0}, { 0,  1,  0}, { 0, -1,  0}
+    };
+    const glm::vec3 faceCorners[][4] = {
+                                        { {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f} },
+                                        { { 0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f} },
+                                        { { 0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f,  0.5f, -0.5f}, { 0.5f,  0.5f,  0.5f} },
+                                        { {-0.5f, -0.5f, -0.5f}, {-0.5f, -0.5f,  0.5f}, {-0.5f,  0.5f,  0.5f}, {-0.5f,  0.5f, -0.5f} },
+                                        { {-0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f, -0.5f}, {-0.5f,  0.5f, -0.5f} },
+                                        { {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f,  0.5f}, {-0.5f, -0.5f,  0.5f} },
+                                        };
+
+    int startHole = static_cast<int>(N * (1.0f - holeSize) / 2.0f);
+    int endHole = N - startHole;
+
+    for (int face = 0; face < 6; ++face) {
+        uint32_t baseIndex = static_cast<uint32_t>(outVertices.size());
+        for (int y = 0; y <= N; ++y) {
+            for (int x = 0; x <= N; ++x) {
+                float fx = static_cast<float>(x) / N;
+                float fy = static_cast<float>(y) / N;
+                glm::vec3 p = glm::mix(glm::mix(faceCorners[face][0], faceCorners[face][1], fx),
+                                       glm::mix(faceCorners[face][3], faceCorners[face][2], fx), fy);
+                outVertices.push_back({glm::vec4(p, 1.0f), glm::vec4(faceNormals[face], 0.0f), glm::vec4(1.0f)});
+            }
+        }
+        for (int y = 0; y < N; ++y) {
+            for (int x = 0; x < N; ++x) {
+                if (x >= startHole && x < endHole && y >= startHole && y < endHole) {
+                    continue;
+                }
+                uint32_t i0 = baseIndex + (y) * (N + 1) + x;
+                uint32_t i1 = baseIndex + (y) * (N + 1) + x + 1;
+                uint32_t i2 = baseIndex + (y + 1) * (N + 1) + x + 1;
+                uint32_t i3 = baseIndex + (y + 1) * (N + 1) + x;
+                outIndices.push_back(i0); outIndices.push_back(i1); outIndices.push_back(i2);
+                outIndices.push_back(i0); outIndices.push_back(i2); outIndices.push_back(i3);
+            }
+        }
+    }
+
+    // ========================================================================
+    // Часть 2: Внутренние стенки туннелей (ИСПРАВЛЕННАЯ ЛОГИКА)
+    // ========================================================================
+    float h = holeSize / 2.0f;
+
+    // ✅ ИСПРАВЛЕННЫЕ ВЕРШИНЫ И НОРМАЛИ
+    const glm::vec3 innerVertices[][4] = {
+        // Туннель по Z (Front/Back)
+        { {-h,  h, -0.5f}, { h,  h, -0.5f}, { h,  h,  0.5f}, {-h,  h,  0.5f} }, // Верхняя стенка
+        { {-h, -h,  0.5f}, { h, -h,  0.5f}, { h, -h, -0.5f}, {-h, -h, -0.5f} }, // Нижняя стенка
+        { { h, -h,  0.5f}, { h,  h,  0.5f}, { h,  h, -0.5f}, { h, -h, -0.5f} }, // Правая стенка
+        { {-h, -h, -0.5f}, {-h,  h, -0.5f}, {-h,  h,  0.5f}, {-h, -h,  0.5f} }, // Левая стенка
+
+        // Туннель по Y (Top/Bottom)
+        { {-h,  0.5f,  h}, { h,  0.5f,  h}, { h, -0.5f,  h}, {-h, -0.5f,  h} }, // Передняя стенка (+Z)
+        { { h,  0.5f, -h}, {-h,  0.5f, -h}, {-h, -0.5f, -h}, { h, -0.5f, -h} }, // Задняя стенка (-Z)
+        { { h,  0.5f,  h}, { h,  0.5f, -h}, { h, -0.5f, -h}, { h, -0.5f,  h} }, // Правая стенка (+X)
+        { {-h,  0.5f, -h}, {-h,  0.5f,  h}, {-h, -0.5f,  h}, {-h, -0.5f, -h} }, // Левая стенка (-X)
+
+        // Туннель по X (Left/Right)
+        { { 0.5f,  h, -h}, { 0.5f,  h,  h}, { 0.5f, -h,  h}, { 0.5f, -h, -h} }, // Правая передняя стенка (+Z)
+        { {-0.5f,  h,  h}, {-0.5f,  h, -h}, {-0.5f, -h, -h}, {-0.5f, -h,  h} }, // Левая передняя стенка (+Z)
+        { {-0.5f,  h,  h}, { 0.5f,  h,  h}, { 0.5f,  h, -h}, {-0.5f,  h, -h} }, // Верхняя стенка (+Y)
+        { {-0.5f, -h, -h}, { 0.5f, -h, -h}, { 0.5f, -h,  h}, {-0.5f, -h,  h} }  // Нижняя стенка (-Y)
+    };
+    const glm::vec3 innerNormals[] = {
+        { 0, -1,  0}, { 0,  1,  0}, {-1,  0,  0}, { 1,  0,  0}, // Туннель Z
+        { 0,  0, -1}, { 0,  0,  1}, {-1,  0,  0}, { 1,  0,  0}, // Туннель Y
+        { 0,  0, -1}, { 0,  0,  1}, { 0, -1,  0}, { 0,  1,  0}  // Туннель X
+    };
+
+    for (int i = 0; i < 12; ++i) {
+        uint32_t baseIndex = static_cast<uint32_t>(outVertices.size());
+        glm::vec3 normal = innerNormals[i];
+        for (int j = 0; j < 4; ++j) {
+            outVertices.push_back({glm::vec4(innerVertices[i][j], 1.0f), glm::vec4(normal, 0.0f), glm::vec4(1.0f)});
+        }
+        outIndices.push_back(baseIndex); outIndices.push_back(baseIndex + 1); outIndices.push_back(baseIndex + 2);
+        outIndices.push_back(baseIndex); outIndices.push_back(baseIndex + 2); outIndices.push_back(baseIndex + 3);
+    }
+}
+
+// Вырезает одно квадратное «окно» на каждой стороне куба.
+//  - N            : число ячеек по стороне (должно быть чётным или кратным 3 — см. комментарий).
+//  - holeScale    : относительная ширина окна (0.0f..1.0f). 0.5f = окно в половину стороны.
+void GeomCreate::createCubeWithSquareHole(std::vector<Vertex>& outVertices,
+                                          std::vector<uint32_t>& outIndices,
+                                          int N,
+                                          float holeScale /*=0.4f*/)
+{
+    outVertices.clear();
+    outIndices .clear();
+
+    /* --- исходные данные ваших граней --- */
+    const glm::vec3 faceNormals[6] = {
+        { 0,  0,  1}, { 0,  0, -1}, { 1,  0,  0},
+        {-1,  0,  0}, { 0,  1,  0}, { 0, -1,  0}
+    };
+    const glm::vec3 faceCorners[6][4] = {
+        {{-0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f}}, // +Z
+        {{ 0.5f,-0.5f,-0.5f},{-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f}}, // -Z
+        {{ 0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f}}, // +X
+        {{-0.5f,-0.5f,-0.5f},{-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f, 0.5f,-0.5f}}, // -X
+        {{-0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f,-0.5f},{-0.5f, 0.5f,-0.5f}}, // +Y
+        {{-0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f, 0.5f},{-0.5f,-0.5f, 0.5f}}, // -Y
+    };
+
+    /* --- как много ячеек оставить под окно --- */
+    holeScale      = glm::clamp(holeScale, 0.05f, 0.95f);
+    int holeCells  = std::max(1, int(N * holeScale + 0.5f));   // ширина окна в ячейках
+    if (holeCells >= N) holeCells = N - 1;                     // окно не может полностью съесть грань
+    int holeOffset = (N - holeCells) / 2;                      // смещение окна от левого/нижнего краёв
+    int hx0 = holeOffset,          hy0 = holeOffset;           // начало окна по X/Y (ячейка)
+    int hx1 = hx0 + holeCells;     int hy1 = hy0 + holeCells;  // конец   окна (EXclusive!)
+
+    for (int face = 0; face < 6; ++face) {
+        glm::vec3 normal = faceNormals[face];
+        glm::vec4 color  = glm::vec4(1.0f);
+
+        glm::vec3 v00 = faceCorners[face][0], v10 = faceCorners[face][1];
+        glm::vec3 v11 = faceCorners[face][2], v01 = faceCorners[face][3];
+
+        uint32_t base = uint32_t(outVertices.size());
+
+        /* --- вершины ─ всё как раньше --- */
+        for (int y = 0; y <= N; ++y) {
+            float fy = float(y) / N;
+            for (int x = 0; x <= N; ++x) {
+                float fx = float(x) / N;
+
+                glm::vec3 pos = glm::mix(glm::mix(v00, v10, fx),
+                                         glm::mix(v01, v11, fx), fy);
+                outVertices.push_back({ glm::vec4(pos,1.0f),
+                                       glm::vec4(normal,0.0f),
+                                       color });
+            }
+        }
+
+        /* --- индексы: пропускаем центральную «дырку» --- */
+        for (int y = 0; y < N; ++y) {
+            for (int x = 0; x < N; ++x) {
+
+                // Если текущая ячейка внутри окна – не создаём треугольники
+                if (x >= hx0 && x < hx1 && y >= hy0 && y < hy1)
+                    continue;
+
+                uint32_t i0 = base +  y      * (N + 1) +  x;
+                uint32_t i1 = base +  y      * (N + 1) + (x + 1);
+                uint32_t i2 = base + (y + 1) * (N + 1) + (x + 1);
+                uint32_t i3 = base + (y + 1) * (N + 1) +  x;
+
+                outIndices.insert(outIndices.end(),
+                                  { i0, i1, i2,   i0, i2, i3 });
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------
+// Создаёт куб, на каждой грани которого вырезан центральный квадрат-окно.
+//  N          : сетка N×N ячеек на грани.
+//  holeCells  : ширина окна в целых ячейках (должна быть < N
+//               и иметь ту же чётность, что и N).
+void GeomCreate::createCubeCenterHole(std::vector<Vertex>& outVertices,
+                                      std::vector<uint32_t>& outIndices,
+                                      int N,
+                                      int holeCells)
+{
+    outVertices.clear();
+    outIndices .clear();
+
+    /* --- проверки параметров --- */
+    //if (N <= 0)
+    //    throw std::runtime_error("N must be > 0");
+    //if (holeCells <= 0 || holeCells >= N)
+    //    throw std::runtime_error("holeCells must be in range (0, N)");
+    //if ((N - holeCells) & 1)
+    //    throw std::runtime_error("N - holeCells must be even for a centered hole");
+
+    const glm::vec3 faceNormals[6] = {
+        { 0,  0,  1}, { 0,  0, -1}, { 1,  0,  0},
+        {-1,  0,  0}, { 0,  1,  0}, { 0, -1,  0}
+    };
+    const glm::vec3 faceCorners[6][4] = {
+        {{-0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f}}, // +Z
+        {{ 0.5f,-0.5f,-0.5f},{-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f}}, // -Z
+        {{ 0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f}}, // +X
+        {{-0.5f,-0.5f,-0.5f},{-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f, 0.5f,-0.5f}}, // -X
+        {{-0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f,-0.5f},{-0.5f, 0.5f,-0.5f}}, // +Y
+        {{-0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f, 0.5f},{-0.5f,-0.5f, 0.5f}}, // -Y
+    };
+
+    /* --- диапазон ячеек, которые надо вырезать --- */
+    int border   = (N - holeCells) / 2; // толщина рамки в ячейках
+    int hx0 = border;                   // первая вырезаемая ячейка по X
+    int hx1 = hx0 + holeCells;          // EXclusive
+    int hy0 = border;
+    int hy1 = hy0 + holeCells;
+
+    for (int face = 0; face < 6; ++face)
+    {
+        glm::vec3 normal = faceNormals[face];
+        glm::vec4 color  = glm::vec4(1.0f);
+
+        glm::vec3 v00 = faceCorners[face][0];
+        glm::vec3 v10 = faceCorners[face][1];
+        glm::vec3 v11 = faceCorners[face][2];
+        glm::vec3 v01 = faceCorners[face][3];
+
+        uint32_t base = static_cast<uint32_t>(outVertices.size());
+
+        /* ----- вершины ----- */
+        for (int y = 0; y <= N; ++y) {
+            float fy = static_cast<float>(y) / N;
+            for (int x = 0; x <= N; ++x) {
+                float fx = static_cast<float>(x) / N;
+
+                glm::vec3 pos = glm::mix(glm::mix(v00, v10, fx),
+                                         glm::mix(v01, v11, fx), fy);
+
+                outVertices.push_back({
+                    glm::vec4(pos, 1.0f),
+                    glm::vec4(normal, 0.0f),
+                    color
+                });
+            }
+        }
+
+        /* ----- индексы: пропускаем centrale окно ----- */
+        for (int y = 0; y < N; ++y) {
+            for (int x = 0; x < N; ++x) {
+
+                bool inHole = (x >= hx0 && x < hx1 &&
+                               y >= hy0 && y < hy1);
+                if (inHole) continue;
+
+                uint32_t i0 = base +  y      * (N + 1) +  x;
+                uint32_t i1 = base +  y      * (N + 1) + (x + 1);
+                uint32_t i2 = base + (y + 1) * (N + 1) + (x + 1);
+                uint32_t i3 = base + (y + 1) * (N + 1) +  x;
+
+                outIndices.insert(outIndices.end(), { i0,i1,i2,  i0,i2,i3 });
+            }
+        }
+    }
+}

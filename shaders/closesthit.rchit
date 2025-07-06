@@ -101,6 +101,39 @@ layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING ) readonly bu
     InstanceData ids[];
 } instanceInfo[];
 
+// Простая хеш-функция для получения псевдо-случайного числа от 0 до 1
+float rand(inout uint seed) {
+    seed = seed * 747796405u + 2891336453u;
+    uint result = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
+    result = (result >> 22u) ^ result;
+    return float(result) / 4294967295.0f;
+}
+
+// Создает локальную систему координат вокруг нормали
+void createCoordinateSystem(in vec3 N, out vec3 Nt, out vec3 Nb) {
+    if (abs(N.x) > abs(N.y))
+        Nt = vec3(N.z, 0, -N.x) / sqrt(N.x * N.x + N.z * N.z);
+    else
+        Nt = vec3(0, -N.z, N.y) / sqrt(N.y * N.y + N.z * N.z);
+    Nb = cross(N, Nt);
+}
+
+// Генерирует случайный вектор в полусфере с косинус-взвешиванием
+vec3 sampleCosineWeightedHemisphere(inout uint seed, vec3 normal) {
+    float r1 = rand(seed);
+    float r2 = rand(seed);
+
+    float sinTheta = sqrt(1.0 - r1 * r1);
+    float phi = 2.0 * 3.1415926535 * r2;
+    float x = sinTheta * cos(phi);
+    float z = sinTheta * sin(phi);
+    vec3 sample_dir = vec3(x, r1, z); // y - up
+
+    vec3 Nt, Nb;
+    createCoordinateSystem(normal, Nt, Nb);
+    return x * Nt + r1 * normal + z * Nb;
+}
+
 void main() {
     uint instanceID = gl_InstanceCustomIndexEXT;
     uint meshId = instanceID;
@@ -144,46 +177,48 @@ void main() {
 
     vec3 resultColor = diffuse;
     
-    // В функции main() после основного diffuse-освещения:
-    if (prd.depth < 3) {
-        // Hemisphere sampling: направление немного рандомное, но ориентировано по нормали
-        vec3 randomSeed = vec3(
-            // Добавляем uTime, чтобы "сдвигать" шум в каждом кадре
-            fract(sin(dot(posWorld.xy + prd.depth + uniformBuffer.uni.uTime, vec2(12.9898, 78.233))) * 43758.5453),
-            fract(sin(dot(posWorld.yz + prd.depth, vec2(93.9898, 67.345))) * 24634.6345),
-            fract(sin(dot(posWorld.zx + prd.depth, vec2(45.332, 54.234))) * 12453.2542)
-        );
-    vec3 randomDir = normalize(normalWorld + (randomSeed * 2.0 - 1.0));
-
-    // Убедимся, что луч не уходит "под" поверхность
-    if (dot(randomDir, normalWorld) < 0) {
-        randomDir = reflect(randomDir, normalWorld);
-    }
+    //if (instanceID == 0 && prd.depth > 1) {
+    //    prd.color = baseColor * 0.1; // Возвращаем очень тусклый цвет, чтобы не создавать артефактов
+    //    return;
+   // }
     
-    vec3 bounceOrigin = posWorld + normalWorld * 0.001; 
+    // В функции main() после основного diffuse-освещения:
+     if (prd.depth < 3) {
+        
+        // 2. ИСПРАВЛЕНИЕ: Правильное сэмплирование полусферы
+        // Создаем "зерно" для случайных чисел. Оно должно быть уникальным для пикселя и кадра.
+        uint seed = gl_LaunchIDEXT.x * 1973 + gl_LaunchIDEXT.y * 9277 + uint(uniformBuffer.uni.uTime * 1000.0) + prd.depth * 5471;
+        
+        vec3 randomDir = sampleCosineWeightedHemisphere(seed, normalWorld);
 
+        vec3 bounceOrigin = posWorld + normalWorld * 0.001;
+        
         reflectionPayload.color = vec3(0);
         reflectionPayload.depth = prd.depth + 1;
-
         traceRayEXT(
             topLevelAS,
-            gl_RayFlagsOpaqueEXT,
-            0xFF,
-            SWS_PRIMARY_MISS_IDX,
-            SWS_SECONDARY_MISS_IDX,
-            SWS_DEFAULT_HIT_IDX,
+            gl_RayFlagsOpaqueEXT, 0xFF,
+            SWS_SECONDARY_MISS_IDX, 0, SWS_DEFAULT_HIT_IDX,
             bounceOrigin, 0.001, randomDir, 1e20,
             SWS_LOC3_REFLECTION_RAY
         );
+        
+        //resultColor += reflectionPayload.color * baseColor; // Убрал bounceStrength для простоты
+        vec3 bounced = reflectionPayload.color * baseColor;
 
-        // Добавляем вклад bounced света
-        float bounceStrength = 0.4; // можно сделать зависимым от roughness или rand()
-        resultColor += reflectionPayload.color * baseColor * bounceStrength;
+        // === Clamping bounced light if too bright ===
+        float maxBrightness = 2.0; // регулируй по вкусу
+        float brightness = max(bounced.r, max(bounced.g, bounced.b));
+        if (brightness > maxBrightness) {
+            bounced *= maxBrightness / brightness;
+        }
+
+        resultColor += bounced;
     }
 
 
     // === Reflection ===
-    if (prd.depth < 2) {
+    if (prd.depth < 3) {
         vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normalWorld);
         reflectDir = normalize(reflectDir);
         vec3 reflectOrigin = posWorld + reflectDir * 0.01;

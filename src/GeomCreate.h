@@ -33,4 +33,7 @@ public:
     static void createCube2(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
     static void createCube3(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices);
     static void createCubeGrid(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices, int N);
+    static void createHollowCube(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices, int N, float holeSize);
+    static void createCubeWithSquareHole(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices, int N, float holeScale);
+    static void createCubeCenterHole(std::vector<Vertex> &outVertices, std::vector<uint32_t> &outIndices, int N, int holeCells);
 };

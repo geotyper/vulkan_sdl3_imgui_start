@@ -117,7 +117,7 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
     currentTime +=0.01;
     // Example: Make the light pulse
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
-    float currentIntensity = 10.0f + pulse * 20.0f; // Varies between 10.0 and 30.0
+    float currentIntensity = 3.0f + pulse * 17.0f; // Varies between 10.0 and 30.0
 
     glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
@@ -252,15 +252,17 @@ void GraphicsModule::CreateScene() {
     // 1. Create Icosphere Geometry
     std::vector<Vertex> sphereVertices;
     std::vector<uint32_t> sphereIndices;
-    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
+    //GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
+    GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
 
     // 2. Create Cube Geometry
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
     //GeomCreate::createCube2(cubeVertices, cubeIndices);
-     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
-    //GeomCreate::createIcosphere(2, cubeVertices, cubeIndices);
+    // GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+   // GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
+    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,11, 9);
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
     const float spacing = 2.5f;
