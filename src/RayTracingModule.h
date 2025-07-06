@@ -63,6 +63,7 @@ public:
     //void LoadFromVerticesAndIndices(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
     void LoadFromSingleMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<glm::mat4>& transforms);
 
+    void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
 private:
     void GetRayTracingProperties();
     void CreateDescriptorSetLayout();
@@ -79,6 +80,8 @@ private:
 
     CreateInfo m_createInfo{};
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties{};
+
+    std::vector<InstanceData> m_instances;
 
 
     vulkanhelpers::VulkanContext m_context;

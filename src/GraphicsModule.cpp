@@ -240,49 +240,95 @@ void GraphicsModule::initRayTracingModule() {
 
     //m_rtxModule->LoadScene("assets/CornellBox-Original.obj");
 
-    // 3. Create vectors to hold your geometry data
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    //// 3. Create vectors to hold your geometry data
+    //std::vector<Vertex> vertices;
+    //std::vector<uint32_t> indices;
 
-    // 4. Call your generator to fill the vectors
-    // You can use any of your functions here: createUVSphere, createIcosphere, etc.
-    //GeomCreate::createIcosphere(2, vertices, indices);
-    //GeomCreate::createUVSphere(132,132, vertices, indices);
+    //// 4. Call your generator to fill the vectors
+    //// You can use any of your functions here: createUVSphere, createIcosphere, etc.
+    ////GeomCreate::createIcosphere(2, vertices, indices);
+    ////GeomCreate::createUVSphere(132,132, vertices, indices);
 
-    GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
+    //GeomCreate::createIcosphere(4, vertices, indices); // 4 подразделения для гладкости
 
-    //GeomCreate::createCube2( vertices, indices);
+    ////GeomCreate::createCube2( vertices, indices);
 
-    std::vector<glm::mat4> transforms;
-    const float spacing = 2.5f; // Distance between spheres
-    const float scale = 1.1f;   // Reduce size
+    //std::vector<glm::mat4> transforms;
+    //const float spacing = 2.5f; // Distance between spheres
+    //const float scale = 1.1f;   // Reduce size
+    //for (int z = -2; z <= 2; ++z) {
+    //    for (int y = -2; y <= 2; ++y) {
+    //        for (int x = -2; x <= 2; ++x) {
+
+    //            if(x==0 and y==0)
+    //                continue;
+    //            glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
+    //            glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
+
+    //            // --- Правильный расчёт масштаба ---
+
+    //            // 1. Нормализуем z из диапазона [-2, 2] в диапазон [0, 1]
+    //            float t = (static_cast<float>(z) + 2.0f) / 4.0f;
+
+    //            // 2. Интерполируем масштаб, например, от 0.5 до 1.5, используя t
+    //            float current_scale = 0.5f + t * 1.0f;
+
+    //            // 3. Применяем всегда положительный и однородный масштаб
+    //            model = glm::scale(model, glm::vec3(current_scale));
+
+    //            transforms.push_back(model);
+    //        }
+    //    }
+    //}
+
+    //// 5. Load the generated data into the ray tracing module
+    //m_rtxModule->LoadFromSingleMesh(vertices, indices, transforms);
+
+    CreateScene();
+}
+
+void GraphicsModule::CreateScene() {
+    // 1. Create Icosphere Geometry
+    std::vector<Vertex> sphereVertices;
+    std::vector<uint32_t> sphereIndices;
+    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
+
+    // 2. Create Cube Geometry
+    std::vector<Vertex> cubeVertices;
+    std::vector<uint32_t> cubeIndices;
+    GeomCreate::createCube2(cubeVertices, cubeIndices);
+
+    // 3. Define instances for the cubes
+    std::vector<rtx::InstanceData> cubeInstances;
+    const float spacing = 2.5f;
     for (int z = -2; z <= 2; ++z) {
         for (int y = -2; y <= 2; ++y) {
             for (int x = -2; x <= 2; ++x) {
+                // Skip the center position where the sphere will be
+                if (x == 0 && y == 0 && z == 0) continue;
 
-                if(x==0 and y==0)
-                    continue;
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-
-                // --- Правильный расчёт масштаба ---
-
-                // 1. Нормализуем z из диапазона [-2, 2] в диапазон [0, 1]
-                float t = (static_cast<float>(z) + 2.0f) / 4.0f;
-
-                // 2. Интерполируем масштаб, например, от 0.5 до 1.5, используя t
-                float current_scale = 0.5f + t * 1.0f;
-
-                // 3. Применяем всегда положительный и однородный масштаб
-                model = glm::scale(model, glm::vec3(current_scale));
-
-                transforms.push_back(model);
+                model = glm::scale(model, glm::vec3(1.1f));
+                cubeInstances.push_back({model});
             }
         }
     }
 
+    // 4. Define the instance for the central sphere
+    std::vector<rtx::InstanceData> sphereInstances;
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
+    model = glm::scale(model, glm::vec3(1.5f)); // Make the central sphere larger
+    sphereInstances.push_back({model});
+
+
     // 5. Load the generated data into the ray tracing module
-    m_rtxModule->LoadFromSingleMesh(vertices, indices, transforms);
+    m_rtxModule->LoadFromMultipleMeshes(
+        { // A list of mesh data
+            { sphereVertices, sphereIndices, sphereInstances },
+            { cubeVertices,   cubeIndices,   cubeInstances   }
+        }
+        );
 }
 
 void GraphicsModule::recreateSwapchain() {

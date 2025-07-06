@@ -43,6 +43,7 @@ public:
 
     void createImGuiDescriptorPool();
     void loadRayTracingProcs();
+    void CreateScene();
 private:
     // Initialization Steps
     void initSDL();

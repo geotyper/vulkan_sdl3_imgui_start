@@ -17,4 +17,17 @@ struct PushConstants {
 };
 
 
+namespace rtx {
+struct InstanceData {
+    glm::mat4 transform;
+    uint32_t  meshId;
+};
+
+struct MeshLoadData {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    std::vector<InstanceData> instances;
+};
+}
+
 #endif // HELPSTRUCTURES_H

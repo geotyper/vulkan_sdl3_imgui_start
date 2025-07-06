@@ -35,12 +35,18 @@
 
 #define SWS_NUM_GEOMETRY_BUFFERS          2
 
+#define SWS_INSTANCE_DATA_BINDING         5
+
 // payload-локации (без изменений)
 #define SWS_LOC_PRIMARY_RAY               0
 #define SWS_LOC_SHADOW_RAY                1
 #define SWS_LOC2_SHADOW_RAY               2
+#define SWS_LOC3_REFLECTION_RAY           3
 
-
+struct InstanceData {
+    // Add other per-instance data like material_id here if needed
+    uint meshId;
+};
 
 struct ShadowPayload {
     bool blocked;

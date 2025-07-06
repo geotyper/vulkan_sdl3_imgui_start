@@ -226,6 +226,53 @@ namespace rtx {
         UpdateDescriptorSets();
     }
 
+    void RayTracingModule::LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData>& meshData)
+    {
+        if (m_scene) {
+            vkDeviceWaitIdle(device());
+            m_tlas.Destroy(m_context, device());
+            m_scene->Destroy(m_context, device()); // Destroys all old mesh data
+        }
+
+        m_scene = std::make_unique<Scene>();
+        m_instances.clear(); // Clear old instance data
+
+        uint32_t meshId = 0;
+        for (const auto& data : meshData) {
+            auto mesh = std::make_unique<MeshData>();
+            mesh->vertexCount  = static_cast<uint32_t>(data.vertices.size());
+            mesh->indexCount   = static_cast<uint32_t>(data.indices.size());
+            mesh->vertexStride = sizeof(Vertex);
+
+            const VkBufferUsageFlags commonUsage =
+                VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+            // Create vertex and index buffers for the current mesh
+            VK_CHECK(mesh->vertexBuffer.Create(
+                         m_context, data.vertices.size() * mesh->vertexStride,
+                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | commonUsage,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.vertices.data()), "Vertex buffer creation failed");
+
+            VK_CHECK(mesh->indexBuffer.Create(
+                         m_context, data.indices.size() * sizeof(uint32_t),
+                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | commonUsage,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.indices.data()), "Index buffer creation failed");
+
+            // Store instances and associate them with the current mesh ID
+            for (const auto& instanceData : data.instances) {
+                m_instances.push_back({instanceData.transform, meshId});
+            }
+
+            m_scene->meshes.push_back(std::move(mesh));
+            meshId++;
+        }
+
+        BuildAccelerationStructures();
+        UpdateDescriptorSets();
+    }
+
     void RayTracingModule::RecordCommands(VkCommandBuffer cmd, VkImageView targetImageView, VkImage targetImage, VkExtent2D extent) {
         // Recreate storage image if needed (initial run or resize)
         if (!m_storageImage.GetImage() || m_storageImageExtent.width != extent.width || m_storageImageExtent.height != extent.height) {
@@ -376,11 +423,14 @@ namespace rtx {
         cameraBinding.descriptorCount = 1;
         cameraBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+
+        const uint32_t MAX_MESHES = 16;
+
         /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
         VkDescriptorSetLayoutBinding verticesBinding{};
         verticesBinding.binding         = SWS_VERTICES_BINDING;
         verticesBinding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        verticesBinding.descriptorCount = 1;
+        verticesBinding.descriptorCount = MAX_MESHES;
         verticesBinding.stageFlags      = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         /* 4 ─ Index-buffer (as SSBO) – только для CHIT ------------------------- */
@@ -388,7 +438,7 @@ namespace rtx {
         VkDescriptorSetLayoutBinding indicesBinding{};
         indicesBinding.binding          = SWS_INDICES_BINDING;
         indicesBinding.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        indicesBinding.descriptorCount  = 1;
+        indicesBinding.descriptorCount  = MAX_MESHES;
         indicesBinding.stageFlags       = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         const std::array bindings{
@@ -585,6 +635,109 @@ namespace rtx {
         VK_CHECK(m_sbt.Create(m_context, sbtSize, usage, memProps, sbtData.data()), "SBT creation failed");
     }
 
+    //void rtx::RayTracingModule::UpdateDescriptorSets() {
+    //    // Don't attempt to update if the core resources aren't ready yet.
+    //    // This function will be called again when they are (e.g., after a scene load or resize).
+    //    if (!m_scene || m_tlas.handle == VK_NULL_HANDLE || !m_storageImage.GetImageView()) {
+    //        return;
+    //    }
+
+    //    // --- Allocate the single descriptor set if it hasn't been already ---
+    //    if (m_descriptorSet == VK_NULL_HANDLE) {
+    //        VkDescriptorSetAllocateInfo allocInfo{};
+    //        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    //        allocInfo.descriptorPool = m_descriptorPool;
+    //        allocInfo.descriptorSetCount = 1;
+    //        allocInfo.pSetLayouts = &m_descriptorSetLayout;
+    //        VK_CHECK(vkAllocateDescriptorSets(device(), &allocInfo, &m_descriptorSet), "Failed to allocate ray tracing descriptor set");
+    //    }
+
+    //    // --- Prepare descriptor writes for all bindings ---
+
+    //    // 1. Top-Level Acceleration Structure (Binding 0)
+    //    VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{};
+    //    tlasWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    //    tlasWriteInfo.accelerationStructureCount = 1;
+    //    tlasWriteInfo.pAccelerationStructures = &m_tlas.handle;
+
+    //    // 2. Storage Image (Binding 1)
+    //    VkDescriptorImageInfo storageImageInfo{};
+    //    storageImageInfo.imageView = m_storageImage.GetImageView();
+    //    storageImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    //    // 3. Camera Uniform Buffer (Binding 2)
+    //    VkDescriptorBufferInfo cameraBufferInfo{};
+    //    cameraBufferInfo.buffer = m_cameraUBO.GetBuffer();
+    //    cameraBufferInfo.offset = 0;
+    //    cameraBufferInfo.range = VK_WHOLE_SIZE;
+
+    //    // --- Create a list of write operations ---
+    //    std::vector<VkWriteDescriptorSet> writes;
+
+    //    // Write for TLAS
+    //    VkWriteDescriptorSet tlasWrite{};
+    //    tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    //    tlasWrite.dstSet = m_descriptorSet;
+    //    tlasWrite.dstBinding = SWS_SCENE_AS_BINDING;
+    //    tlasWrite.descriptorCount = 1;
+    //    tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    //    tlasWrite.pNext = &tlasWriteInfo; // Link the acceleration structure info
+    //    writes.push_back(tlasWrite);
+
+    //    // Write for Storage Image
+    //    VkWriteDescriptorSet imageWrite{};
+    //    imageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    //    imageWrite.dstSet = m_descriptorSet;
+    //    imageWrite.dstBinding = SWS_RESULT_IMAGE_BINDING;
+    //    imageWrite.descriptorCount = 1;
+    //    imageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    //    imageWrite.pImageInfo = &storageImageInfo;
+    //    writes.push_back(imageWrite);
+
+    //    // Write for Camera UBO
+    //    VkWriteDescriptorSet cameraWrite{};
+    //    cameraWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    //    cameraWrite.dstSet = m_descriptorSet;
+    //    cameraWrite.dstBinding = SWS_CAMERA_BINDING;
+    //    cameraWrite.descriptorCount = 1;
+    //    cameraWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    //    cameraWrite.pBufferInfo = &cameraBufferInfo;
+    //    writes.push_back(cameraWrite);
+    //
+    //
+    //
+
+    //    // Vertex buffer (binding 3)
+    //    VkDescriptorBufferInfo vbInfo{};
+    //    vbInfo.buffer = m_scene->meshes[0]->vertexBuffer.GetBuffer();
+    //    vbInfo.offset = 0;
+    //    vbInfo.range  = VK_WHOLE_SIZE;
+
+    //    VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    //    vbWrite.dstSet          = m_descriptorSet;
+    //    vbWrite.dstBinding      = SWS_VERTICES_BINDING;
+    //    vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    //    vbWrite.descriptorCount = 1;
+    //    vbWrite.pBufferInfo     = &vbInfo;
+
+    //    // Index buffer (binding 4)
+    //    VkDescriptorBufferInfo ibInfo{};
+    //    ibInfo.buffer = m_scene->meshes[0]->indexBuffer.GetBuffer();
+    //    ibInfo.offset = 0;
+    //    ibInfo.range  = VK_WHOLE_SIZE;
+
+    //    VkWriteDescriptorSet ibWrite = vbWrite;
+    //    ibWrite.dstBinding  = SWS_INDICES_BINDING;
+    //    ibWrite.pBufferInfo = &ibInfo;
+
+    //    // …push в writes
+    //    writes.push_back(vbWrite);
+    //    writes.push_back(ibWrite);
+
+    //    // --- Perform the update in a single, batched call ---
+    //    vkUpdateDescriptorSets(device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    //}
+
     void rtx::RayTracingModule::UpdateDescriptorSets() {
         // Don't attempt to update if the core resources aren't ready yet.
         // This function will be called again when they are (e.g., after a scene load or resize).
@@ -654,32 +807,36 @@ namespace rtx {
         cameraWrite.pBufferInfo = &cameraBufferInfo;
         writes.push_back(cameraWrite);
 
-        // Vertex buffer (binding 3)
-        VkDescriptorBufferInfo vbInfo{};
-        vbInfo.buffer = m_scene->meshes[0]->vertexBuffer.GetBuffer();
-        vbInfo.offset = 0;
-        vbInfo.range  = VK_WHOLE_SIZE;
+        // --- Prepare descriptor info for multiple mesh buffers ---
+        std::vector<VkDescriptorBufferInfo> vertexBufferInfos;
+        std::vector<VkDescriptorBufferInfo> indexBufferInfos;
 
-        VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-        vbWrite.dstSet          = m_descriptorSet;
-        vbWrite.dstBinding      = SWS_VERTICES_BINDING;
-        vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        vbWrite.descriptorCount = 1;
-        vbWrite.pBufferInfo     = &vbInfo;
+        // Create a descriptor info for each mesh's vertex and index buffer
+        for (const auto& mesh : m_scene->meshes) {
+            vertexBufferInfos.push_back({mesh->vertexBuffer.GetBuffer(), 0, VK_WHOLE_SIZE});
+            indexBufferInfos.push_back({mesh->indexBuffer.GetBuffer(), 0, VK_WHOLE_SIZE});
+        }
 
-        // Index buffer (binding 4)
-        VkDescriptorBufferInfo ibInfo{};
-        ibInfo.buffer = m_scene->meshes[0]->indexBuffer.GetBuffer();
-        ibInfo.offset = 0;
-        ibInfo.range  = VK_WHOLE_SIZE;
+        // Only add the writes if there are buffers to bind
+        if (!vertexBufferInfos.empty()) {
+            // Write for Vertex Buffers (Binding 3)
+            VkWriteDescriptorSet vbWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            vbWrite.dstSet          = m_descriptorSet;
+            vbWrite.dstBinding      = SWS_VERTICES_BINDING;
+            vbWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            vbWrite.descriptorCount = static_cast<uint32_t>(vertexBufferInfos.size());
+            vbWrite.pBufferInfo     = vertexBufferInfos.data();
+            writes.push_back(vbWrite);
 
-        VkWriteDescriptorSet ibWrite = vbWrite;
-        ibWrite.dstBinding  = SWS_INDICES_BINDING;
-        ibWrite.pBufferInfo = &ibInfo;
-
-        // …push в writes
-        writes.push_back(vbWrite);
-        writes.push_back(ibWrite);
+            // Write for Index Buffers (Binding 4)
+            VkWriteDescriptorSet ibWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            ibWrite.dstSet          = m_descriptorSet;
+            ibWrite.dstBinding      = SWS_INDICES_BINDING;
+            ibWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            ibWrite.descriptorCount = static_cast<uint32_t>(indexBufferInfos.size());
+            ibWrite.pBufferInfo     = indexBufferInfos.data();
+            writes.push_back(ibWrite);
+        }
 
         // --- Perform the update in a single, batched call ---
         vkUpdateDescriptorSets(device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -793,41 +950,30 @@ namespace rtx {
 
     void RayTracingModule::BuildTLAS() {
 
-        std::vector<VkAccelerationStructureInstanceKHR> instances;
-        instances.reserve(m_instanceTransforms.size());
+        std::vector<VkAccelerationStructureInstanceKHR> vkInstances;
+        vkInstances.reserve(m_instances.size());
 
-
-        // Define masks for different object types
-        const uint32_t MASK_LIGHT = 0x01;
-        const uint32_t MASK_OPAQUE_GEOM = 0x02;
-
-        for (size_t i = 0; i < m_instanceTransforms.size(); ++i) {
-            const auto& transform = m_instanceTransforms[i];
-
+        for (const auto& instanceData : m_instances) {
             VkAccelerationStructureInstanceKHR instance{};
-
-            // Копируем матрицу трансформации. GLM (column-major) нужно транспонировать для Vulkan (row-major).
-            const glm::mat4 tm = glm::transpose(transform);
+            const glm::mat4 tm = glm::transpose(instanceData.transform);
             memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
 
-            // --- КЛЮЧЕВОЙ МОМЕНТ ---
-            // Устанавливаем уникальный ID для каждого экземпляра.
-            // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
-            // Остальные получат ID 1.
-            bool isLight = (i == 4); // The center sphere is the light
-            instance.instanceCustomIndex = static_cast<uint32_t>(i);//isLight ? 0 : 1;
-
-            instance.mask = 0xFF;;//isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
-            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX; // Используем одну и ту же hit-группу для всех
+            instance.instanceCustomIndex = static_cast<uint32_t>(vkInstances.size());
+            instance.mask = 0xFF;
+            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
 
-            instances.push_back(instance);
+            // *** KEY CHANGE HERE ***
+            // Reference the BLAS corresponding to the meshId of the instance
+            assert(instanceData.meshId < m_scene->meshes.size());
+            instance.accelerationStructureReference = m_scene->meshes[instanceData.meshId]->blas.deviceAddress;
+
+            vkInstances.push_back(instance);
         }
 
         vulkanhelpers::Buffer instanceBuffer;
-        instanceBuffer.Create(m_context, sizeof(VkAccelerationStructureInstanceKHR) * instances.size(), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        instanceBuffer.UploadData(m_context, instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * instances.size());
+        instanceBuffer.Create(m_context, sizeof(VkAccelerationStructureInstanceKHR) * vkInstances.size(), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        instanceBuffer.UploadData(m_context, vkInstances.data(), sizeof(VkAccelerationStructureInstanceKHR) * vkInstances.size());
 
         VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
         instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
@@ -846,7 +992,7 @@ namespace rtx {
         buildInfo.geometryCount = 1;
         buildInfo.pGeometries = &asGeom;
 
-        uint32_t primitive_count = static_cast<uint32_t>(instances.size());
+        uint32_t primitive_count = static_cast<uint32_t>(vkInstances.size());
         VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
         vkGetAccelerationStructureBuildSizesKHR(device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitive_count, &sizeInfo);
@@ -878,5 +1024,93 @@ namespace rtx {
         scratchBuffer.Destroy(m_context);
         instanceBuffer.Destroy(m_context);
     }
+
+    //void RayTracingModule::BuildTLAS() {
+
+    //    std::vector<VkAccelerationStructureInstanceKHR> instances;
+    //    instances.reserve(m_instanceTransforms.size());
+
+
+    //    // Define masks for different object types
+    //    const uint32_t MASK_LIGHT = 0x01;
+    //    const uint32_t MASK_OPAQUE_GEOM = 0x02;
+
+    //    for (size_t i = 0; i < m_instanceTransforms.size(); ++i) {
+    //        const auto& transform = m_instanceTransforms[i];
+
+    //        VkAccelerationStructureInstanceKHR instance{};
+
+    //        // Копируем матрицу трансформации. GLM (column-major) нужно транспонировать для Vulkan (row-major).
+    //        const glm::mat4 tm = glm::transpose(transform);
+    //        memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
+
+    //        // --- КЛЮЧЕВОЙ МОМЕНТ ---
+    //        // Устанавливаем уникальный ID для каждого экземпляра.
+    //        // Центральная сфера (индекс 4 в сетке 3х3) получит ID 0 (будет светиться).
+    //        // Остальные получат ID 1.
+    //        bool isLight = (i == 4); // The center sphere is the light
+    //        instance.instanceCustomIndex = static_cast<uint32_t>(i);//isLight ? 0 : 1;
+
+    //        instance.mask = 0xFF;;//isLight ? MASK_LIGHT : MASK_OPAQUE_GEOM;
+    //        instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX; // Используем одну и ту же hit-группу для всех
+    //        instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    //        instance.accelerationStructureReference = m_scene->meshes[0]->blas.deviceAddress; // Все экземпляры ссылаются на одну и ту же геометрию
+
+    //        instances.push_back(instance);
+    //    }
+
+    //    vulkanhelpers::Buffer instanceBuffer;
+    //    instanceBuffer.Create(m_context, sizeof(VkAccelerationStructureInstanceKHR) * instances.size(), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    //    instanceBuffer.UploadData(m_context, instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * instances.size());
+
+    //    VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
+    //    instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    //    instancesData.arrayOfPointers = VK_FALSE;
+    //    instancesData.data.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, instanceBuffer).deviceAddress;
+
+    //    VkAccelerationStructureGeometryKHR asGeom{};
+    //    asGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    //    asGeom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    //    asGeom.geometry.instances = instancesData;
+
+    //    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+    //    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    //    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    //    buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    //    buildInfo.geometryCount = 1;
+    //    buildInfo.pGeometries = &asGeom;
+
+    //    uint32_t primitive_count = static_cast<uint32_t>(instances.size());
+    //    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
+    //    sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    //    vkGetAccelerationStructureBuildSizesKHR(device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitive_count, &sizeInfo);
+
+    //    m_tlas.buffer.Create(m_context, sizeInfo.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    //    VkAccelerationStructureCreateInfoKHR createInfo{};
+    //    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    //    createInfo.buffer = m_tlas.buffer.GetBuffer();
+    //    createInfo.size = sizeInfo.accelerationStructureSize;
+    //    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    //    vkCreateAccelerationStructureKHR(device(), &createInfo, nullptr, &m_tlas.handle);
+
+    //    vulkanhelpers::Buffer scratchBuffer;
+    //    scratchBuffer.Create(m_context, sizeInfo.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    //    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    //    buildInfo.dstAccelerationStructure = m_tlas.handle;
+    //    buildInfo.scratchData.deviceAddress = vulkanhelpers::GetBufferDeviceAddress(m_context, scratchBuffer).deviceAddress;
+
+    //    VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
+    //    rangeInfo.primitiveCount = primitive_count;
+    //    const VkAccelerationStructureBuildRangeInfoKHR* pRangeInfo = &rangeInfo;
+
+    //    executeImmediateCommand([&](VkCommandBuffer cmd) {
+    //        vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pRangeInfo);
+    //    });
+
+    //    scratchBuffer.Destroy(m_context);
+    //    instanceBuffer.Destroy(m_context);
+    //}
 
 } // namespace rtx
