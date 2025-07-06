@@ -24,14 +24,19 @@ layout(set = SWS_VERTICES_SET , binding = SWS_VERTICES_BINDING) readonly buffer 
 };
 
 layout(set = SWS_INDICES_SET, binding = SWS_INDICES_BINDING) readonly buffer Indices {
-    uvec3 indices[];
-};
-
+    uint i[];
+} indices; 
 
 void main() {
 
-   uint primIndex = gl_PrimitiveID;
-    uvec3 tri = indices[primIndex];
+    uint primIndex = gl_PrimitiveID;
+    // Вычисляем смещение и читаем 3 индекса последовательно
+    uint i0 = indices.i[3 * primIndex + 0];
+    uint i1 = indices.i[3 * primIndex + 1];
+    uint i2 = indices.i[3 * primIndex + 2];
+
+    // Собираем их в uvec3
+    uvec3 tri = uvec3(i0, i1, i2);
 
     // 1. Получаем нормали вершин в ЛОКАЛЬНОМ пространстве
     vec3 n0 = vertices[tri.x].normal.xyz;
