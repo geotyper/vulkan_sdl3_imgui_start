@@ -259,10 +259,10 @@ void GraphicsModule::CreateScene() {
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
     //GeomCreate::createCube2(cubeVertices, cubeIndices);
-    // GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
    // GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
-    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,11, 9);
+    //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,11, 9);
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
     const float spacing = 2.5f;

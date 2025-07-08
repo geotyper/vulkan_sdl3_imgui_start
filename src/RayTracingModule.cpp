@@ -334,7 +334,7 @@ namespace rtx {
         VkStridedDeviceAddressRegionKHR hitRegion {
             baseAddr + 4 * m_sbtStride, // Начало - группа 4
             m_sbtStride,
-            1 * m_sbtStride             // Размер - 2 shaders
+            2 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
@@ -532,13 +532,20 @@ namespace rtx {
             throw std::runtime_error("Failed to load secondary miss shader: " + secondaryMissPath);
         }
 
+        vulkanhelpers::Shader achitShader;
+        std::string achitShaderPath = std::string(m_createInfo.shaderDir) + "anyhit.rahit.spv";
+        if (!achitShader.LoadFromFile(m_context, achitShaderPath.c_str())) {
+            throw std::runtime_error("Failed to load secondary miss shader: " + achitShaderPath);
+        }
+
 
         auto s_rgen       = rgenShader.GetShaderStage(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         auto s_miss       = rmissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
         auto s_shadowMiss = shadowMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
         auto s_chit       = rchitShader.GetShaderStage(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-        auto a_chit       = shadowAhitShader.GetShaderStage(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+        auto sa_chit       = shadowAhitShader.GetShaderStage(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
         auto s_secondaryMiss = secondaryMissShader.GetShaderStage(VK_SHADER_STAGE_MISS_BIT_KHR);
+        auto a_chit       = achitShader.GetShaderStage(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
 
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
@@ -548,6 +555,7 @@ namespace rtx {
             s_secondaryMiss,
             s_chit,
             a_chit,
+            sa_chit,
         };
 
 
@@ -596,12 +604,12 @@ namespace rtx {
         groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Group 4: Shadow Hit Group (for shadow rays)
-        //groups[5].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[5].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        //groups[5].generalShader = VK_SHADER_UNUSED_KHR;
-        //groups[5].closestHitShader = VK_SHADER_UNUSED_KHR; // No closest-hit needed for shadows
-        //groups[5].anyHitShader = 5; // Use the new shadow.rahit shader
-        //groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
+        groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
+        groups[5].anyHitShader       = 6;  // s_sahit  (= shadow.rahit)
+        groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
+        groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -626,6 +634,7 @@ namespace rtx {
         shadowMissShader.Destroy(m_context);
         shadowAhitShader.Destroy(m_context);
         secondaryMissShader.Destroy(m_context);
+        achitShader.Destroy(m_context);
     }
 
     void RayTracingModule::CreateShaderBindingTable()
@@ -834,7 +843,7 @@ namespace rtx {
         VkAccelerationStructureGeometryKHR asGeom{};
         asGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         asGeom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        asGeom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        asGeom.flags = 0;//VK_GEOMETRY_OPAQUE_BIT_KHR;
         asGeom.geometry.triangles = triangles;
 
         VkAccelerationStructureBuildRangeInfoKHR rangeInfo;

@@ -33,13 +33,13 @@ void main() {
     // 3. Сбрасываем payload и запускаем основной луч
     prd.color = vec3(0.0); // Обнуляем цвет перед трассировкой
     prd.depth = 0;
+    prd.weight = 1.0;   
     
     traceRayEXT(
         topLevelAS,
-        gl_RayFlagsOpaqueEXT,
+        gl_RayFlagsNoneEXT,
         0xFF,
-        0, 0,
-        SWS_PRIMARY_MISS_IDX,  // Используем основной miss-шейдер для фона
+        SWS_PRIMARY_MISS_IDX, 0, SWS_DEFAULT_HIT_IDX,  // Используем основной miss-шейдер для фона
         origin, 0.001,
         dir_world_space, 1e30,
         SWS_LOC_PRIMARY_RAY

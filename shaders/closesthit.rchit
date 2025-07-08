@@ -61,7 +61,7 @@ vec3 getHitPosition(uint meshId, uvec3 tri, vec2 baryUV) {
 bool traceShadowRay(vec3 origin, vec3 dir) {
     shadow.blocked = false;
     traceRayEXT(topLevelAS,
-        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
+        gl_RayFlagsTerminateOnFirstHitEXT,
         0xFF,
         SWS_SHADOW_MISS_IDX,
         SWS_SHADOW_MISS_IDX,
@@ -197,7 +197,8 @@ void main() {
         reflectionPayload.depth = prd.depth + 1;
         traceRayEXT(
             topLevelAS,
-            gl_RayFlagsOpaqueEXT, 0xFF,
+            gl_RayFlagsNoneEXT,
+            0xFF,
             SWS_SECONDARY_MISS_IDX, 0, SWS_DEFAULT_HIT_IDX,
             bounceOrigin, 0.001, randomDir, 1e20,
             SWS_LOC3_REFLECTION_RAY
@@ -228,7 +229,7 @@ void main() {
 
         traceRayEXT(
             topLevelAS,
-            gl_RayFlagsOpaqueEXT,
+            gl_RayFlagsNoneEXT,
             0xFF,
             SWS_SECONDARY_MISS_IDX,
             SWS_SECONDARY_MISS_IDX,
