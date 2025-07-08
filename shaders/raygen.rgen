@@ -6,8 +6,12 @@
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING)
 uniform accelerationStructureEXT topLevelAS;
-layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D accumImage;
-layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING) uniform CameraUBO {
+
+layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
+uniform image2D accumImage;
+
+layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING)
+uniform CameraUBO {
     mat4 invView;
     mat4 invProj;
 } cam;
@@ -15,36 +19,35 @@ layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING) uniform CameraUBO {
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
 
 void main() {
-    // 1. Получаем координаты пикселя в диапазоне [0, 1]
-    vec2 uv = (vec2(gl_LaunchIDEXT.xy) + 0.5) / vec2(gl_LaunchSizeEXT.xy);
-    // и переводим их в Normalised Device Coordinates [-1, 1]
+    uvec2 launchID = gl_LaunchIDEXT.xy;
+    uvec2 launchSize = gl_LaunchSizeEXT.xy;
+
+    vec2 uv = (vec2(launchID) + 0.5) / vec2(launchSize);
     vec2 ndc = uv * 2.0 - 1.0;
 
-    // 2. Вычисляем начало и направление луча в мировых координатах
-    
-    // Начало луча — это позиция камеры. Её можно извлечь из инвертированной матрицы вида.
-    vec3 origin = cam.invView[3].xyz;
+    vec4 origin = cam.invView * vec4(0, 0, 0, 1);
+    vec4 target = cam.invProj * vec4(ndc, 1.0, 1.0);
+    target /= target.w;
+    vec4 worldDir = cam.invView * vec4(normalize(target.xyz), 0.0);
 
-    // Направление луча вычисляется путем обратного проецирования
-    vec4 target = cam.invProj * vec4(ndc.xy, 1.0, 1.0);
-    vec3 dir_view_space = normalize(target.xyz / target.w);
-    vec3 dir_world_space = normalize((cam.invView * vec4(dir_view_space, 0.0)).xyz);
-
-    // 3. Сбрасываем payload и запускаем основной луч
-    prd.color = vec3(0.0); // Обнуляем цвет перед трассировкой
+    // начальные значения
+    prd.color = vec3(1.0, 0.0, 1.0); // Ярко-розовый, чтобы точно увидеть
     prd.depth = 0;
-    prd.weight = 1.0;   
-    
+
     traceRayEXT(
         topLevelAS,
-        gl_RayFlagsNoneEXT,
+        gl_RayFlagsOpaqueEXT,
         0xFF,
-        SWS_PRIMARY_MISS_IDX, 0, SWS_DEFAULT_HIT_IDX,  // Используем основной miss-шейдер для фона
-        origin, 0.001,
-        dir_world_space, 1e30,
-        SWS_LOC_PRIMARY_RAY
+        SWS_LOC_PRIMARY_RAY,
+        SWS_NUM_GROUPS,
+        SWS_LOC_PRIMARY_RAY,
+        origin.xyz,
+        0.001,
+        worldDir.xyz,
+        1000.0,
+        0
     );
 
-    // 4. Записываем результат в итоговое изображение
-    imageStore(accumImage, ivec2(gl_LaunchIDEXT.xy), vec4(prd.color, 1.0));
+    imageStore(accumImage, ivec2(launchID), vec4(prd.color, 1.0));
 }
+

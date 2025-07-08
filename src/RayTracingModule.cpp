@@ -327,14 +327,14 @@ namespace rtx {
         VkStridedDeviceAddressRegionKHR missRegion{
             baseAddr + 1 * m_sbtStride, // Начало - группа 1
             m_sbtStride,
-            3 * m_sbtStride             // Размер - 3 шейдера
+            1 * m_sbtStride             // Размер - 3 шейдера
         };
 
         // Указывает на Группу 4 и должен покрывать 1 группу (группу 4).
         VkStridedDeviceAddressRegionKHR hitRegion {
-            baseAddr + 4 * m_sbtStride, // Начало - группа 4
+            baseAddr + 2 * m_sbtStride, // Начало - группа 4
             m_sbtStride,
-            2 * m_sbtStride             // Размер - 2 shaders
+            1 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
@@ -551,11 +551,11 @@ namespace rtx {
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             s_rgen,
             s_miss,
-            s_shadowMiss,
-            s_secondaryMiss,
+            //s_shadowMiss,
+            //s_secondaryMiss,
             s_chit,
-            a_chit,
-            sa_chit,
+            //a_chit,
+            //sa_chit,
         };
 
 
@@ -563,6 +563,7 @@ namespace rtx {
         // --- THIS IS THE CORRECTED SHADER GROUP SETUP ---
 
         std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(SWS_NUM_GROUPS);
+
 
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
@@ -575,41 +576,19 @@ namespace rtx {
         // Group 1: Miss
         groups[1].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[1].generalShader = 1; // s_primaryMiss
+        groups[1].generalShader = 1; // s_miss
         groups[1].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
+        // Group 2: Triangle Hit Group
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[2].generalShader = 2; // s_shadowMiss
-        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[2].closestHitShader = 2; // s_chit
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        //// Group 5: Secondary Miss Shader
-        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[3].type =  VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[3].generalShader = 3; // s_secondaryMiss
-        groups[3].closestHitShader = VK_SHADER_UNUSED_KHR;
-        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-        //// Group 3: Triangle Hit Group
-        groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[4].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[4].closestHitShader = 4; // s_chit
-        groups[4].anyHitShader =    5;
-        groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-        // Group 4: Shadow Hit Group (for shadow rays)
-        groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
-        groups[5].anyHitShader       = 6;  // s_sahit  (= shadow.rahit)
-        groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
-        groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };

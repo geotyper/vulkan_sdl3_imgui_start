@@ -252,14 +252,14 @@ void GraphicsModule::CreateScene() {
     // 1. Create Icosphere Geometry
     std::vector<Vertex> sphereVertices;
     std::vector<uint32_t> sphereIndices;
-    //GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
-    GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
+    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
+    //GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
 
     // 2. Create Cube Geometry
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
     //GeomCreate::createCube2(cubeVertices, cubeIndices);
-     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,3);
    // GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
     //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,11, 9);
