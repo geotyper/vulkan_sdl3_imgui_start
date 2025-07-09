@@ -19,8 +19,8 @@ uniform CameraUBO {
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
 
-const int NUM_STEPS = 128;
-const float STEP_SIZE = 0.15;
+const int NUM_STEPS = 64;
+const float STEP_SIZE = 0.05;
 const float VIS_SCALE = 0.6;  
 
 vec3 getLightPosition() {
@@ -29,7 +29,7 @@ vec3 getLightPosition() {
 }
 
 const vec3  FOG_AMBIENT_COLOR     = vec3(0.5, 0.6, 0.7); // Цвет тумана (холодный)
-const float FOG_AMBIENT_INTENSITY = 0.15;  
+const float FOG_AMBIENT_INTENSITY = 0.05;  
 
 void main() {
     uvec2 launchID = gl_LaunchIDEXT.xy;
@@ -88,21 +88,20 @@ void main() {
             SWS_LOC2_SHADOW_RAY
         );
 
-        float falloff = exp(-0.015 * float(i));
-
-        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-        if (!shadow.blocked) {
-            // Яркий вклад для "божественных лучей"
+       if (shadow.blocked)
+            blocked++;
+        else {
+            unblocked++;
+            float falloff     = exp(-0.015 * float(i));
             float angleFactor = max(dot(rayDir, lightDir), 0.0);
             accFog += vec3(1.0, 0.95, 0.8) * falloff * angleFactor * 2.0;
-        } else {
-            // Тусклый вклад для фонового тумана в тени
-            accFog += FOG_AMBIENT_COLOR * falloff * FOG_AMBIENT_INTENSITY;
         }
     }
 
-    vec3 base       = prd.color; // Убрал затемнение, чтобы лучше видеть туман
-    vec3 finalColor = base + accFog / float(NUM_STEPS);
+
+    // Итог
+    vec3 base       = mix(prd.color, vec3(0.0), 0.1);
+    vec3 finalColor = base + accFog / float(NUM_STEPS); // <-- Теперь это итоговый цвет
 
     imageStore(accumImage, ivec2(launchID), vec4(finalColor, 1.0));
 }
