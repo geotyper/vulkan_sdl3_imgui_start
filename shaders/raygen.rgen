@@ -19,8 +19,8 @@ uniform CameraUBO {
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
 
-const int NUM_STEPS = 64;
-const float STEP_SIZE = 0.05;
+const int NUM_STEPS = 128;
+const float STEP_SIZE = 0.15;
 const float VIS_SCALE = 0.6;  
 
 vec3 getLightPosition() {
@@ -98,6 +98,13 @@ void main() {
         }
     }
 
+    vec3 debugColor = vec3(0.0);
+    if (unblocked > blocked)
+        debugColor = vec3(0.0, 1.0, 0.0);       // ↑ больше «светлых» сэмплов
+    else if (blocked > unblocked)
+        debugColor = vec3(1.0, 0.0, 0.0);       // ↑ больше «тёмных»  сэмплов
+    else
+        debugColor = vec3(1.0, 1.0, 0.0);       // ~ поровну
 
     // Итог
     vec3 base       = mix(prd.color, vec3(0.0), 0.1);

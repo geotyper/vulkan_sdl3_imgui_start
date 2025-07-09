@@ -117,7 +117,7 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
     currentTime +=0.01;
     // Example: Make the light pulse
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
-    float currentIntensity = 3.0f + pulse * 17.0f; // Varies between 10.0 and 30.0
+    float currentIntensity = 3.0f + pulse * 37.0f; // Varies between 10.0 and 30.0
 
     glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);

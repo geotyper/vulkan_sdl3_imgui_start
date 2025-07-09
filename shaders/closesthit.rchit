@@ -100,6 +100,7 @@ void main() {
         vec3 L = normalize(lightPos - posWorld);
         float diff = max(dot(normalWorld, L), 0.0);
         prd.color = baseColor * diff;
+        
     }
 
     // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
