@@ -134,10 +134,7 @@ add_subdirectory(external/volk)
 
 # === Executable ===
 add_executable(${TARGET} ${HEADERS} ${SRC}
-
-
 )
-
 
 target_include_directories(${TARGET} PRIVATE stb)
 target_include_directories(${TARGET} PRIVATE external/volk)
@@ -167,44 +164,67 @@ target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui )
 ## === Create a Custom Target to Trigger Compilation ===
 #add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 
-add_compile_definitions(SHADER_PATH_GLSL="${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/")
+# ==========================================
+#  paths / compile-time defines
+# ==========================================
+set(SHADER_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+file(MAKE_DIRECTORY "${SHADER_BIN_DIR}")
 
-# === Shader Path Definition ===
-target_compile_definitions(DroneVisualizer PRIVATE SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
+target_compile_definitions(DroneVisualizer PRIVATE
+    SHADER_PATH_GLSL=\"${SHADER_BIN_DIR}/\"
+    SHADER_PATH=\"${SHADER_BIN_DIR}/\"
+)
 
-# === Shader Compilation Logic ===
-file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rahit" "shaders/*.rmiss" "shaders/*.vert" "shaders/*.frag")
+# ==========================================
+#  shader list
+# ==========================================
+file(GLOB SHADER_FILES
+     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
+     "${CMAKE_SOURCE_DIR}/shaders/*.frag"
+     "${CMAKE_SOURCE_DIR}/shaders/*.rgen"
+     "${CMAKE_SOURCE_DIR}/shaders/*.rchit"
+     "${CMAKE_SOURCE_DIR}/shaders/*.rahit"
+     "${CMAKE_SOURCE_DIR}/shaders/*.rmiss")
+
+find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator REQUIRED)
+
 set(SPIRV_SHADERS "")
-
-find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator)
-if(NOT GLSLANG_VALIDATOR_EXECUTABLE)
-    message(FATAL_ERROR "glslangValidator not found. Please ensure it is in your system PATH.")
-endif()
 
 foreach(SHADER_FILE ${SHADER_FILES})
     get_filename_component(FILE_NAME ${SHADER_FILE} NAME)
-    set(SPIRV_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/${FILE_NAME}.spv")
+    get_filename_component(FILE_EXT  ${SHADER_FILE} LAST_EXT)     # .vert /.rahit …
 
-    # --- THIS IS THE CORRECTED SHADER COMPILE COMMAND ---
-    # Added --target-env vulkan1.2 to match our application's API version
+    # --- карта расширений → параметр -S ---
+    string(SUBSTRING ${FILE_EXT} 1 -1 STAGE)   # убираем точку
+
+    # На случай старого glslang поддерживаем только нужные стадии
+    if(STAGE MATCHES "vert|frag|comp|geom|tesc|tese|rgen|rchit|rahit|rmiss")
+        set(STAGE_ARG "-S" "${STAGE}")
+    else()
+        message(FATAL_ERROR "Unknown shader stage for file: ${SHADER_FILE}")
+    endif()
+
+    set(SPIRV_OUTPUT "${SHADER_BIN_DIR}/${FILE_NAME}.spv")
+
     add_custom_command(
-        OUTPUT ${SPIRV_OUTPUT}
-        COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.3 -V ${SHADER_FILE} -o ${SPIRV_OUTPUT}
+        OUTPUT  ${SPIRV_OUTPUT}
+        COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE}
+                --target-env vulkan1.3
+                -V ${STAGE_ARG} ${SHADER_FILE} -o ${SPIRV_OUTPUT}
         DEPENDS ${SHADER_FILE}
-        COMMENT "Compiling shader: ${FILE_NAME}"
-    )
+        COMMENT "Compiling ${FILE_NAME} → ${STAGE}"
+        VERBATIM)
     list(APPEND SPIRV_SHADERS ${SPIRV_OUTPUT})
 endforeach()
 
 add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 add_dependencies(DroneVisualizer CompileShaders)
 
-# === Copy Shaders to Executable Directory ===
-add_custom_command(
-    TARGET DroneVisualizer POST_BUILD
+# ==========================================
+#  copy SPIR-V next to executable
+# ==========================================
+add_custom_command(TARGET DroneVisualizer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_BINARY_DIR}/shaders_temp"
+            "${SHADER_BIN_DIR}"
             "$<TARGET_FILE_DIR:DroneVisualizer>/shaders"
-    COMMENT "Copying shaders to executable directory..."
-)
-
+    COMMENT "Copying SPIR-V shaders to output folder")

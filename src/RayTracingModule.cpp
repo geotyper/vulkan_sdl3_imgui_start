@@ -327,14 +327,14 @@ namespace rtx {
         VkStridedDeviceAddressRegionKHR missRegion{
             baseAddr + 1 * m_sbtStride, // Начало - группа 1
             m_sbtStride,
-            1 * m_sbtStride             // Размер - 3 шейдера
+            2 * m_sbtStride             // Размер - 3 шейдера
         };
 
         // Указывает на Группу 4 и должен покрывать 1 группу (группу 4).
         VkStridedDeviceAddressRegionKHR hitRegion {
-            baseAddr + 2 * m_sbtStride, // Начало - группа 4
+            baseAddr + 3 * m_sbtStride, // Начало - группа 4
             m_sbtStride,
-            1 * m_sbtStride             // Размер - 2 shaders
+            2 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
@@ -551,11 +551,11 @@ namespace rtx {
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             s_rgen,
             s_miss,
-            //s_shadowMiss,
+            s_shadowMiss,
             //s_secondaryMiss,
             s_chit,
             //a_chit,
-            //sa_chit,
+            sa_chit,
         };
 
 
@@ -581,13 +581,27 @@ namespace rtx {
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        // Group 2: Triangle Hit Group
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[2].closestHitShader = 2; // s_chit
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        groups[2].generalShader = 2; // s_miss
+        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        // Group 2: Triangle Hit Group
+        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[3].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[3].closestHitShader = 3; // s_chit
+        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
+        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
+
+        groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[4].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[4].closestHitShader = VK_SHADER_UNUSED_KHR;
+        groups[4].anyHitShader = 4;
+        groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
 
         // Ray Tracing Pipeline
@@ -596,7 +610,7 @@ namespace rtx {
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(groups.size());
         pipelineInfo.pGroups = groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 5;
+        pipelineInfo.maxPipelineRayRecursionDepth = 2;
         pipelineInfo.layout = m_pipelineLayout;
 
         VK_CHECK(vkCreateRayTracingPipelinesKHR(device(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create ray tracing pipeline");
@@ -885,7 +899,7 @@ namespace rtx {
            // instance.instanceCustomIndex = static_cast<uint32_t>(vkInstances.size());
             instance.instanceCustomIndex = instanceData.meshId;
             instance.mask = 0xFF;
-            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX;
+            instance.instanceShaderBindingTableRecordOffset = SWS_PRIMARY_HIT_IDX;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
             // *** KEY CHANGE HERE ***

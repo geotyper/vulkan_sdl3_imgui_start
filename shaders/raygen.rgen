@@ -1,14 +1,14 @@
 #version 460 core
 #extension GL_EXT_ray_tracing : enable
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
 
 #include "../src/shared_with_shaders.h"
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING)
 uniform accelerationStructureEXT topLevelAS;
 
-layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
-uniform image2D accumImage;
+layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D accumImage;
 
 layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING)
 uniform CameraUBO {
@@ -17,37 +17,93 @@ uniform CameraUBO {
 } cam;
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
+
+const int NUM_STEPS = 128;
+const float STEP_SIZE = 0.15;
+const float VIS_SCALE = 0.6;  
+
+vec3 getLightPosition() {
+    // Просто одна светящаяся сфера с instanceID == 0
+    return vec3(0.0, 0.0, 0.0); // по центру, выше сцены
+}
+
+const vec3  FOG_AMBIENT_COLOR     = vec3(0.5, 0.6, 0.7); // Цвет тумана (холодный)
+const float FOG_AMBIENT_INTENSITY = 0.15;  
 
 void main() {
     uvec2 launchID = gl_LaunchIDEXT.xy;
     uvec2 launchSize = gl_LaunchSizeEXT.xy;
-
     vec2 uv = (vec2(launchID) + 0.5) / vec2(launchSize);
     vec2 ndc = uv * 2.0 - 1.0;
 
+    // Камера
     vec4 origin = cam.invView * vec4(0, 0, 0, 1);
-    vec4 target = cam.invProj * vec4(ndc, 1.0, 1.0);
+    vec4 target = cam.invProj * vec4(ndc, 1, 1);
     target /= target.w;
-    vec4 worldDir = cam.invView * vec4(normalize(target.xyz), 0.0);
+    vec4 dir = cam.invView * vec4(normalize(target.xyz), 0.0);
 
-    // начальные значения
-    prd.color = vec3(1.0, 0.0, 1.0); // Ярко-розовый, чтобы точно увидеть
+    // Основной рендер
+    prd.color = vec3(0.0);
     prd.depth = 0;
-
     traceRayEXT(
         topLevelAS,
         gl_RayFlagsOpaqueEXT,
         0xFF,
         SWS_LOC_PRIMARY_RAY,
-        SWS_NUM_GROUPS,
+        1,
         SWS_LOC_PRIMARY_RAY,
-        origin.xyz,
-        0.001,
-        worldDir.xyz,
-        1000.0,
-        0
+        origin.xyz, 0.001, dir.xyz, 1000.0, 0
     );
 
-    imageStore(accumImage, ivec2(launchID), vec4(prd.color, 1.0));
+    // Отладка volumetric fog
+    vec3 rayOrigin = origin.xyz;
+    vec3 rayDir = normalize(dir.xyz);
+    vec3 lightPos = getLightPosition();
+    vec3 accFog = vec3(0.0);
+    
+    int unblocked = 0, blocked = 0;
+
+    for (int i = 0; i < NUM_STEPS; ++i) {
+        vec3 samplePos = rayOrigin + STEP_SIZE * float(i) * rayDir;
+        vec3 toLight = lightPos - samplePos;
+        float dist = length(toLight);
+        vec3 lightDir = normalize(toLight);
+        
+        const uint shadowFlags =
+            gl_RayFlagsSkipClosestHitShaderEXT |   // пропустить closest-hit
+            gl_RayFlagsTerminateOnFirstHitEXT;
+
+        shadow.blocked = false;
+        traceRayEXT(
+            topLevelAS,
+            shadowFlags,
+            0xFF,
+            SWS_SHADOW_HIT_IDX,   // Правильный аргумент для группы попадания
+            1,
+            SWS_SHADOW_MISS_IDX,  // Правильный аргумент для шейдера промаха
+            samplePos + lightDir * 0.01,
+            0.01,
+            lightDir, dist - 0.02,
+            SWS_LOC2_SHADOW_RAY
+        );
+
+        float falloff = exp(-0.015 * float(i));
+
+        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        if (!shadow.blocked) {
+            // Яркий вклад для "божественных лучей"
+            float angleFactor = max(dot(rayDir, lightDir), 0.0);
+            accFog += vec3(1.0, 0.95, 0.8) * falloff * angleFactor * 2.0;
+        } else {
+            // Тусклый вклад для фонового тумана в тени
+            accFog += FOG_AMBIENT_COLOR * falloff * FOG_AMBIENT_INTENSITY;
+        }
+    }
+
+    vec3 base       = prd.color; // Убрал затемнение, чтобы лучше видеть туман
+    vec3 finalColor = base + accFog / float(NUM_STEPS);
+
+    imageStore(accumImage, ivec2(launchID), vec4(finalColor, 1.0));
 }
 

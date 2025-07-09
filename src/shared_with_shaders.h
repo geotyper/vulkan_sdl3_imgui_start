@@ -7,15 +7,16 @@
 
 // Смещения внутри missRegion
 // missRegion начинается с Группы 1
-#define SWS_PRIMARY_MISS_IDX      0
-#define SWS_SHADOW_MISS_IDX       1
-#define SWS_SECONDARY_MISS_IDX    2
-#define SWS_REFLECTION_MISS_IDX   3
+// Индексы групп попаданий (Hit Group Indices)
+#define SWS_PRIMARY_HIT_IDX     0 // Группа для основных лучей (.rchit)
+#define SWS_SHADOW_HIT_IDX      1 // Группа для теневых лучей (новый shadow.rchit)
 
-#define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
-//#define SWS_SHADOW_HIT_GROUP_IDX  1 // Вторая группа в hitRegion
+// Индексы промахов (Miss Indices)
+#define SWS_PRIMARY_MISS_IDX    0 // Промах для основных лучей (.rmiss)
+#define SWS_SHADOW_MISS_IDX     1 // Промах для теневых лучей (новый shadow.rmiss)
 
-#define SWS_NUM_GROUPS                    3 // Общее количество групп шейдеров
+#define SWS_NUM_GROUPS                    5 // Общее количество групп шейдеров
+#define HIT_GROUP_STRIDE                  1
 
 // Сеты/биндинги (без изменений)
 #define SWS_SCENE_AS_SET                  0
@@ -59,6 +60,7 @@ struct RadiancePayload {
     bool blocked;
     float weight;
 };
+
 
 struct UniformData {
     float uTime;

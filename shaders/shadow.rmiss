@@ -4,7 +4,7 @@
 
 #include "../src/shared_with_shaders.h"
 
-layout(location = SWS_LOC_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
 
 void main() {
     shadow.blocked = false;
