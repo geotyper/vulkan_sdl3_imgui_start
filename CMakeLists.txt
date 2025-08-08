@@ -76,7 +76,7 @@ FetchContent_Declare(glm
                      GIT_REPOSITORY https://github.com/g-truc/glm.git
                      GIT_TAG master)
 FetchContent_MakeAvailable(glm)
-include_directories(${glm_SOURCE_DIR}/src)
+include_directories(${glm_SOURCE_DIR}/)
 
 
 
@@ -125,11 +125,11 @@ include_directories(
      external/stb
      external/tinyobjloader
      external/volk
-     external/vulkan/include
+     #external/vulkan/include
 #    #src
 )
 
-add_subdirectory(external/vulkan)   # Vulkan::Headers
+#add_subdirectory(external/vulkan)   # Vulkan::Headers
 add_subdirectory(external/volk)
 
 # === Executable ===
@@ -200,11 +200,11 @@ add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 add_dependencies(DroneVisualizer CompileShaders)
 
 # === Copy Shaders to Executable Directory ===
-add_custom_command(
-    TARGET DroneVisualizer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_BINARY_DIR}/shaders_temp"
-            "$<TARGET_FILE_DIR:DroneVisualizer>/shaders"
-    COMMENT "Copying shaders to executable directory..."
-)
+#add_custom_command(
+#    TARGET DroneVisualizer POST_BUILD
+#    COMMAND ${CMAKE_COMMAND} -E copy_directory
+#            "${CMAKE_CURRENT_BINARY_DIR}/shaders_temp"
+#            "$<TARGET_FILE_DIR:DroneVisualizer>/shaders"
+#    COMMENT "Copying shaders to executable directory..."
+#)
 

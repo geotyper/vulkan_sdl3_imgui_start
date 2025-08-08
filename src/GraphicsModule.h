@@ -64,7 +64,7 @@ private:
     void createSyncObjects();
 
     // Swapchain and Dependent Objects
-    void createSwapchain();
+    void createSwapchain(VkSwapchainKHR oldSwapchain);
     void createImageViews();
     void createRenderPass();
     void createImGuiRenderPass();

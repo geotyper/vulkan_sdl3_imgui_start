@@ -101,31 +101,37 @@ void GraphicsModule::initSDL() {
 }
 
 void GraphicsModule::RenderFrame(const Camera& cam) {
+    // 1. Ждем, пока ресурсы для текущего кадра освободятся
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
+    // 2. ПОСЛЕ ожидания, немедленно сбрасываем fence для будущего использования
+    // Это исправляет ОШИБКУ №1 (deadlock)
+    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
+
     uint32_t imageIndex;
+    // 3. Получаем изображение.
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_framebufferResized) {
-        m_framebufferResized = false;
+    // Если swapchain устарел здесь, мы все равно можем попытаться отправить пустой
+    // командный буфер, чтобы правильно обработать семафоры, но проще...
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        // Просто пересоздаем swapchain и выходим. Следующий кадр будет в порядке.
         recreateSwapchain();
         return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        // Все остальные ошибки - фатальны
+        VK_CHECK(result, "Failed to acquire swap chain image");
     }
-    VK_CHECK(result, "Failed to acquire swap chain image");
 
-    m_rtxModule->UpdateCamera(cam);
-    currentTime +=0.01;
-    // Example: Make the light pulse
-    float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
-    float currentIntensity = 3.0f + pulse * 17.0f; // Varies between 10.0 and 30.0
-
-    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
-    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
-
-    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
+    // 4. Сбрасываем и записываем командный буфер
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
     recordCommandBuffer(imageIndex, cam);
 
+    // 5. Обновляем ваши данные
+    m_rtxModule->UpdateCamera(cam);
+    // ... и другие обновления ...
+
+    // 6. Отправляем командный буфер на выполнение
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -141,28 +147,31 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
+    // Этот fence будет сигнализирован, когда командный буфер завершит выполнение
     VK_CHECK(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]), "Failed to submit draw command buffer");
 
+    // 7. Показываем изображение на экране
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.pWaitSemaphores = signalSemaphores; // Ждем окончания рендеринга
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &m_swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+
+    // Обработка устаревшего swapchain здесь - самый надежный способ
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_framebufferResized) {
         m_framebufferResized = false;
         recreateSwapchain();
-        //createImGuiFramebuffers()
     } else if (result != VK_SUCCESS) {
         VK_CHECK(result, "Failed to present swap chain image");
     }
 
+    // 8. Переходим к следующему кадру "в полете"
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
-
 
 void GraphicsModule::SignalResize() {
     m_framebufferResized = true;
@@ -197,7 +206,7 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     volkLoadDevice(m_device);
 
     createCommandPool();
-    createSwapchain();
+    createSwapchain(VK_NULL_HANDLE);
     createImageViews();
     createRenderPass();
 
@@ -298,6 +307,10 @@ void GraphicsModule::CreateScene() {
 
 void GraphicsModule::recreateSwapchain() {
     int width = 0, height = 0;
+
+    SDL_ShowWindow(m_window);
+    SDL_RaiseWindow(m_window);
+
     SDL_GetWindowSizeInPixels(m_window, &width, &height);
     while (width == 0 || height == 0) {
         SDL_GetWindowSizeInPixels(m_window, &width, &height);
@@ -306,11 +319,14 @@ void GraphicsModule::recreateSwapchain() {
 
     vkDeviceWaitIdle(m_device);
 
+    VkSwapchainKHR oldSwapchain = m_swapchain;
+
     // This now cleans up framebuffers and the render pass as well
     cleanupSwapchain();
 
+    vkQueueWaitIdle(m_graphicsQueue);
     // Recreate the full stack
-    createSwapchain();      // Recreates the swapchain and its images
+    createSwapchain(oldSwapchain);      // Recreates the swapchain and its images
     createImageViews();     // Re-populates m_swapchainImageViews
     createRenderPass();     // **KEY:** Recreate the render pass
     createFramebuffers();   // **KEY:** Recreate framebuffers for the new image views
@@ -326,29 +342,41 @@ void GraphicsModule::recreateSwapchain() {
 }
 
 void GraphicsModule::cleanupSwapchain() {
-    // 1. Destroy Framebuffers
     for (auto framebuffer : m_framebuffers) {
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
     }
     m_framebuffers.clear();
 
-    // 2. Destroy Render Pass (Good Practice)
+
+    if (m_graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+        m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+
+    if (m_pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+        m_pipelineLayout = VK_NULL_HANDLE;
+    }
+
     if (m_renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_device, m_renderPass, nullptr);
         m_renderPass = VK_NULL_HANDLE;
     }
 
-    // 3. Destroy ImageViews (as before)
     for (auto imageView : m_swapchainImageViews) {
         vkDestroyImageView(m_device, imageView, nullptr);
     }
     m_swapchainImageViews.clear();
 
-    // 4. Destroy Swapchain (as before)
+    // 6. ---- УДАЛИТЕ ЭТОТ БЛОК ----
+    // НЕ НУЖНО уничтожать swapchain здесь, если вы используете oldSwapchain.
+    // Драйвер сделает это сам.
+    /*
     if (m_swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
     }
+    */
 }
 
 
@@ -379,7 +407,8 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
     // No need to specify old/new queues if they are the same
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // The last operation was a copy (transfer)
     barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // Next operation is rendering
-    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // IMPORTANT: The layout after the rtx copy
+    //barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // IMPORTANT: The layout after the rtx copy
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     barrier.image = m_swapchainImages[imageIndex];
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -576,11 +605,32 @@ void GraphicsModule::createLogicalDevice() {
     float queuePriority = 1.0f;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES, nullptr, VK_TRUE};
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtpFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, &bdaFeatures, VK_TRUE};
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, &rtpFeatures, VK_TRUE};
 
-    VkPhysicalDeviceFeatures2 deviceFeatures2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &asFeatures};
+    // 1. Объявляем нужные структуры. Обратите внимание, bdaFeatures больше нет.
+    VkPhysicalDeviceVulkan12Features features12{};
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtpFeatures{};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+    VkPhysicalDeviceFeatures2 deviceFeatures2{};
+
+    // 2. Заполняем их, выстраивая цепочку pNext
+
+    // Это теперь конец цепочки, так как bdaFeatures удалена
+    rtpFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rtpFeatures.rayTracingPipeline = VK_TRUE;
+    rtpFeatures.pNext = nullptr; // <-- ИЗМЕНЕНО
+
+    asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    asFeatures.accelerationStructure = VK_TRUE;
+    asFeatures.pNext = &rtpFeatures;
+
+    // Включаем ОБЕ нужные нам возможности в одной структуре Vulkan 1.2
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    features12.runtimeDescriptorArray = VK_TRUE;    // Эта возможность была нужна раньше
+    features12.bufferDeviceAddress = VK_TRUE;       // <-- А эту мы сюда ПЕРЕНЕСЛИ
+    features12.pNext = &asFeatures;
+
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.pNext = &features12;
 
     std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -629,7 +679,7 @@ void GraphicsModule::createCommandPool() {
 }
 
 
-void GraphicsModule::createSwapchain() {
+void GraphicsModule::createSwapchain(VkSwapchainKHR oldSwapchain) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
 
@@ -677,6 +727,8 @@ void GraphicsModule::createSwapchain() {
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     createInfo.clipped = VK_TRUE;
+
+    createInfo.oldSwapchain = oldSwapchain;
 
     VK_CHECK(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain), "Failed to create swap chain");
 
@@ -726,7 +778,7 @@ void GraphicsModule::createRenderPass() {
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     //colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     //not clear
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // <-- CRITICAL CHANGE
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // <-- CRITICAL CHANGE
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;

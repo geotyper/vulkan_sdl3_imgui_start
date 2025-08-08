@@ -136,8 +136,8 @@ namespace rtx {
                     vertex.position = {
                         attrib.vertices[3 * index.vertex_index + 0],
                         attrib.vertices[3 * index.vertex_index + 1],
-                        attrib.vertices[3 * index.vertex_index + 2],
-                        1.0f
+                        attrib.vertices[3 * index.vertex_index + 2]
+                        //1.0f
                     };
 
                     if (!attrib.normals.empty() && index.normal_index >= 0) {
@@ -183,13 +183,13 @@ namespace rtx {
         VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
         m_storageImage.Create(
             m_context,
-            VK_IMAGE_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, extent3D,
+            VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, extent3D,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
             );
         VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, range);
+        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, range);
 
         // CORRECTED: Call the single, unified update function.
         UpdateDescriptorSets();
@@ -374,11 +374,11 @@ namespace rtx {
 
         // 6. Transition target image for presentation
         // 5. Финальный барьер: готовим swapchain-image к показу на экране.
-        vulkanhelpers::ImageBarrier(cmd, targetImage,
-                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                    subresourceRange,
-                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                    VK_ACCESS_TRANSFER_WRITE_BIT, 0);
+        //vulkanhelpers::ImageBarrier(cmd, targetImage,
+        //                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        //                            subresourceRange,
+        //                            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        //                            VK_ACCESS_TRANSFER_WRITE_BIT, 0);
     }
 
     // --- RayTracingModule Private Method Implementations ---
@@ -829,7 +829,7 @@ namespace rtx {
     void RayTracingModule::BuildBLAS(MeshData& mesh) {
         VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        triangles.vertexFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+        triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT; //VK_FORMAT_R32G32B32A32_SFLOAT;
 
         assert(mesh.vertexBuffer.GetBuffer() != VK_NULL_HANDLE && "Vertex buffer is null!");
 
