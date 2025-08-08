@@ -63,8 +63,8 @@ bool traceShadowRay(vec3 origin, vec3 dir) {
     traceRayEXT(topLevelAS,
         gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT,
         0xFF,
-        SWS_SHADOW_MISS_IDX,
-        SWS_SHADOW_MISS_IDX,
+        1,//SWS_SHADOW_MISS_IDX,
+        1,//SWS_SHADOW_MISS_IDX,
         SWS_DEFAULT_HIT_IDX,
         origin, 0.001, dir, 1e20,
         SWS_LOC2_SHADOW_RAY);
@@ -230,8 +230,8 @@ void main() {
             topLevelAS,
             gl_RayFlagsOpaqueEXT,
             0xFF,
-            SWS_SECONDARY_MISS_IDX,
-            SWS_SECONDARY_MISS_IDX,
+            1,//SWS_SECONDARY_MISS_IDX,
+            1,//SWS_SECONDARY_MISS_IDX,
             SWS_DEFAULT_HIT_IDX,
             reflectOrigin, 0.001, reflectDir, 1e20,
             SWS_LOC3_REFLECTION_RAY

@@ -15,7 +15,7 @@
 #define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
 #define SWS_SHADOW_HIT_IDX          1 // Вторая группа в hitRegion
 
-#define SWS_NUM_GROUPS                    6 // Общее количество групп шейдеров
+#define SWS_NUM_GROUPS                    5 // Общее количество групп шейдеров
 
 // Сеты/биндинги (без изменений)
 #define SWS_SCENE_AS_SET                  0

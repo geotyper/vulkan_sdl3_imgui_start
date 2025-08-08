@@ -554,7 +554,7 @@ namespace rtx {
             s_shadowMiss,
             s_secondaryMiss,
             s_chit,
-            a_chit,
+            //a_chit,
             sa_chit,
         };
 
@@ -607,7 +607,7 @@ namespace rtx {
         groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
         groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
-        groups[5].anyHitShader       = 6;  // s_sahit  (= shadow.rahit)
+        groups[5].anyHitShader       = 5;  // s_sahit  (= shadow.rahit)
         groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
         groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
 
