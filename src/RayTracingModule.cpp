@@ -136,8 +136,8 @@ namespace rtx {
                     vertex.position = {
                         attrib.vertices[3 * index.vertex_index + 0],
                         attrib.vertices[3 * index.vertex_index + 1],
-                        attrib.vertices[3 * index.vertex_index + 2]
-                        //1.0f
+                        attrib.vertices[3 * index.vertex_index + 2],
+                        1.0f
                     };
 
                     if (!attrib.normals.empty() && index.normal_index >= 0) {
@@ -600,7 +600,7 @@ namespace rtx {
         groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
         groups[4].generalShader = VK_SHADER_UNUSED_KHR;
         groups[4].closestHitShader = 4; // s_chit
-        groups[4].anyHitShader =    5;
+        groups[4].anyHitShader =     VK_SHADER_UNUSED_KHR; //5;
         groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Group 4: Shadow Hit Group (for shadow rays)
@@ -829,7 +829,7 @@ namespace rtx {
     void RayTracingModule::BuildBLAS(MeshData& mesh) {
         VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT; //VK_FORMAT_R32G32B32A32_SFLOAT;
+        triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;//VK_FORMAT_R32G32B32A32_SFLOAT;
 
         assert(mesh.vertexBuffer.GetBuffer() != VK_NULL_HANDLE && "Vertex buffer is null!");
 

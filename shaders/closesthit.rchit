@@ -19,7 +19,7 @@ layout(location = SWS_LOC3_REFLECTION_RAY) rayPayloadEXT RadiancePayload reflect
 hitAttributeEXT vec2 attribs;
 
 struct Vertex {
-    vec3 position;
+    vec4 position;
     vec4 normal;
     vec4 color;
 };

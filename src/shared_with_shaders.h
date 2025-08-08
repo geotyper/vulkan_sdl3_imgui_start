@@ -13,7 +13,7 @@
 #define SWS_REFLECTION_MISS_IDX   3
 
 #define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
-//#define SWS_SHADOW_HIT_GROUP_IDX  1 // Вторая группа в hitRegion
+#define SWS_SHADOW_HIT_IDX          1 // Вторая группа в hitRegion
 
 #define SWS_NUM_GROUPS                    6 // Общее количество групп шейдеров
 
