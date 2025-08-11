@@ -97,6 +97,15 @@ namespace rtx {
         ubo.lightColor = lightColor;
         ubo.lightIntensity = lightIntensity;
 
+        ubo.volSigmaS=0.12;
+        ubo.volSigmaE=0.07;
+        ubo.volG=0.92;
+        ubo.volTMax=80.0;
+        ubo.lightPos =glm::vec3(0,0,0);
+        ubo.volSteps = 16;
+        ubo.volVisStride = 4;
+        ubo.volMaxDist =30.0f;
+
         // The rest of the function remains the same
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
     }

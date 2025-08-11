@@ -129,7 +129,15 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
 
     // 5. Обновляем ваши данные
     m_rtxModule->UpdateCamera(cam);
-    // ... и другие обновления ...
+    float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
+    float currentIntensity = 3.0f + pulse * 17.0f; // Varies between 10.0 and 30.0
+
+    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
+
+    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
+    vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
+    recordCommandBuffer(imageIndex, cam);
 
     // 6. Отправляем командный буфер на выполнение
     VkSubmitInfo submitInfo{};

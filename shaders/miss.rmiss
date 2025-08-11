@@ -7,7 +7,7 @@
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 
 void main() {
-    prd.color = vec3(0.15); // серый фон
-    prd.blocked = false;
+    prd.color = vec3(0.025, 0.025, 0.05); // Светло-жёлтый фон
+    prd.depth = 5000;
     
 }
