@@ -19,13 +19,29 @@ uniform CameraUBO {
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
 layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
 
-const int NUM_STEPS = 128;
-const float STEP_SIZE = 0.15;
-const float VIS_SCALE = 0.6;  
+const int NUM_STEPS =   256;
+const float STEP_SIZE = 0.05;
+const float VIS_SCALE = 0.46;  
 
 vec3 getLightPosition() {
     // Просто одна светящаяся сфера с instanceID == 0
     return vec3(0.0, 0.0, 0.0); // по центру, выше сцены
+}
+
+
+const vec3 PALETTE[7] = vec3[7](
+    vec3(0.800, 0.900, 1.000), // icy white-blue
+    vec3(0.600, 0.800, 1.000), // soft sky blue
+    vec3(0.400, 0.700, 1.000), // bright blue
+    vec3(0.200, 0.500, 0.900), // medium blue
+    vec3(0.100, 0.300, 0.700), // deep cold blue
+    vec3(0.000, 0.200, 0.500), // dark navy
+    vec3(0.500, 0.900, 1.000)  // electric cyan
+);
+
+// We can rename this function to be more generic
+vec3 getColorFromHash(uint hash) {
+    return PALETTE[hash % 7];
 }
 
 const vec3  FOG_AMBIENT_COLOR     = vec3(0.5, 0.6, 0.7); // Цвет тумана (холодный)
@@ -37,13 +53,13 @@ void main() {
     vec2 uv = (vec2(launchID) + 0.5) / vec2(launchSize);
     vec2 ndc = uv * 2.0 - 1.0;
 
-    // Камера
+    // Camera
     vec4 origin = cam.invView * vec4(0, 0, 0, 1);
     vec4 target = cam.invProj * vec4(ndc, 1, 1);
     target /= target.w;
     vec4 dir = cam.invView * vec4(normalize(target.xyz), 0.0);
 
-    // Основной рендер
+    // Main render to get the base color of the cubes
     prd.color = vec3(0.0);
     prd.depth = 0;
     traceRayEXT(
@@ -56,13 +72,14 @@ void main() {
         origin.xyz, 0.001, dir.xyz, 1000.0, 0
     );
 
-    // Отладка volumetric fog
+    // Volumetric fog calculation
     vec3 rayOrigin = origin.xyz;
     vec3 rayDir = normalize(dir.xyz);
     vec3 lightPos = getLightPosition();
     vec3 accFog = vec3(0.0);
     
-    int unblocked = 0, blocked = 0;
+    // This is the original warm color of the light itself
+    const vec3 lightColor = vec3(1.0, 0.95, 0.8);
 
     for (int i = 0; i < NUM_STEPS; ++i) {
         vec3 samplePos = rayOrigin + STEP_SIZE * float(i) * rayDir;
@@ -71,7 +88,7 @@ void main() {
         vec3 lightDir = normalize(toLight);
         
         const uint shadowFlags =
-            gl_RayFlagsSkipClosestHitShaderEXT |   // пропустить closest-hit
+            gl_RayFlagsSkipClosestHitShaderEXT |
             gl_RayFlagsTerminateOnFirstHitEXT;
 
         shadow.blocked = false;
@@ -79,36 +96,41 @@ void main() {
             topLevelAS,
             shadowFlags,
             0xFF,
-            SWS_SHADOW_HIT_IDX,   // Правильный аргумент для группы попадания
+            SWS_SHADOW_HIT_IDX,
             1,
-            SWS_SHADOW_MISS_IDX,  // Правильный аргумент для шейдера промаха
+            SWS_SHADOW_MISS_IDX,
             samplePos + lightDir * 0.01,
             0.01,
             lightDir, dist - 0.02,
             SWS_LOC2_SHADOW_RAY
         );
 
-       if (shadow.blocked)
-            blocked++;
-        else {
-            unblocked++;
+        if (!shadow.blocked) {
+            // --- NEW CODE STARTS HERE ---
+
+            // 1. Generate a procedural hash from the fog sample's world position
+            uint posHash = (gl_LaunchIDEXT.x + gl_LaunchIDEXT.x) % 7;
+            //uint(abs(samplePos.x * 13.37 + samplePos.y * 7.17 + samplePos.z * 3.14));
+
+            // 2. Get a color from our shared palette using this hash
+            vec3 proceduralColor = getColorFromHash(posHash);
+
+            // 3. The final color is the light's color modulated by the procedural palette color
+            vec3 fogColor = lightColor * proceduralColor;
+
+            // --- NEW CODE ENDS HERE ---
+            
             float falloff     = exp(-0.015 * float(i));
             float angleFactor = max(dot(rayDir, lightDir), 0.0);
-            accFog += vec3(1.0, 0.95, 0.8) * falloff * angleFactor * 2.0;
+
+            // Use the new dynamic fogColor instead of the hardcoded one
+            accFog += fogColor * falloff * angleFactor * 2.0;
         }
     }
 
-    vec3 debugColor = vec3(0.0);
-    if (unblocked > blocked)
-        debugColor = vec3(0.0, 1.0, 0.0);       // ↑ больше «светлых» сэмплов
-    else if (blocked > unblocked)
-        debugColor = vec3(1.0, 0.0, 0.0);       // ↑ больше «тёмных»  сэмплов
-    else
-        debugColor = vec3(1.0, 1.0, 0.0);       // ~ поровну
-
-    // Итог
-    vec3 base       = mix(prd.color, vec3(0.0), 0.1);
-    vec3 finalColor = base + accFog / float(NUM_STEPS); // <-- Теперь это итоговый цвет
-
-    imageStore(accumImage, ivec2(launchID), vec4(finalColor, 1.0));
+    vec3 base       = mix(prd.color, vec3(0.0), 0.027);
+    vec3 finalColor = base + accFog / float(NUM_STEPS);
+    
+    // Apply the BGR fix if you haven't changed the C++ code yet
+    imageStore(accumImage, ivec2(launchID), vec4(finalColor.bgr, 1.0));
 }

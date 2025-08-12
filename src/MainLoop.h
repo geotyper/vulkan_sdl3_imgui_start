@@ -29,5 +29,6 @@ private:
     Camera m_camera;
 
     bool m_relativeMouseMode = false;
+    float m_totalTime = 0.0f;
 };
 

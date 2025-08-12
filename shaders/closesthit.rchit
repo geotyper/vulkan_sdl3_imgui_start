@@ -61,13 +61,24 @@ vec3 getHitPosition(uint meshId, uvec3 tri, vec2 baryUV) {
 }
 
 const vec3 PALETTE[7] = vec3[7](
-    vec3(0.945, 0.769, 0.059), vec3(0.203, 0.286, 0.368), vec3(0.576, 0.439, 0.859),
-    vec3(0.945, 0.392, 0.392), vec3(0.180, 0.800, 0.443), vec3(0.203, 0.596, 0.858),
-    vec3(1.000, 0.768, 0.000)
+    vec3(0.800, 0.900, 1.000), // icy white-blue
+    vec3(0.600, 0.800, 1.000), // soft sky blue
+    vec3(0.400, 0.700, 1.000), // bright blue
+    vec3(0.200, 0.500, 0.900), // medium blue
+    vec3(0.100, 0.300, 0.700), // deep cold blue
+    vec3(0.000, 0.200, 0.500), // dark navy
+    vec3(0.500, 0.900, 1.000)  // electric cyan
 );
 
 vec3 colorFromInstanceID(uint instanceID) {
     return PALETTE[instanceID % 7];
+}
+
+mat3 rotZ(float a){
+    float c = cos(a), s = sin(a);
+    return mat3(  c,  s, 0,
+                 -s,  c, 0,
+                  0,  0, 1);
 }
 
 
@@ -82,6 +93,20 @@ void main() {
     vec3 posWorld = (gl_ObjectToWorldEXT * vec4(posObj, 1.0)).xyz;
     mat3 objToWorld = mat3(gl_ObjectToWorldEXT);
     vec3 normalWorld = normalize(transpose(inverse(objToWorld)) * normalObj);
+    
+    float angle = uniformBuffer.uni.uTime * 0.006;
+    mat3 R = rotZ(angle);
+
+    // first go to world, then rotate in world space
+    vec3 posWorldNoRot = gl_ObjectToWorldEXT * vec4(posObj, 1.0);
+    posWorld      = R * posWorldNoRot;
+
+    // rotate the linear part in world space for normals
+    mat3 objToWorld3 = R * mat3(gl_ObjectToWorldEXT);
+    normalWorld = normalize(transpose(inverse(objToWorld3)) * normalObj);
+
+    // rotated instance world position (its orbit)
+    //vec3 objectPos = R * gl_ObjectToWorldEXT[3];
 
     // Процедурный цвет остаётся
     vec3 objectPos = gl_ObjectToWorldEXT[3].xyz;

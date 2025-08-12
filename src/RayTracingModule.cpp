@@ -5,6 +5,7 @@
 #include <vector>
 #include <iostream>
 #include <glm/gtc/type_ptr.hpp>
+#include <random>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
@@ -287,6 +288,7 @@ namespace rtx {
             // Store instances and associate them with the current mesh ID
             for (const auto& instanceData : data.instances) {
                 m_instances.push_back({instanceData.transform, meshId});
+                m_baseInstanceTransforms.push_back(instanceData.transform);
             }
 
             m_scene->meshes.push_back(std::move(mesh));
@@ -295,6 +297,8 @@ namespace rtx {
 
         BuildAccelerationStructures();
         UpdateDescriptorSets();
+
+        InitPerInstanceSpin();
     }
 
     void RayTracingModule::RecordCommands(VkCommandBuffer cmd, VkImageView targetImageView, VkImage targetImage, VkExtent2D extent) {
@@ -979,5 +983,61 @@ namespace rtx {
         scratchBuffer.Destroy(m_context);
         instanceBuffer.Destroy(m_context);
     }
+
+
+    void RayTracingModule::AnimateInstances(float time, bool orbitAroundWorldZ) {
+        if (m_instances.empty()) return;
+
+        // World-orbit (same for all)
+        float orbitAngle = time * 0.16f;
+        glm::mat4 R_orbit = glm::rotate(glm::mat4(1.0f), orbitAngle, glm::vec3(0,0,1));
+
+        for (size_t i = 0; i < m_instances.size(); ++i) {
+            const glm::mat4 base = m_baseInstanceTransforms[i];
+
+            // Per-instance local spin
+            const SpinParams& sp = m_spin[i];
+            float localAngle = sp.phase + sp.speed * time;
+            glm::mat4 R_local = glm::rotate(glm::mat4(1.0f), localAngle, glm::normalize(sp.axis));
+
+            // Compose:
+            // - If you want the object to first keep its base, then spin locally, then orbit:
+            //     M = R_orbit * (base * R_local)
+            // - If you prefer orbit first, then apply base, then spin:
+            //     M = (R_orbit * base) * R_local
+            // Choose one; here’s orbit → base → local spin:
+            glm::mat4 M = (orbitAroundWorldZ ? (R_orbit * base) : base) * R_local;
+
+            m_instances[i].transform = M;
+        }
+        BuildTLAS();              // rebuild with new instance transforms
+        // no need to touch BLAS; UpdateDescriptorSets() not needed for TLAS change
+         UpdateDescriptorSets();
+    }
+
+    void RayTracingModule::InitPerInstanceSpin(uint32_t seed) {
+        m_spin.resize(m_instances.size());
+
+        std::mt19937 rng(seed);
+        std::uniform_real_distribution<float> uni01(0.0f, 1.0f);
+        std::uniform_real_distribution<float> speedDist(0.2f, 1.2f); // rad/s
+        std::uniform_real_distribution<float> phaseDist(0.0f, 6.28318530718f); // [0, 2π)
+
+        for (size_t i = 0; i < m_spin.size(); ++i) {
+            // Random axis on unit sphere:
+            float z = 2.0f * uni01(rng) - 1.0f;
+            float t = 6.28318530718f * uni01(rng);
+            float r = std::sqrt(std::max(0.0f, 1.0f - z*z));
+            glm::vec3 axis(r * std::cos(t), r * std::sin(t), z);
+
+            // Random direction baked into speed sign:
+            float dir = (uni01(rng) < 0.5f) ? -1.0f : 1.0f;
+
+            m_spin[i].axis  = axis;
+            m_spin[i].speed = dir * speedDist(rng);
+            m_spin[i].phase = phaseDist(rng);
+        }
+    }
+
 
 } // namespace rtx

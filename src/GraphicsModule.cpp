@@ -100,51 +100,52 @@ void GraphicsModule::initSDL() {
         throw std::runtime_error("Failed to create SDL3 window");
 }
 
-void GraphicsModule::RenderFrame(const Camera& cam) {
-    // 1. Ждем, пока ресурсы для текущего кадра освободятся
+// In GraphicsModule.cpp
+
+void GraphicsModule::RenderFrame(const Camera& cam, float currentTime) {
+    // 1. Wait for the GPU to finish the frame that is currently "in flight"
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
-    // 2. ПОСЛЕ ожидания, немедленно сбрасываем fence для будущего использования
-    // Это исправляет ОШИБКУ №1 (deadlock)
-    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
-
+    // 2. Acquire an image from the swapchain
     uint32_t imageIndex;
-    // 3. Получаем изображение.
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
 
-    // Если swapchain устарел здесь, мы все равно можем попытаться отправить пустой
-    // командный буфер, чтобы правильно обработать семафоры, но проще...
+    // Handle a resized/out-of-date swapchain
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        // Просто пересоздаем swapchain и выходим. Следующий кадр будет в порядке.
         recreateSwapchain();
         return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        // Все остальные ошибки - фатальны
         VK_CHECK(result, "Failed to acquire swap chain image");
     }
 
-    // 4. Сбрасываем и записываем командный буфер
-    vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
-    recordCommandBuffer(imageIndex, cam);
+    // NOW that we are sure we are rendering this frame, reset the fence for this frame.
+    // This fence will be used by vkQueueSubmit to signal when the GPU is done.
+    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
 
-    // 5. Обновляем ваши данные
+    // --- LOGIC AND ANIMATION UPDATE ---
+
+    // 4. Update scene state based on the new time
     m_rtxModule->UpdateCamera(cam);
-    float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f); // Varies between 0.0 and 1.0
-    float currentIntensity = 3.0f + pulse * 17.0f; // Varies between 10.0 and 30.0
+    m_rtxModule->AnimateInstances(currentTime, /*orbitAroundWorldZ=*/true); // Update instance transforms and rebuild TLAS
 
-    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f); // Warm white
+    // 5. Update uniform data for shaders
+    float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
+    float currentIntensity = 3.0f + pulse * 17.0f;
+    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f);
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
 
-    vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
-    vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
-    recordCommandBuffer(imageIndex, cam);
+    // --- RECORDING AND SUBMISSION ---
 
-    // 6. Отправляем командный буфер на выполнение
+    // 6. Reset and record the command buffer with the new, updated scene state
+    vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
+    recordCommandBuffer(imageIndex, cam); // Called only ONCE
+
+    // 7. Submit the command buffer to the GPU
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
     VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // Wait until it's safe to write to the image
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
@@ -155,21 +156,20 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    // Этот fence будет сигнализирован, когда командный буфер завершит выполнение
     VK_CHECK(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]), "Failed to submit draw command buffer");
 
-    // 7. Показываем изображение на экране
+    // 8. Present the rendered image to the screen
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores; // Ждем окончания рендеринга
+    presentInfo.pWaitSemaphores = signalSemaphores; // Wait for rendering to be finished
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &m_swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
 
-    // Обработка устаревшего swapchain здесь - самый надежный способ
+    // Handle resizing at the end of the frame
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_framebufferResized) {
         m_framebufferResized = false;
         recreateSwapchain();
@@ -177,7 +177,7 @@ void GraphicsModule::RenderFrame(const Camera& cam) {
         VK_CHECK(result, "Failed to present swap chain image");
     }
 
-    // 8. Переходим к следующему кадру "в полете"
+    // 9. Advance to the next frame index
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -269,29 +269,31 @@ void GraphicsModule::CreateScene() {
     // 1. Create Icosphere Geometry
     std::vector<Vertex> sphereVertices;
     std::vector<uint32_t> sphereIndices;
-    //GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
-    GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
+    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
+    //GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
 
     // 2. Create Cube Geometry
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
     //GeomCreate::createCube2(cubeVertices, cubeIndices);
-     GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
-   // GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
+    // GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+    //GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
-    //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,11, 9);
+    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9, 5);
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
+
+    const int gridSize = 2;
     const float spacing = 2.5f;
-    for (int z = -2; z <= 2; ++z) {
-        for (int y = -2; y <= 2; ++y) {
-            for (int x = -2; x <= 2; ++x) {
+    for (int z = -gridSize; z <= gridSize; ++z) {
+        for (int y = -gridSize; y <= gridSize; ++y) {
+            for (int x = -gridSize; x <= gridSize; ++x) {
                 // Skip the center position where the sphere will be
                 if (x == 0 && y == 0 && z == 0) continue;
 
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, glm::vec3(1.0f));
+                model = glm::scale(model, glm::vec3(1.25f));
                 cubeInstances.push_back({model});
             }
         }
@@ -300,7 +302,7 @@ void GraphicsModule::CreateScene() {
     // 4. Define the instance for the central sphere
     std::vector<rtx::InstanceData> sphereInstances;
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
-    model = glm::scale(model, glm::vec3(0.5f)); // Make the central sphere larger
+    model = glm::scale(model, glm::vec3(0.25f)); // Make the central sphere larger
     sphereInstances.push_back({model});
 
 
@@ -700,7 +702,7 @@ void GraphicsModule::createSwapchain(VkSwapchainKHR oldSwapchain) {
 
     VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& availableFormat : formats) {
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if (availableFormat.format == VK_FORMAT_R8G8B8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             surfaceFormat = availableFormat;
             break;
         }
@@ -733,7 +735,7 @@ void GraphicsModule::createSwapchain(VkSwapchainKHR oldSwapchain) {
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    createInfo.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR; //VK_PRESENT_MODE_FIFO_KHR;
     createInfo.clipped = VK_TRUE;
 
     createInfo.oldSwapchain = oldSwapchain;

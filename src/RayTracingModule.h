@@ -65,6 +65,9 @@ public:
 
     void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
     void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity);
+    void AnimateInstances(float time, bool orbitAroundWorldZ);
+
+    void InitPerInstanceSpin(uint32_t seed = 1337);
 private:
     void GetRayTracingProperties();
     void CreateDescriptorSetLayout();
@@ -114,6 +117,16 @@ private:
     VkExtent2D m_storageImageExtent{};
 
     std::vector<glm::mat4> m_instanceTransforms;
+
+    struct SpinParams {
+        glm::vec3 axis;   // unit axis
+        float     speed;  // radians per second
+        float     phase;  // radians (start offset)
+    };
+
+    std::vector<SpinParams> m_spin;
+
+    std::vector<glm::mat4> m_baseInstanceTransforms;
 
 
 

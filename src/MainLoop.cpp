@@ -44,11 +44,13 @@ void MainLoop::Run()
         const float deltaTime     = seconds_f(thisFrameStart - lastFrameStart).count();
         lastFrameStart            = thisFrameStart;
 
+        m_totalTime += deltaTime;
+
         /* ------- input, simulation, rendering --------- */
         handleEvents();
         update(deltaTime);
 
-         m_graphicsModule.RenderFrame(m_camera);
+         m_graphicsModule.RenderFrame(m_camera,  m_totalTime);
 
         /* --------------- frame throttling ------------- */
         const auto afterRender  = clock::now();
