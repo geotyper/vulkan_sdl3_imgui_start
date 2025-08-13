@@ -37,6 +37,9 @@ void MainLoop::Run()
     auto lastFrameStart = clock::now();
     m_isRunning = true;
 
+    float lastTime = 0.0f;
+    bool running = true;
+
     while (m_isRunning)
     {
         /* ---------------- time & delta ---------------- */
@@ -50,7 +53,15 @@ void MainLoop::Run()
         handleEvents();
         update(deltaTime);
 
-         m_graphicsModule.RenderFrame(m_camera,  m_totalTime);
+        float currentTime = (float)SDL_GetTicks() / 1000.0f;
+
+        // Calculate delta time (time since last frame)
+        float dt = currentTime - lastTime;
+
+        // Update lastTime for the next frame
+        lastTime = currentTime;
+
+         m_graphicsModule.RenderFrame(m_camera, m_totalTime, dt);
 
         /* --------------- frame throttling ------------- */
         const auto afterRender  = clock::now();

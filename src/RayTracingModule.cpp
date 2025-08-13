@@ -1039,5 +1039,118 @@ namespace rtx {
         }
     }
 
+    void RayTracingModule::Build3x3x3(float spacing) {
+        m_instances.clear();
+        m_cubelets.clear();
+        m_baseInstanceTransforms.clear();
+
+        int idx = 0;
+        for (int z = -1; z <= 1; ++z) {
+            for (int y = -1; y <= 1; ++y) {
+                for (int x = -1; x <= 1; ++x) {
+                    glm::vec3 p = spacing * glm::vec3(x, y, z);
+                    glm::mat4 M = glm::translate(glm::mat4(1.0f), p);
+
+                    // push an instance for your meshId (e.g., cube mesh)
+                    m_instances.push_back({M, /*meshId=*/1});  // adjust meshId
+                    m_baseInstanceTransforms.push_back(M);
+                    m_cubelets.push_back({x,y,z, (uint32_t)idx});
+                    idx++;
+                }
+            }
+        }
+        BuildTLAS();
+        UpdateDescriptorSets();
+
+        QueueScramble();
+        QueueScramble();
+        QueueScramble();
+        QueueScramble();
+    }
+
+    void RayTracingModule::AnimateRubik(float dt) {
+        // Start next move if idle
+        if (!m_anim.active() && !m_queue.empty()) {
+            m_anim.move = m_queue.front();
+            m_queue.pop_front();
+            m_anim.t = 0.0f;
+        }
+        if (!m_anim.active()) {
+            // idle: nothing to animate; still render from baked bases
+            for (auto& c : m_cubelets)
+                m_instances[c.inst].transform = m_baseInstanceTransforms[c.inst];
+            BuildTLAS(); // consider UPDATE mode
+            UpdateDescriptorSets();
+            return;
+        }
+
+        // Progress
+        m_anim.t = std::min(m_anim.t + dt, m_anim.duration);
+        const LayerSpec spec = MoveSpec(m_anim.move);
+        const float alpha = m_anim.t / m_anim.duration;
+        const float angle = spec.sign * spec.radians * alpha;
+
+        const glm::vec3 axis = glm::normalize(glm::vec3(spec.axis));
+        const glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, axis);
+
+        // Apply live rotation to just the active layer
+        for (auto& c : m_cubelets) {
+            const glm::mat4 base = m_baseInstanceTransforms[c.inst];
+            if (InLayer(c, spec))
+                m_instances[c.inst].transform = R * base;   // rotate around world axis
+            else
+                m_instances[c.inst].transform = base;
+        }
+        BuildTLAS(); // UPDATE/refit recommended
+        UpdateDescriptorSets();
+
+        // Finish?
+        if (m_anim.t >= m_anim.duration) {
+            // Snap to exact 90°/180° and bake it into base, update integer coords
+            const float finalAngle = spec.sign * spec.radians;
+            const glm::mat4 Rbake = glm::rotate(glm::mat4(1.0f), finalAngle, axis);
+
+            for (auto& c : m_cubelets) {
+                if (!InLayer(c, spec)) continue;
+
+                // 1) bake transform
+                m_baseInstanceTransforms[c.inst] = Rbake * m_baseInstanceTransforms[c.inst];
+
+                // 2) rotate integer coords (x,y,z) by 90° or 180° around axis
+                int x=c.x, y=c.y, z=c.z;
+                if (spec.axis.x) {
+                    // rotate around X: (y,z) → (±z, ∓y)
+                    if (spec.radians == glm::pi<float>()) { y = -y; z = -z; }
+                    else if (spec.sign > 0) { int ny = -z; int nz =  y; y = ny; z = nz; }     // +90°
+                    else                    { int ny =  z; int nz = -y; y = ny; z = nz; }     // -90°
+                } else if (spec.axis.y) {
+                    // around Y: (x,z) → (∓z, ±x)
+                    if (spec.radians == glm::pi<float>()) { x = -x; z = -z; }
+                    else if (spec.sign > 0) { int nx =  z; int nz = -x; x = nx; z = nz; }
+                    else                    { int nx = -z; int nz =  x; x = nx; z = nz; }
+                } else if (spec.axis.z) {
+                    // around Z: (x,y) → (±y, ∓x)
+                    if (spec.radians == glm::pi<float>()) { x = -x; y = -y; }
+                    else if (spec.sign > 0) { int nx = -y; int ny =  x; x = nx; y = ny; }
+                    else                    { int nx =  y; int ny = -x; x = nx; y = ny; }
+                }
+                c.x = x; c.y = y; c.z = z;
+            }
+
+            // clear animation
+            m_anim.move = Move::None;
+            m_anim.t = 0.0f;
+        }
+    }
+
+    void RayTracingModule::QueueScramble() {
+        static Move all[] = {Move::U,Move::U_PRIME,Move::U2,Move::D,Move::D_PRIME,Move::D2,
+                             Move::L,Move::L_PRIME,Move::L2,Move::R,Move::R_PRIME,Move::R2,
+                             Move::F,Move::F_PRIME,Move::F2,Move::B,Move::B_PRIME,Move::B2};
+        std::mt19937 rng(42);
+        std::uniform_int_distribution<int> d(0, (int)std::size(all)-1);
+        for (int i=0;i<25;i++) m_queue.push_back(all[d(rng)]);
+    }
+
 
 } // namespace rtx

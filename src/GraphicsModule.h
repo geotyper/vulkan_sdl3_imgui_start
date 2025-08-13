@@ -20,7 +20,7 @@ public:
     // Public API
     void Initialize(const std::string appName);
     void Shutdown();
-    void RenderFrame(const Camera& cam, float currentTime);
+    void RenderFrame(const Camera& cam, float currentTime, float dt);
     void SignalResize();
     bool ShouldClose() const;
     void PollEvents();

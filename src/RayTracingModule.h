@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <deque>
 #include <functional>
 
 
@@ -38,6 +39,56 @@ struct Scene {
     void Destroy(const vulkanhelpers::VulkanContext& context, VkDevice device);
 };
 
+struct LayerSpec { glm::ivec3 axis; int layerCoord; float sign; float radians; };
+
+enum class Move { U, D, L, R, F, B, U_PRIME, D_PRIME, L_PRIME, R_PRIME, F_PRIME, B_PRIME, U2, D2, L2, R2, F2, B2, None };
+
+struct Cubelet {
+    int x, y, z;          // grid coords in {-1,0,1}
+    uint32_t inst;        // index into m_instances
+};
+
+
+static LayerSpec MoveSpec(Move m) {
+    // axis: which axis to rotate around (x,y,z ∈ {1,0,0} etc.), layerCoord: which slice,
+    // sign: +1 or -1 for direction, radians: target angle (±π/2 or π).
+    switch (m) {
+    case Move::R:       return {{1,0,0}, +1, +1,  glm::half_pi<float>()};
+    case Move::R_PRIME: return {{1,0,0}, +1, -1,  glm::half_pi<float>()};
+    case Move::R2:      return {{1,0,0}, +1, +1,  glm::pi<float>()};
+
+    case Move::L:       return {{1,0,0}, -1, -1,  glm::half_pi<float>()};
+    case Move::L_PRIME: return {{1,0,0}, -1, +1,  glm::half_pi<float>()};
+    case Move::L2:      return {{1,0,0}, -1, +1,  glm::pi<float>()};
+
+    case Move::U:       return {{0,1,0}, +1, +1,  glm::half_pi<float>()};
+    case Move::U_PRIME: return {{0,1,0}, +1, -1,  glm::half_pi<float>()};
+    case Move::U2:      return {{0,1,0}, +1, +1,  glm::pi<float>()};
+
+    case Move::D:       return {{0,1,0}, -1, -1,  glm::half_pi<float>()};
+    case Move::D_PRIME: return {{0,1,0}, -1, +1,  glm::half_pi<float>()};
+    case Move::D2:      return {{0,1,0}, -1, +1,  glm::pi<float>()};
+
+    case Move::F:       return {{0,0,1}, +1, +1,  glm::half_pi<float>()};
+    case Move::F_PRIME: return {{0,0,1}, +1, -1,  glm::half_pi<float>()};
+    case Move::F2:      return {{0,0,1}, +1, +1,  glm::pi<float>()};
+
+    case Move::B:       return {{0,0,1}, -1, -1,  glm::half_pi<float>()};
+    case Move::B_PRIME: return {{0,0,1}, -1, +1,  glm::half_pi<float>()};
+    case Move::B2:      return {{0,0,1}, -1, +1,  glm::pi<float>()};
+
+    default:            return {{0,0,0}, 0, 0, 0};
+    }
+}
+
+static bool InLayer(const Cubelet& c, const LayerSpec& s) {
+    if (s.axis.x) return c.x == s.layerCoord;
+    if (s.axis.y) return c.y == s.layerCoord;
+    if (s.axis.z) return c.z == s.layerCoord;
+    return false;
+}
+
+
 
 class RayTracingModule {
 public:
@@ -68,6 +119,10 @@ public:
     void AnimateInstances(float time, bool orbitAroundWorldZ);
 
     void InitPerInstanceSpin(uint32_t seed = 1337);
+    void Build3x3x3(float spacing);
+
+    void AnimateRubik(float dt);
+    void QueueScramble();
 private:
     void GetRayTracingProperties();
     void CreateDescriptorSetLayout();
@@ -129,6 +184,17 @@ private:
     std::vector<glm::mat4> m_baseInstanceTransforms;
 
 
+    std::vector<Cubelet> m_cubelets;          // size 27
+
+
+    struct MoveAnim {
+        Move move = Move::None;
+        float t = 0.0f;          // seconds elapsed in this move
+        float duration = 1.25f;  // time for 90° (or 180°) turn
+        bool active() const { return move != Move::None; }
+    };
+    MoveAnim m_anim;
+    std::deque<Move> m_queue;    // optional: queue of moves
 
     void CreateUniformDataBuffer();
 };
