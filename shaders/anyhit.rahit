@@ -9,26 +9,33 @@ rayPayloadInEXT RadiancePayload prd;
 
 const float MIN_WEIGHT = 0.02;          // когда вклад стал незаметным
 
-void main()
-{
-    // 0. Берём альфа и цвет из вершин (или текстуры)
-    vec3  C = vec3(1.0);                // пример: белый куб
-    float A = 0.3;                      // ваша прозрачность
+float rand(vec2 co){
+    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
-    // 1. Считаем, фронт-фейс ли это
-    bool frontFace = (gl_HitKindEXT == gl_HitKindFrontFacingTriangleEXT);
-    if (!frontFace) {                   // задняя грань — сразу пропускаем
-        ignoreIntersectionEXT;
-        return;
+void main() {
+    // Unpack the unique instance ID, just like in the closest-hit shader.
+    uint packedID = gl_InstanceCustomIndexEXT;
+    uint uniqueInstanceID = packedID >> 8;
+
+    // In our C++ code, the sphere is ID 0, the 26 cubelets are 1-26,
+    // so the big frame we added last will be ID 27.
+    uint frameInstanceID = 17;
+
+    if (uniqueInstanceID == frameInstanceID) {
+        // This is our transparent frame.
+        // Set its opacity. 0.0 is fully transparent, 1.0 is fully opaque.
+        float opacity = 0.1; // Very transparent
+
+        // If our random number is greater than the opacity, the ray passes through.
+        if (rand(gl_LaunchIDEXT.xy) > opacity) {
+            // Ignore this intersection and let the ray continue as if it hit nothing.
+            ignoreIntersectionEXT;
+            return;
+        }
+        // Otherwise, we do nothing. The intersection is reported to the
+        // closest-hit shader, and the object will be rendered.
     }
-
-    // 2. Аккумулируем цвет
-    prd.color  += prd.weight * A * C;
-    prd.weight *= (1.0 - A);
-
-    // 3. Решаем, нужен ли ещё один проход
-    if (prd.weight > MIN_WEIGHT && prd.depth < 8)
-        ignoreIntersectionEXT;          // идём дальше (сквозь окно)
-    else
-        terminateRayEXT;                // «завершаем» луч на этом слое
+    // For all other instances (cubelets, sphere), this shader does nothing,
+    // so they remain fully opaque.
 }

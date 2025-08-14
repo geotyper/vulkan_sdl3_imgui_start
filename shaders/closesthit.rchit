@@ -83,8 +83,17 @@ mat3 rotZ(float a){
 
 
 void main() {
-    uint instanceID = gl_InstanceCustomIndexEXT;
-    uint meshId = instanceID;
+
+    uint packedID = gl_InstanceCustomIndexEXT;
+
+    // 2. Unpack the two values.
+    //    - Use a bitwise AND to get the lower 8 bits for the meshId.
+    //    - Use a bitwise RIGHT SHIFT to get the upper bits for the unique ID.
+    uint meshId           = packedID & 0xFFu;
+    uint instanceID = packedID >> 8;
+    
+    //uint instanceID = gl_InstanceCustomIndexEXT;
+    //uint meshId = instanceID;
 
     uvec3 tri = getTriangleIndices(meshId, gl_PrimitiveID);
     vec3 normalObj = interpolateNormal(meshId, tri, attribs);
@@ -110,8 +119,11 @@ void main() {
 
     // Процедурный цвет остаётся
     vec3 objectPos = gl_ObjectToWorldEXT[3].xyz;
-    uint cubeIndex = uint(abs(objectPos.x * 13.37 + objectPos.y * 7.17 + objectPos.z * 3.14));
-    vec3 baseColor = colorFromInstanceID(cubeIndex);
+    //uint cubeIndex = uint(abs(objectPos.x * 13.37 + objectPos.y * 7.17 + objectPos.z * 3.14));
+    //vec3 baseColor = colorFromInstanceID(cubeIndex);
+    
+    
+    vec3 baseColor = colorFromInstanceID(instanceID);
 
     // Если это источник света, делаем его ярким
     if (gl_InstanceCustomIndexEXT == 0) {
@@ -126,6 +138,25 @@ void main() {
         float diff = max(dot(normalWorld, L), 0.0);
         prd.color = baseColor * diff;
         
+    }
+    
+      uint frameInstanceID = 17;
+
+    if (instanceID == frameInstanceID) {
+        // We hit the transparent frame. Give it a subtle, dark color.
+        prd.color = vec3(0.5, 0.75, 0.75);
+    }
+   // else if (instanceID == 0) {
+   //     // We hit the light source.
+   //     prd.color = uniformBuffer.uni.lightColor * uniformBuffer.uni.lightIntensity;
+   // }
+    else {
+        // We hit a cubelet. Do the normal lighting calculation.
+        vec3 baseColor = colorFromInstanceID(instanceID);
+        vec3 lightPos = vec3(0,0,0);
+        vec3 L = normalize(lightPos - posWorld);
+        float diff = max(dot(normalWorld, L), 0.0);
+        prd.color = baseColor * diff;
     }
 
     // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---

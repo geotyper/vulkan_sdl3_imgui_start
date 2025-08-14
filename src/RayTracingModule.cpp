@@ -347,7 +347,7 @@ namespace rtx {
         VkStridedDeviceAddressRegionKHR hitRegion {
             baseAddr + 4 * m_sbtStride, // Начало - группа 4
             m_sbtStride,
-            2 * m_sbtStride             // Размер - 2 shaders
+            3 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
@@ -567,8 +567,8 @@ namespace rtx {
             s_shadowMiss,
             s_secondaryMiss,
             s_chit,
-            //a_chit,
             sa_chit,
+            a_chit,
         };
 
 
@@ -613,7 +613,7 @@ namespace rtx {
         groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
         groups[4].generalShader = VK_SHADER_UNUSED_KHR;
         groups[4].closestHitShader = 4; // s_chit
-        groups[4].anyHitShader =     VK_SHADER_UNUSED_KHR; //5;
+        groups[4].anyHitShader =     6;//VK_SHADER_UNUSED_KHR; //5;
         groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Group 4: Shadow Hit Group (for shadow rays)
@@ -911,16 +911,33 @@ namespace rtx {
         std::vector<VkAccelerationStructureInstanceKHR> vkInstances;
         vkInstances.reserve(m_instances.size());
 
-        for (const auto& instanceData : m_instances) {
+        for (size_t i = 0; i < m_instances.size(); ++i)
+        {
+            const auto& instanceData = m_instances[i];
             VkAccelerationStructureInstanceKHR instance{};
             const glm::mat4 tm = glm::transpose(instanceData.transform);
             memcpy(&instance.transform, glm::value_ptr(tm), sizeof(VkTransformMatrixKHR));
 
            // instance.instanceCustomIndex = static_cast<uint32_t>(vkInstances.size());
-            instance.instanceCustomIndex = instanceData.meshId;
+            //instance.instanceCustomIndex = instanceData.meshId;
+
+            uint32_t uniqueID = static_cast<uint32_t>(i);
+            uint32_t meshID   = instanceData.meshId;
+
+            // Pack them together: uniqueID in the high bits, meshID in the low bits.
+            instance.instanceCustomIndex = (uniqueID << 8) | meshID;
+
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX;
-            instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            //instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+
+            if (uniqueID == 17) { // 0=sphere, 1-26=cubes, 27=frame
+                // This flag tells Vulkan the object is NOT opaque and it MUST run the Any-Hit shader.
+                instance.flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+            } else {
+                // All other objects are treated as opaque by default.
+                instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            }
 
             // *** KEY CHANGE HERE ***
             // Reference the BLAS corresponding to the meshId of the instance
@@ -1049,8 +1066,18 @@ namespace rtx {
             for (int y = -1; y <= 1; ++y) {
                 for (int x = -1; x <= 1; ++x) {
                     glm::vec3 p = spacing * glm::vec3(x, y, z);
-                    glm::mat4 M = glm::translate(glm::mat4(1.0f), p);
 
+                    glm::mat4 M = glm::translate(glm::mat4(1.0f), p);
+                    M = glm::scale(M, glm::vec3(0.95f));
+
+                    if (z == 0 && y == 0 && x == 0) continue;
+
+                    //if(z==0 && y ==0 && x ==0)
+                    //{
+                    //        p = 10.0f*spacing * glm::vec3(x, y, z);
+                    //        M = glm::translate(glm::mat4(1.0f), p);
+                    //        M = glm::scale(M, glm::vec3(0.05f));
+                    //}
                     // push an instance for your meshId (e.g., cube mesh)
                     m_instances.push_back({M, /*meshId=*/1});  // adjust meshId
                     m_baseInstanceTransforms.push_back(M);
@@ -1059,6 +1086,9 @@ namespace rtx {
                 }
             }
         }
+
+
+
         BuildTLAS();
         UpdateDescriptorSets();
 

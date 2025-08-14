@@ -277,15 +277,15 @@ void GraphicsModule::CreateScene() {
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
     //GeomCreate::createCube2(cubeVertices, cubeIndices);
-    // GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
+    //GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
     //GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
-    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9, 7);
+    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9, 5);
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
 
     const int gridSize = 1;
-    const float spacing = 1.5f;
+    const float spacing = 1.55f;
     for (int z = -gridSize; z <= gridSize; ++z) {
         for (int y = -gridSize; y <= gridSize; ++y) {
             for (int x = -gridSize; x <= gridSize; ++x) {
@@ -294,7 +294,7 @@ void GraphicsModule::CreateScene() {
 
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, glm::vec3(1.85f));
+                model = glm::scale(model, glm::vec3(1.15f));
                 cubeInstances.push_back({model});
             }
         }
@@ -307,11 +307,20 @@ void GraphicsModule::CreateScene() {
     sphereInstances.push_back({model});
 
 
+    std::vector<rtx::InstanceData> frameInstances;
+    glm::mat4 modelFrame = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
+    modelFrame  = glm::scale(modelFrame , glm::vec3(5.25f)); // Make the central sphere larger
+    frameInstances.push_back({modelFrame });
+    std::vector<Vertex> frameVertices;
+    std::vector<uint32_t> frameIndices;
+    GeomCreate::createCubeCenterHole(frameVertices, frameIndices,9,7); // Assuming you have a simple cube generator
+
     // 5. Load the generated data into the ray tracing module
     m_rtxModule->LoadFromMultipleMeshes(
         { // A list of mesh data
             { sphereVertices, sphereIndices, sphereInstances },
             { cubeVertices,   cubeIndices,   cubeInstances   }
+        // ,  { frameVertices,  frameIndices,  frameInstances   }
         }
     );
 

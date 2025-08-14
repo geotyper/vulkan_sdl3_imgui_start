@@ -168,6 +168,7 @@ private:
 
     vulkanhelpers::Buffer m_uniformDataUBO;
 
+public:
     vulkanhelpers::Image m_storageImage;
     VkExtent2D m_storageImageExtent{};
 
