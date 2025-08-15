@@ -1068,7 +1068,7 @@ namespace rtx {
                     glm::vec3 p = spacing * glm::vec3(x, y, z);
 
                     glm::mat4 M = glm::translate(glm::mat4(1.0f), p);
-                    M = glm::scale(M, glm::vec3(0.95f));
+                    M = glm::scale(M, glm::vec3(0.495f));
 
                     if (z == 0 && y == 0 && x == 0) continue;
 

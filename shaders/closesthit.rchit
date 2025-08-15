@@ -6,6 +6,8 @@
 #include "../src/shared_with_shaders.h"
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
+layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
+uniform accelerationStructureEXT topLevelAS;
 hitAttributeEXT vec2 attribs;
 
 // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
@@ -82,6 +84,29 @@ mat3 rotZ(float a){
 }
 
 
+// A simple pseudo-random number generator.
+// We give it a "seed" that should be different for each pixel and frame.
+float rand(inout uint seed) {
+    seed = seed * 747796405u + 2891336453u;
+    uint result = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
+    result = (result >> 22u) ^ result;
+    return float(result) / 4294967295.0f;
+}
+
+// Generates a random direction vector.
+vec3 randomDirection(inout uint seed) {
+    float x = rand(seed) * 2.0 - 1.0;
+    float y = rand(seed) * 2.0 - 1.0;
+    float z = rand(seed) * 2.0 - 1.0;
+    return normalize(vec3(x, y, z));
+}
+
+// Gets a random point on the surface of a sphere.
+vec3 getRandomPointOnSphere(vec3 center, float radius, inout uint seed) {
+    return center + randomDirection(seed) * radius;
+}
+
+
 void main() {
 
     uint packedID = gl_InstanceCustomIndexEXT;
@@ -140,24 +165,67 @@ void main() {
         
     }
     
-      uint frameInstanceID = 17;
+     uint uniqueInstanceID = packedID >> 8;
+      // --- Main Rendering for Cubelets ---
+    baseColor = colorFromInstanceID(uniqueInstanceID);
+    vec3 lightPos = vec3(0,0,0);
+    
+    
 
-    if (instanceID == frameInstanceID) {
-        // We hit the transparent frame. Give it a subtle, dark color.
-        prd.color = vec3(0.5, 0.75, 0.75);
+    // We hit a cubelet. Do the normal lighting calculation.
+    //vec3 lightPos = vec3(0,0,0);
+    float lightRadius = 0.025; // The radius of your light sphere
+
+    // --- NEW MONTE CARLO LIGHTING ---
+
+    // 1. Create a unique seed for this pixel and frame
+    uint seed = gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y + gl_LaunchIDEXT.y + uint(uniformBuffer.uni.uTime * 1000.0);
+
+    // 2. Pick ONE random point on the light sphere's surface
+    vec3 randomPointOnLight = getRandomPointOnSphere(lightPos, lightRadius, seed);
+
+    // 3. Calculate direction and distance to that RANDOM point
+    vec3 L = randomPointOnLight - posWorld;
+    float distToLight = length(L);
+    L = normalize(L);
+
+    // 4. Trace ONE shadow ray to the random point
+    shadow.blocked = false; // You need to add this payload to the file
+    traceRayEXT(
+        topLevelAS,
+        gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        0xFF,
+        SWS_SHADOW_HIT_IDX, 1, SWS_SHADOW_MISS_IDX,
+        posWorld + L * 0.001, // Ray origin
+        0.001,                // tMin
+        L,                    // Ray direction
+        distToLight,          // tMax
+        SWS_LOC2_SHADOW_RAY
+    );
+
+    // 5. Calculate final color
+    float diffuseIntensity = 0.0;
+    if (!shadow.blocked) {
+        diffuseIntensity = max(dot(normalWorld, L), 0.0);
     }
-   // else if (instanceID == 0) {
-   //     // We hit the light source.
-   //     prd.color = uniformBuffer.uni.lightColor * uniformBuffer.uni.lightIntensity;
-   // }
-    else {
-        // We hit a cubelet. Do the normal lighting calculation.
-        vec3 baseColor = colorFromInstanceID(instanceID);
-        vec3 lightPos = vec3(0,0,0);
-        vec3 L = normalize(lightPos - posWorld);
-        float diff = max(dot(normalWorld, L), 0.0);
-        prd.color = baseColor * diff;
+
+    // You can use either the smooth or cartoon shading here!
+    // For smooth soft shadows:
+    // prd.color = baseColor * diffuseIntensity;
+
+    // For cartoon soft shadows:
+    float brightness = 0.0;
+    if(diffuseIntensity > 0.0) { // If it's lit at all
+        // Use only two tones: lit or unlit, for a stark look
+        brightness = 1.0;
+    } else {
+        brightness = 0.3; // Shadow tone
     }
+    
+    float outlineFactor=0.5;
+    vec3 celShadedColor = baseColor * brightness;
+    // ... (Apply outline logic here as before)
+    prd.color = celShadedColor * outlineFactor;
 
     // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
     // Исправляем расчёт глубины для тумана
