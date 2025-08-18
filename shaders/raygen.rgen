@@ -1,5 +1,5 @@
 #version 460 core
-#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_ray_tracing          : enable
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
 
@@ -8,176 +8,114 @@
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING)
 uniform accelerationStructureEXT topLevelAS;
 
-layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8) uniform image2D accumImage;
+layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
+uniform image2D accumImage;
 
-layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING)
-uniform CameraUBO {
-    mat4 invView;
-    mat4 invProj;
-} cam;
+layout(set = SWS_SCENE_AS_SET, binding = SWS_CAMERA_BINDING)
+uniform CameraUBO { mat4 invView; mat4 invProj; } cam;
 
-
-layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING) uniform UniformBlock {
-    UniformData uni;
-} uniformBuffer; 
+layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
+uniform UniformBlock { UniformData uni; } U;
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
-layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadEXT ShadowPayload shadow;
 
-const int NUM_STEPS =   256;
-const float STEP_SIZE = 0.05;
-const float VIS_SCALE = 0.46;  
+// --- SBT indices inside regions (we use 1 miss + 1 hit-group) ---
+#define MISS_PRIMARY 0
+#define HIT_PRIMARY  0
 
-vec3 getLightPosition() {
-    // Просто одна светящаяся сфера с instanceID == 0
-    return vec3(0.0, 0.0, 0.0); // по центру, выше сцены
+// --- RNG (Wang hash) ---
+uint wanghash(uint s){ s = (s ^ 61u) ^ (s >> 16u); s *= 9u; s ^= (s >> 4u); s *= 0x27d4eb2du; s ^= (s >> 15u); return s; }
+
+vec3 tonemapACES(vec3 x){
+    const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
 }
 
+// Если хочешь хранить в текстуре линейный цвет без тонмапа — поставь 0
+#define ACCUM_TONEMAP_ON_WRITE 0
 
-const vec3 PALETTE[7] = vec3[7](
-    vec3(0.800, 0.900, 1.000), // icy white-blue
-    vec3(0.600, 0.800, 1.000), // soft sky blue
-    vec3(0.400, 0.700, 1.000), // bright blue
-    vec3(0.200, 0.500, 0.900), // medium blue
-    vec3(0.100, 0.300, 0.700), // deep cold blue
-    vec3(0.000, 0.200, 0.500), // dark navy
-    vec3(0.500, 0.900, 1.000)  // electric cyan
-);
+void main()
+{
+    const uvec2 pixel = gl_LaunchIDEXT.xy;
+    const uvec2 size  = gl_LaunchSizeEXT.xy;
 
-// We can rename this function to be more generic
-vec3 getColorFromHash(uint hash) {
-    return PALETTE[hash % 7];
-}
-
-vec3 quantize(vec3 c, float levels) {
-    return floor(c * levels) / levels;
-}
-
-const vec3  FOG_AMBIENT_COLOR     = vec3(0.5, 0.6, 0.7); // Цвет тумана (холодный)
-const float FOG_AMBIENT_INTENSITY = 0.05; 
-
-
-// A simple pseudo-random number generator.
-// We give it a "seed" that should be different for each pixel and frame.
-float rand(inout uint seed) {
-    seed = seed * 747796405u + 2891336453u;
-    uint result = ((seed >> ((seed >> 28u) + 4u)) ^ seed) * 277803737u;
-    result = (result >> 22u) ^ result;
-    return float(result) / 4294967295.0f;
-}
-
-// Generates a random direction vector.
-vec3 randomDirection(inout uint seed) {
-    float x = rand(seed) * 2.0 - 1.0;
-    float y = rand(seed) * 2.0 - 1.0;
-    float z = rand(seed) * 2.0 - 1.0;
-    return normalize(vec3(x, y, z));
-}
-
-// Gets a random point on the surface of a sphere.
-vec3 getRandomPointOnSphere(vec3 center, float radius, inout uint seed) {
-    return center + randomDirection(seed) * radius;
-} 
-
-void main() {
-    uvec2 launchID = gl_LaunchIDEXT.xy;
-    uvec2 launchSize = gl_LaunchSizeEXT.xy;
-    vec2 uv = (vec2(launchID) + 0.5) / vec2(launchSize);
+    // --- camera ray ---
+    vec2 uv  = (vec2(pixel) + 0.5) / vec2(size);
     vec2 ndc = uv * 2.0 - 1.0;
 
-    // Camera
-    vec4 origin = cam.invView * vec4(0, 0, 0, 1);
-    vec4 target = cam.invProj * vec4(ndc, 1, 1);
-    target /= target.w;
-    vec4 dir = cam.invView * vec4(normalize(target.xyz), 0.0);
+    vec3 origin   = (cam.invView * vec4(0,0,0,1)).xyz;
+    vec3 dir_ndc  = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
+    vec3 dir      = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);
 
-    // Main render to get the base color of the cubes
-    prd.color = vec3(0.0);
-    prd.depth = 0;
-    traceRayEXT(
-        topLevelAS,
-        gl_RayFlagsOpaqueEXT,
-        0xFF,
-        SWS_LOC_PRIMARY_RAY,
-        1,
-        SWS_LOC_PRIMARY_RAY,
-        origin.xyz, 0.001, dir.xyz, 1000.0, 0
-    );
+    // --- init path ---
+    vec3 finalColor = vec3(0.0);
+    vec3 throughput = vec3(1.0);
 
-    // Volumetric fog calculation
-    vec3 rayOrigin = origin.xyz;
-    vec3 rayDir = normalize(dir.xyz);
-    vec3 lightPos = getLightPosition();
-    vec3 accFog = vec3(0.0);
-    
-    // This is the original warm color of the light itself
-    const vec3 lightColor = 1.25*vec3(0.5, 0.6, 0.7);// vec3(1.0, 0.95, 0.8);
+    // стабильный seed по пикселю и кадру
+    uint seed = wanghash(pixel.x * 928371u
+                       ^ pixel.y * 689287499u
+                       ^ uint(U.uni.frameCounter) * 104729u);
 
-    for (int i = 0; i < NUM_STEPS; ++i) {
-        vec3 samplePos = rayOrigin + STEP_SIZE * float(i) * rayDir;
-       // --- OLD LOGIC ---
-        // vec3 toLight = lightPos - samplePos;
-        // float dist = length(toLight);
-        // vec3 lightDir = normalize(toLight);
+    const uint MAX_BOUNCES = 8u;
+    const uint MIN_BOUNCES = 2u;
 
-        // --- NEW MONTE CARLO LOGIC ---
-        float lightRadius = 0.025;
+    for (uint bounce = 0u; bounce < MAX_BOUNCES; ++bounce)
+    {
+        prd.throughput = throughput;
+        prd.done       = false;
+        prd.depth      = bounce;
+        prd.rayOrigin  = origin;
+        prd.rayDir     = dir;
+        prd.seed       = seed;
 
-        // 1. Create a unique seed
-        uint seed = gl_LaunchIDEXT.x * i + gl_LaunchIDEXT.y + uint(uniformBuffer.uni.uTime * 1000.0);
+        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF,
+                    HIT_PRIMARY, /*hitStride*/1, MISS_PRIMARY,
+                    origin, 0.001, dir, 1e19,
+                    SWS_LOC_PRIMARY_RAY);
 
-        // 2. Pick ONE random point on the light
-        vec3 randomPointOnLight = getRandomPointOnSphere(lightPos, lightRadius, seed);
+        if (prd.done) {
+            // miss/непрозрачная поверхность завершили путь, prd.throughput содержит вклад
+            finalColor += prd.throughput;
+            break;
+        }
 
-        // 3. Calculate direction and distance to that point
-        vec3 toLight = randomPointOnLight - samplePos;
-        float dist = length(toLight);
-        vec3 lightDir = normalize(toLight);
-        
-                const uint shadowFlags =
-            gl_RayFlagsSkipClosestHitShaderEXT |   // пропустить closest-hit
-            gl_RayFlagsTerminateOnFirstHitEXT;
+        // продолжить путь (стекло)
+        origin    = prd.rayOrigin;
+        dir       = prd.rayDir;
+        throughput= prd.throughput;
 
-        // 4. Trace shadow ray (this part is the same as before)
-    shadow.blocked = false;
-        traceRayEXT(
-            topLevelAS,
-            shadowFlags,
-            0xFF,
-            SWS_SHADOW_HIT_IDX,
-            1,
-            SWS_SHADOW_MISS_IDX,
-            samplePos + lightDir * 0.01,
-            0.01,
-            lightDir, dist - 0.02,
-            SWS_LOC2_SHADOW_RAY
-        );
+        // новый seed для следующего шага
+        seed = wanghash(seed + 1u);
 
-        if (!shadow.blocked) {
-
-            // 1. Generate a procedural hash from the fog sample's world position
-            uint posHash = (gl_LaunchIDEXT.x + gl_LaunchIDEXT.x) % 7;
-            //uint(abs(samplePos.x * 13.37 + samplePos.y * 7.17 + samplePos.z * 3.14));
-
-            // 2. Get a color from our shared palette using this hash
-            vec3 proceduralColor = getColorFromHash(1);
-
-            // 3. The final color is the light's color modulated by the procedural palette color
-            vec3 fogColor = lightColor * proceduralColor;
-
-            
-            float falloff     = exp(-0.015 * float(i));
-            float angleFactor = max(dot(rayDir, lightDir), 0.0);
-
-            // Use the new dynamic fogColor instead of the hardcoded one
-            accFog += fogColor * falloff * angleFactor * 4.0;
+        const uint MIN_BOUNCES = 2u;
+        if (bounce >= MIN_BOUNCES) {
+            float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.1, 0.99);
+            if (float(wanghash(seed+=1u)) * (1.0/4294967296.0) > p) {
+                // терминируем без вклада — метод несмещён
+                break;
+            }
+            throughput /= p; // компенсация RR
         }
     }
 
-    vec3 base       = mix(prd.color, vec3(0.0), 0.027);
-    vec3 finalColor = base + accFog / float(NUM_STEPS);
-    
-    
-    // Apply the BGR fix if you haven't changed the C++ code yet
-    imageStore(accumImage, ivec2(launchID), vec4(finalColor.bgr, 1.0));
+   vec3 prev_color = imageLoad(accumImage, ivec2(pixel)).rgb;
+
+    // Determine the blend factor. For a running average, this is 1 / (N+1)
+    float blend_factor;
+    if (U.uni.frameCounter == 0) {
+        // On the very first frame, there is no history, so we take 100% of the new color.
+        blend_factor = 1.0;
+    } else {
+        // For all other frames, we blend.
+        blend_factor = 1.0 / float(U.uni.frameCounter + 1);
+    }
+
+    // The mix() function correctly performs the running average:
+    // new_average = (1 - factor) * old_average + factor * new_sample
+    vec3 accumulated_color = mix(prev_color, finalColor, blend_factor);
+
+    // Store the new, correct LINEAR average back into the buffer for the next frame.
+    imageStore(accumImage, ivec2(pixel), vec4(accumulated_color, 1.0));
+
 }
+

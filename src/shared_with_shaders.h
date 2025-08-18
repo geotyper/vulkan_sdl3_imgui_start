@@ -7,17 +7,17 @@
 
 // Смещения внутри missRegion
 // missRegion начинается с Группы 1
-#define SWS_PRIMARY_MISS_IDX      0
-#define SWS_SHADOW_MISS_IDX       1
-#define SWS_SECONDARY_MISS_IDX    2
-#define SWS_REFLECTION_MISS_IDX   3
+
+#define MISS_PRIMARY  0   // group 1
+#define MISS_SHADOW   1   // group 2
+
+// hit offsets in hitRegion
+#define HIT_PRIMARY   0   // group 3
+#define HIT_SHADOW    1   // group 4
 
 #define SWS_LOC_VOL_SHADOW 6
 
-#define SWS_DEFAULT_HIT_IDX         0 // Первая группа в hitRegion
-#define SWS_SHADOW_HIT_IDX          1 // Вторая группа в hitRegion
-
-#define SWS_NUM_GROUPS                    7 // Общее количество групп шейдеров
+#define SWS_NUM_GROUPS                    3 // Общее количество групп шейдеров
 
 // Сеты/биндинги (без изменений)
 #define SWS_SCENE_AS_SET                  0
@@ -47,7 +47,6 @@
 #define SWS_LOC3_REFLECTION_RAY           3
 
 struct InstanceData {
-    // Add other per-instance data like material_id here if needed
     uint meshId;
 };
 
@@ -56,12 +55,16 @@ struct ShadowPayload {
 };
 
 struct RadiancePayload {
-    vec3  color;
+    vec3  throughput;
+    vec3  rayOrigin;
+    vec3  rayDir;
+    bool  done;
     uint  depth;
-    bool blocked;
-    float weight;
-    float t;
+    uint  seed;
+
+    bool  inMedium;   //  сейчас луч внутри стекла?
 };
+
 
 struct UniformData {
     float uTime;
@@ -76,6 +79,7 @@ struct UniformData {
     float volMaxDist;
     int volSteps;
     int volVisStride;
+    int frameCounter;
 
 };
 
@@ -101,3 +105,4 @@ vec3 LinearToSrgb(vec3 linear) {
 }
 
 #endif // SHARED_WITH_SHADERS_H
+

@@ -40,6 +40,8 @@ void MainLoop::Run()
     float lastTime = 0.0f;
     bool running = true;
 
+    int step = 0;
+
     while (m_isRunning)
     {
         /* ---------------- time & delta ---------------- */
@@ -50,7 +52,7 @@ void MainLoop::Run()
         m_totalTime += deltaTime;
 
         /* ------- input, simulation, rendering --------- */
-        handleEvents();
+        handleEvents(step);
         update(deltaTime);
 
         float currentTime = (float)SDL_GetTicks() / 1000.0f;
@@ -61,7 +63,7 @@ void MainLoop::Run()
         // Update lastTime for the next frame
         lastTime = currentTime;
 
-         m_graphicsModule.RenderFrame(m_camera, m_totalTime, dt);
+         m_graphicsModule.RenderFrame(m_camera, m_totalTime, dt, step);
 
         /* --------------- frame throttling ------------- */
         const auto afterRender  = clock::now();
@@ -76,6 +78,8 @@ void MainLoop::Run()
         const float mspp = 1000.0f / fps;
         std::printf("FPS: %.1f  (%.2f ms)\n", fps, mspp);
         std::fflush(stdout);
+
+        step++;
     }
 }
 
@@ -91,7 +95,7 @@ void MainLoop::Shutdown() {
     SDL_Quit();
 }
 
-void MainLoop::handleEvents() {
+void MainLoop::handleEvents(int& step) {
 
     bool        relative = false;
     SDL_Event ev;
@@ -107,6 +111,7 @@ void MainLoop::handleEvents() {
         case SDL_EVENT_WINDOW_RESIZED:
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             m_graphicsModule.SignalResize();
+            step = 0;
             break;
         case SDL_EVENT_KEY_DOWN:
             if (ev.key.key == SDLK_ESCAPE) {
@@ -121,11 +126,13 @@ void MainLoop::handleEvents() {
 
                 // (optional) lock the cursor to the window too
                 SDL_SetWindowMouseGrab(m_graphicsModule.getWindow(), relative);
+                step = 0;
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
             if (m_relativeMouseMode) {
                 m_camera.Rotate(ev.motion.yrel * -0.003f, ev.motion.xrel * -0.003f);
+                step = 0;
             }
             break;
         }

@@ -115,7 +115,7 @@ public:
     void LoadFromSingleMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<glm::mat4>& transforms);
 
     void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
-    void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity);
+    void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step);
     void AnimateInstances(float time, bool orbitAroundWorldZ);
 
     void InitPerInstanceSpin(uint32_t seed = 1337);

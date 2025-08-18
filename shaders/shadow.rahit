@@ -10,13 +10,21 @@ layout(location = SWS_LOC2_SHADOW_RAY) rayPayloadInEXT ShadowPayload shadow;
 
 void main()
 {
+    // Unpack the unique instance ID
+    uint packedID = gl_InstanceCustomIndexEXT;
+    uint instanceID = packedID >> 8;
 
-    if (gl_InstanceCustomIndexEXT == 0) {
-       // ignoreIntersectionEXT();   // ← ключевое!
-        return;
+    // Check if the shadow ray has hit our glass sphere (instanceID 0)
+    if (instanceID == 0) {
+       // This is the crucial fix.
+       // It tells the ray tracer to ignore this intersection and continue
+       // searching for something that would actually block the light.
+       ignoreIntersectionEXT;
+       return;
     }
 
-    // 2. Любой другой объект – блокируем и останавливаем луч
+    // If the ray hits any other object (like a cubelet), it IS blocked.
     shadow.blocked = true;
-    //terminateRayEXT();
+    terminateRayEXT; // We can also terminate here to save a little performance.
 }
+

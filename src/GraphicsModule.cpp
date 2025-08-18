@@ -102,7 +102,7 @@ void GraphicsModule::initSDL() {
 
 // In GraphicsModule.cpp
 
-void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt) {
+void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt, int step) {
     // 1. Wait for the GPU to finish the frame that is currently "in flight"
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -127,13 +127,13 @@ void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt)
     // 4. Update scene state based on the new time
     m_rtxModule->UpdateCamera(cam);
    // m_rtxModule->AnimateInstances(currentTime, /*orbitAroundWorldZ=*/true); // Update instance transforms and rebuild TLAS
-    m_rtxModule->AnimateRubik(dt);
+   // m_rtxModule->AnimateRubik(dt);
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
     float currentIntensity = 3.0f + pulse * 17.0f;
     glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f);
-    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity);
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
 
     // --- RECORDING AND SUBMISSION ---
 
@@ -276,15 +276,15 @@ void GraphicsModule::CreateScene() {
     // 2. Create Cube Geometry
     std::vector<Vertex> cubeVertices;
     std::vector<uint32_t> cubeIndices;
-    //GeomCreate::createCube2(cubeVertices, cubeIndices);
+    GeomCreate::createCube2(cubeVertices, cubeIndices);
     //GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
-    GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
+    //GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
     //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9, 5);
     // 3. Define instances for the cubes
     std::vector<rtx::InstanceData> cubeInstances;
 
-    const int gridSize = 1;
+    const int gridSize = 3;
     const float spacing = 1.55f;
     for (int z = -gridSize; z <= gridSize; ++z) {
         for (int y = -gridSize; y <= gridSize; ++y) {
@@ -303,7 +303,7 @@ void GraphicsModule::CreateScene() {
     // 4. Define the instance for the central sphere
     std::vector<rtx::InstanceData> sphereInstances;
     glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
-    model = glm::scale(model, glm::vec3(0.25f)); // Make the central sphere larger
+    model = glm::scale(model, glm::vec3(0.75f)); // Make the central sphere larger
     sphereInstances.push_back({model});
 
 
@@ -325,7 +325,7 @@ void GraphicsModule::CreateScene() {
     );
 
     uint32_t cubeMeshId = 0; // 0 if you only uploaded the cube, 1 if you kept the sphere first
-    m_rtxModule->Build3x3x3(spacing);
+    //m_rtxModule->Build3x3x3(spacing);
 }
 
 void GraphicsModule::recreateSwapchain() {

@@ -92,7 +92,7 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step) {
         UniformData ubo;
         ubo.uTime = time;
         ubo.lightColor = lightColor;
@@ -106,6 +106,7 @@ namespace rtx {
         ubo.volSteps = 16;
         ubo.volVisStride = 4;
         ubo.volMaxDist =30.0f;
+        ubo.frameCounter =step;
 
         // The rest of the function remains the same
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
@@ -340,14 +341,14 @@ namespace rtx {
         VkStridedDeviceAddressRegionKHR missRegion{
             baseAddr + 1 * m_sbtStride, // Начало - группа 1
             m_sbtStride,
-            3 * m_sbtStride             // Размер - 3 шейдера
+            1 * m_sbtStride             // Размер - 3 шейдера
         };
 
         // Указывает на Группу 4 и должен покрывать 1 группу (группу 4).
         VkStridedDeviceAddressRegionKHR hitRegion {
-            baseAddr + 4 * m_sbtStride, // Начало - группа 4
+            baseAddr + 2 * m_sbtStride, // Начало - группа 4
             m_sbtStride,
-            3 * m_sbtStride             // Размер - 2 shaders
+            1 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
        // VkStridedDeviceAddressRegionKHR callableRegion{};
@@ -564,11 +565,11 @@ namespace rtx {
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             s_rgen,
             s_miss,
-            s_shadowMiss,
-            s_secondaryMiss,
+           // s_shadowMiss,
+           // s_secondaryMiss,
             s_chit,
-            sa_chit,
-            a_chit,
+            //sa_chit,
+           // a_chit,
         };
 
 
@@ -580,7 +581,7 @@ namespace rtx {
         // Group 0: Ray Generation
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[0].generalShader = 0; // s_rgen
+        groups[0].generalShader = 0; // Index into stages vector for rgen
         groups[0].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[0].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[0].intersectionShader = VK_SHADER_UNUSED_KHR;
@@ -588,41 +589,42 @@ namespace rtx {
         // Group 1: Miss
         groups[1].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[1].generalShader = 1; // s_primaryMiss
+        groups[1].generalShader = 1; // Index into stages vector for miss
         groups[1].closestHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[1].intersectionShader = VK_SHADER_UNUSED_KHR;
 
+        // Group 2: Closest Hit (for glass)
         groups[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[2].generalShader = 2; // s_shadowMiss
-        groups[2].closestHitShader = VK_SHADER_UNUSED_KHR;
+        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[2].closestHitShader = 2; // Index into stages vector for chit
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         //// Group 5: Secondary Miss Shader
-        groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[3].type =  VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-        groups[3].generalShader = 3; // s_secondaryMiss
-        groups[3].closestHitShader = VK_SHADER_UNUSED_KHR;
-        groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-        groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
+        //groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        //groups[3].generalShader = VK_SHADER_UNUSED_KHR;
+        //groups[3].closestHitShader = 3;
+        //groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         //// Group 3: Triangle Hit Group
-        groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[4].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[4].closestHitShader = 4; // s_chit
-        groups[4].anyHitShader =     6;//VK_SHADER_UNUSED_KHR; //5;
-        groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
+        //groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        //groups[4].generalShader = VK_SHADER_UNUSED_KHR;
+        //groups[4].closestHitShader = VK_SHADER_UNUSED_KHR;
+        //groups[4].anyHitShader =     4; //5;
+        //groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
 
         // Group 4: Shadow Hit Group (for shadow rays)
-        groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
-        groups[5].anyHitShader       = 5;  // s_sahit  (= shadow.rahit)
-        groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
-        groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
+        //groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        //groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        //groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
+        //groups[5].anyHitShader       = 5;  // s_sahit  (= shadow.rahit)
+        //groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
+        //groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };
@@ -928,7 +930,7 @@ namespace rtx {
             instance.instanceCustomIndex = (uniqueID << 8) | meshID;
 
             instance.mask = 0xFF;
-            instance.instanceShaderBindingTableRecordOffset = SWS_DEFAULT_HIT_IDX;
+            instance.instanceShaderBindingTableRecordOffset = HIT_PRIMARY;
             //instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
             if (uniqueID == 17) { // 0=sphere, 1-26=cubes, 27=frame
@@ -1057,7 +1059,7 @@ namespace rtx {
     }
 
     void RayTracingModule::Build3x3x3(float spacing) {
-        m_instances.clear();
+       // m_instances.clear();
         m_cubelets.clear();
         m_baseInstanceTransforms.clear();
 
