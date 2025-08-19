@@ -53,7 +53,7 @@ void MainLoop::Run()
 
         /* ------- input, simulation, rendering --------- */
         handleEvents(step);
-        update(deltaTime);
+        update(deltaTime,step);
 
         float currentTime = (float)SDL_GetTicks() / 1000.0f;
 
@@ -139,32 +139,35 @@ void MainLoop::handleEvents(int& step) {
     }
 }
 
-void MainLoop::update(float deltaTime) {
-    const float cameraSpeed = 5.0f * deltaTime;
-    const float rotationSpeed = 60.0f * deltaTime; // Degrees per second
+void MainLoop::update(float deltaTime, int& step) {
+    const float cameraSpeed    = 5.0f * deltaTime;
+    const float rotationSpeed  = 60.0f * deltaTime;
 
     const bool* keyboardState = SDL_GetKeyboardState(nullptr);
 
-    float moveForward = 0.0f;
-    float moveSide = 0.0f;
-    float moveVertical = 0.0f;
-    float yawRotation = 0.0f;
+    float moveForward   = 0.0f;
+    float moveSide      = 0.0f;
+    float moveVertical  = 0.0f;
+    float yawRotation   = 0.0f;
 
-    // Movement
     if (keyboardState[SDL_SCANCODE_W]) moveForward += cameraSpeed;
     if (keyboardState[SDL_SCANCODE_S]) moveForward -= cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_A]) moveSide -= cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_D]) moveSide += cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_UP]) moveVertical += cameraSpeed;
+    if (keyboardState[SDL_SCANCODE_A]) moveSide    -= cameraSpeed;
+    if (keyboardState[SDL_SCANCODE_D]) moveSide    += cameraSpeed;
+    if (keyboardState[SDL_SCANCODE_UP])   moveVertical += cameraSpeed;
     if (keyboardState[SDL_SCANCODE_DOWN]) moveVertical -= cameraSpeed;
 
-    // Rotation around Y-axis (yaw)
     if (keyboardState[SDL_SCANCODE_Q]) yawRotation -= rotationSpeed;
     if (keyboardState[SDL_SCANCODE_E]) yawRotation += rotationSpeed;
 
-    m_camera.Move(moveSide, moveForward, moveVertical);
+    // Apply motions
+    if (moveSide != 0.0f || moveForward != 0.0f || moveVertical != 0.0f) {
+        m_camera.Move(moveSide, moveForward, moveVertical);
+        step = 0; // <-- reset accumulation
+    }
     if (yawRotation != 0.0f) {
-        m_camera.Rotate(yawRotation, 0.0f); // Yaw rotation only
+        m_camera.Rotate(yawRotation, 0.0f);
+        step = 0; // <-- reset accumulation
     }
 }
 

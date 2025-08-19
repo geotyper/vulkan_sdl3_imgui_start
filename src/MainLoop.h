@@ -21,7 +21,7 @@ public:
     void handleMouseMotion(const SDL_Event &e, float deltaTime);
 private:
     void handleEvents(int& step);
-    void update(float deltaTime);
+    void update(float deltaTime, int& step);
 
     bool m_isRunning = true;
 

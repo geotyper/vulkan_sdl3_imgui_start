@@ -290,7 +290,7 @@ void GraphicsModule::CreateScene() {
         for (int y = -gridSize; y <= gridSize; ++y) {
             for (int x = -gridSize; x <= gridSize; ++x) {
                 // Skip the center position where the sphere will be
-                if (x == 0 && y == 0 && z == 0) continue;
+                if (x == 0 && y == 0) continue;
 
                 glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
