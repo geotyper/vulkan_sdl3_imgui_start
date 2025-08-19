@@ -121,17 +121,22 @@ void MainLoop::handleEvents(int& step) {
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
             if (ev.button.button == SDL_BUTTON_RIGHT) {   // still the same macro :contentReference[oaicite:2]{index=2}
                 // query current state and flip it
-                relative = !SDL_GetWindowRelativeMouseMode(m_graphicsModule.getWindow());     // SDL3 query :contentReference[oaicite:3]{index=3}
-                SDL_SetWindowRelativeMouseMode(m_graphicsModule.getWindow(), relative);       // enable / disable :contentReference[oaicite:4]{index=4}
-
-                // (optional) lock the cursor to the window too
+                relative = !SDL_GetWindowRelativeMouseMode(m_graphicsModule.getWindow());
+                SDL_SetWindowRelativeMouseMode(m_graphicsModule.getWindow(), relative);
                 SDL_SetWindowMouseGrab(m_graphicsModule.getWindow(), relative);
+                m_relativeMouseMode = relative;
                 step = 0;
             }
             break;
+
         case SDL_EVENT_MOUSE_MOTION:
             if (m_relativeMouseMode) {
-                m_camera.Rotate(ev.motion.yrel * -0.003f, ev.motion.xrel * -0.003f);
+                const bool* ks = SDL_GetKeyboardState(nullptr);
+                const bool slow = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
+                const float sensDeg = (slow ? (0.1f / 5.0f) : 0.1f); // deg per pixel
+
+                m_camera.RotateYawPitchDeg(-ev.motion.xrel * sensDeg,
+                                           -ev.motion.yrel * sensDeg);
                 step = 0;
             }
             break;
@@ -140,36 +145,36 @@ void MainLoop::handleEvents(int& step) {
 }
 
 void MainLoop::update(float deltaTime, int& step) {
-    const float cameraSpeed    = 5.0f * deltaTime;
-    const float rotationSpeed  = 60.0f * deltaTime;
+    const bool* ks = SDL_GetKeyboardState(nullptr);
+    const bool slow = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
+    const float slowFactor = slow ? (1.0f / 5.0f) : 1.0f;
 
-    const bool* keyboardState = SDL_GetKeyboardState(nullptr);
+    const float cameraSpeed   = 5.0f  * slowFactor * deltaTime;  // move units/sec
+    const float rotationSpeed = 60.0f * slowFactor * deltaTime;  // deg/sec
 
-    float moveForward   = 0.0f;
-    float moveSide      = 0.0f;
-    float moveVertical  = 0.0f;
-    float yawRotation   = 0.0f;
+    float moveForward = 0.0f, moveSide = 0.0f, moveVertical = 0.0f;
+    float yawRotation = 0.0f;
 
-    if (keyboardState[SDL_SCANCODE_W]) moveForward += cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_S]) moveForward -= cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_A]) moveSide    -= cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_D]) moveSide    += cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_UP])   moveVertical += cameraSpeed;
-    if (keyboardState[SDL_SCANCODE_DOWN]) moveVertical -= cameraSpeed;
+    if (ks[SDL_SCANCODE_W]) moveForward += cameraSpeed;
+    if (ks[SDL_SCANCODE_S]) moveForward -= cameraSpeed;
+    if (ks[SDL_SCANCODE_A]) moveSide    -= cameraSpeed;
+    if (ks[SDL_SCANCODE_D]) moveSide    += cameraSpeed;
+    if (ks[SDL_SCANCODE_UP])   moveVertical += cameraSpeed;
+    if (ks[SDL_SCANCODE_DOWN]) moveVertical -= cameraSpeed;
 
-    if (keyboardState[SDL_SCANCODE_Q]) yawRotation -= rotationSpeed;
-    if (keyboardState[SDL_SCANCODE_E]) yawRotation += rotationSpeed;
+    if (ks[SDL_SCANCODE_Q]) yawRotation -= rotationSpeed;
+    if (ks[SDL_SCANCODE_E]) yawRotation += rotationSpeed;
 
-    // Apply motions
-    if (moveSide != 0.0f || moveForward != 0.0f || moveVertical != 0.0f) {
+    if (moveSide || moveForward || moveVertical) {
         m_camera.Move(moveSide, moveForward, moveVertical);
-        step = 0; // <-- reset accumulation
+        step = 0;
     }
     if (yawRotation != 0.0f) {
-        m_camera.Rotate(yawRotation, 0.0f);
-        step = 0; // <-- reset accumulation
+        m_camera.RotateYawPitchDeg(yawRotation, 0.0f);
+        step = 0;
     }
 }
+
 
 
 void MainLoop::handleMouseMotion(const SDL_Event& e, float deltaTime) {

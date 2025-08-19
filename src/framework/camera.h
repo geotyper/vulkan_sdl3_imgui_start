@@ -16,6 +16,8 @@ public:
     void        Rotate(const float angleX, const float angleY);
     void        RotateExp(const float angleYaw, const float anglePitch);
 
+    void RotateYawPitchDeg(float yawDeltaDeg, float pitchDeltaDeg);
+
     float       GetNearPlane() const;
     float       GetFarPlane() const;
     float       GetFovY() const;
@@ -42,4 +44,7 @@ private:
     quat    mRotation;
     mat4    mProjection;
     mat4    mTransform;
+
+    float mYawDeg   = 0.0f;
+    float mPitchDeg = 0.0f; // clamp to [-89, +89]
 };

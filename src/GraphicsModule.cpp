@@ -267,66 +267,54 @@ void GraphicsModule::initRayTracingModule() {
 }
 
 void GraphicsModule::CreateScene() {
-    // 1. Create Icosphere Geometry
-    std::vector<Vertex> sphereVertices;
-    std::vector<uint32_t> sphereIndices;
-    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices); // 4 subdivisions for smoothness
-    //GeomCreate::createCubeWithSquareHole(sphereVertices, sphereIndices,7, 0.7);
+    // 1) Geometry
+    std::vector<Vertex> sphereVertices; std::vector<uint32_t> sphereIndices;
+    GeomCreate::createIcosphere(4, sphereVertices, sphereIndices);
 
-    // 2. Create Cube Geometry
-    std::vector<Vertex> cubeVertices;
-    std::vector<uint32_t> cubeIndices;
+    std::vector<Vertex> cubeVertices;   std::vector<uint32_t> cubeIndices;
     GeomCreate::createCube2(cubeVertices, cubeIndices);
-    //GeomCreate::createCubeGrid(cubeVertices, cubeIndices,7);
-    //GeomCreate::createIcosphere(4, cubeVertices, cubeIndices);
 
-    //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9, 5);
-    // 3. Define instances for the cubes
+    // 2) Instances (one list per mesh)
+    std::vector<rtx::InstanceData> sphereInstances;
     std::vector<rtx::InstanceData> cubeInstances;
 
-    const int gridSize = 3;
-    const float spacing = 1.55f;
+    const int   gridSize = 2;
+    const float spacing  = 1.55f;
+
     for (int z = -gridSize; z <= gridSize; ++z) {
         for (int y = -gridSize; y <= gridSize; ++y) {
             for (int x = -gridSize; x <= gridSize; ++x) {
-                // Skip the center position where the sphere will be
-                if (x == 0 && y == 0) continue;
+                glm::vec3 pos = { x * spacing, y * spacing, z * spacing };
+                glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
 
-                glm::vec3 position = glm::vec3(x * spacing, y * spacing, z * spacing);
-                glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-                model = glm::scale(model, glm::vec3(1.15f));
-                cubeInstances.push_back({model});
+                // Center cell: big sphere
+                if (x == 0 && y == 0 && z == 0) {
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
+                    continue;
+                }
+
+                // Alternate by parity (true checker across x/y/z neighbors):
+                const bool placeSphere = ((x + y + z) & 1) == 0;
+
+                if (placeSphere) {
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.50f)) });
+                } else {
+                    // a tiny rotation so cubes look nicer (optional)
+                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
+                                        glm::vec3(0, 1, 0));
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(1.15f)) });
+                }
             }
         }
     }
 
-    // 4. Define the instance for the central sphere
-    std::vector<rtx::InstanceData> sphereInstances;
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
-    model = glm::scale(model, glm::vec3(0.75f)); // Make the central sphere larger
-    sphereInstances.push_back({model});
-
-
-    std::vector<rtx::InstanceData> frameInstances;
-    glm::mat4 modelFrame = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f));
-    modelFrame  = glm::scale(modelFrame , glm::vec3(5.25f)); // Make the central sphere larger
-    frameInstances.push_back({modelFrame });
-    std::vector<Vertex> frameVertices;
-    std::vector<uint32_t> frameIndices;
-    GeomCreate::createCubeCenterHole(frameVertices, frameIndices,9,7); // Assuming you have a simple cube generator
-
-    // 5. Load the generated data into the ray tracing module
-    m_rtxModule->LoadFromMultipleMeshes(
-        { // A list of mesh data
-            { sphereVertices, sphereIndices, sphereInstances },
-            { cubeVertices,   cubeIndices,   cubeInstances   }
-        // ,  { frameVertices,  frameIndices,  frameInstances   }
-        }
-    );
-
-    uint32_t cubeMeshId = 0; // 0 if you only uploaded the cube, 1 if you kept the sphere first
-    //m_rtxModule->Build3x3x3(spacing);
+    // 3) Upload: meshId 0 = sphere, meshId 1 = cube (order matters for your packed meshId)
+    m_rtxModule->LoadFromMultipleMeshes({
+        { sphereVertices, sphereIndices, sphereInstances }, // meshId 0
+        { cubeVertices,   cubeIndices,   cubeInstances   }  // meshId 1
+    });
 }
+
 
 void GraphicsModule::recreateSwapchain() {
     int width = 0, height = 0;

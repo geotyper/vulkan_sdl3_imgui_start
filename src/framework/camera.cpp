@@ -133,3 +133,23 @@ void Camera::MakeProjection() {
 void Camera::MakeTransform() {
     mTransform = MatLookAt(mPosition, mPosition + mDirection, sCameraUp);
 }
+
+void Camera::RotateYawPitchDeg(float yawDeltaDeg, float pitchDeltaDeg)
+{
+    mYawDeg   += yawDeltaDeg;
+    mPitchDeg  = std::clamp(mPitchDeg + pitchDeltaDeg, -89.0f, 89.0f);
+
+    const float yaw   = Deg2Rad(mYawDeg);
+    const float pitch = Deg2Rad(mPitchDeg);
+
+    // Y up, forward starts at (0,0,1)
+    vec3 f = normalize(vec3(
+        cosf(pitch) * sinf(yaw), // x
+        sinf(pitch),             // y (up/down)
+        cosf(pitch) * cosf(yaw)  // z
+        ));
+
+    mDirection = f;
+    MakeTransform();
+}
+
