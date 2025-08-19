@@ -103,9 +103,33 @@ void main()
     float F0   = pow((IOR_GLASS - 1.0) / (IOR_GLASS + 1.0), 2.0);
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
+    
+    const float baseIOR = 1.5;
+    const float dispersion = 0.05; // Your new artistic parameter!
+
+    // Create a different IOR for R, G, and B
+    vec3 IOR_VEC = vec3(
+        baseIOR - dispersion,       // Red
+        baseIOR,                    // Green
+        baseIOR + dispersion        // Blue
+    );
+
+    // Find your 'eta' calculation and replace it
+    // float eta = frontFace ? (1.0 / IOR_GLASS) : IOR_GLASS; // OLD
+    vec3 eta_vec = frontFace ? (1.0 / IOR_VEC) : IOR_VEC;     // NEW
+
+    // Find your 'refract' calculation and replace it
+    // vec3 T = refract(V, N, eta); // OLD
+
+    // Randomly choose ONE channel's IOR for this ray's path
+    float eta_sample;
+    float r = rnd(prd.seed);
+    if (r < 0.333)      eta_sample = eta_vec.r;
+    else if (r < 0.666) eta_sample = eta_vec.g;
+    else                eta_sample = eta_vec.b;
 
     vec3 R = reflect(V, N);
-    vec3 T = refract(V, N, eta);
+    vec3 T = refract(V, N, eta_sample);
 
     bool tir        = (dot(T,T) == 0.0);
     bool useReflect = tir || (rnd(prd.seed) < Fr);
@@ -123,6 +147,20 @@ void main()
         vec3 sigmaA = -log(T1m) * density;         // Beer
         prd.throughput *= exp(-sigmaA * gl_HitTEXT);
     }
+    
+    if (!frontFace) { // The ray is now inside the glass
+        // The distance the ray traveled inside the glass to reach this point
+        float distanceInGlass = gl_HitTEXT;
+
+        // The color of the glass
+        const vec3 absorptionColor = srgbToLinear(vec3(0.1, 0.9, 0.4)); // e.g., Emerald green
+        const float density = 10.0; // How dark/saturated the color is
+
+        // Beer's Law: transmittance = exp(-absorption * distance)
+        vec3 absorption = -log(absorptionColor) * density;
+        prd.throughput *= exp(-absorption * distanceInGlass);
+    }
+
 
     // On refraction: toggle medium and apply delta BTDF weight (eta^2)
     if (!useReflect) {
