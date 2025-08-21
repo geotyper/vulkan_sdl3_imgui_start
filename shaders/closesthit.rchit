@@ -27,7 +27,10 @@ readonly buffer VtxBuf { Vertex v[]; } vertices[];
 layout(set = SWS_SCENE_AS_SET, binding = SWS_INDICES_BINDING)
 readonly buffer IdxBuf { uint   i[]; }  indices[];
 
-const float IOR_GLASS = 1.15;
+layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
+uniform UniformBlock { UniformData uni; } U;
+
+const float IOR_GLASS = 1.055;
 const vec3  TINT      = vec3(1.0);
 const float SURF_EPS  = 0.01;
 
@@ -57,6 +60,19 @@ void main()
     uint meshId   = INST_GET_MESH_ID(packed);
     uint uniqueID = INST_GET_UNIQUE_ID(packed);
     uint prim     = gl_PrimitiveID;
+    
+    const uint LIGHT_SOURCE_ID = 27; 
+
+    if (uniqueID != 0 && uniqueID % LIGHT_SOURCE_ID == 0) {
+        // This is a light source.
+        // Add its emission to the throughput. The contribution from previous
+        // bounces (reflections) is preserved in prd.throughput.
+        prd.throughput += U.uni.lightColor * U.uni.lightIntensity;
+        
+        // The path ends here.
+        prd.done = true;
+        return; // Skip all the glass logic
+    }
 
     uvec3 tri = uvec3(
         indices[nonuniformEXT(meshId)].i[3*prim + 0],
@@ -103,33 +119,9 @@ void main()
     float F0   = pow((IOR_GLASS - 1.0) / (IOR_GLASS + 1.0), 2.0);
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
-    
-    const float baseIOR = 1.5;
-    const float dispersion = 0.05; // Your new artistic parameter!
-
-    // Create a different IOR for R, G, and B
-    vec3 IOR_VEC = vec3(
-        baseIOR - dispersion,       // Red
-        baseIOR,                    // Green
-        baseIOR + dispersion        // Blue
-    );
-
-    // Find your 'eta' calculation and replace it
-    // float eta = frontFace ? (1.0 / IOR_GLASS) : IOR_GLASS; // OLD
-    vec3 eta_vec = frontFace ? (1.0 / IOR_VEC) : IOR_VEC;     // NEW
-
-    // Find your 'refract' calculation and replace it
-    // vec3 T = refract(V, N, eta); // OLD
-
-    // Randomly choose ONE channel's IOR for this ray's path
-    float eta_sample;
-    float r = rnd(prd.seed);
-    if (r < 0.333)      eta_sample = eta_vec.r;
-    else if (r < 0.666) eta_sample = eta_vec.g;
-    else                eta_sample = eta_vec.b;
 
     vec3 R = reflect(V, N);
-    vec3 T = refract(V, N, eta_sample);
+    vec3 T = refract(V, N, eta);
 
     bool tir        = (dot(T,T) == 0.0);
     bool useReflect = tir || (rnd(prd.seed) < Fr);
@@ -147,20 +139,6 @@ void main()
         vec3 sigmaA = -log(T1m) * density;         // Beer
         prd.throughput *= exp(-sigmaA * gl_HitTEXT);
     }
-    
-    if (!frontFace) { // The ray is now inside the glass
-        // The distance the ray traveled inside the glass to reach this point
-        float distanceInGlass = gl_HitTEXT;
-
-        // The color of the glass
-        const vec3 absorptionColor = srgbToLinear(vec3(0.1, 0.9, 0.4)); // e.g., Emerald green
-        const float density = 10.0; // How dark/saturated the color is
-
-        // Beer's Law: transmittance = exp(-absorption * distance)
-        vec3 absorption = -log(absorptionColor) * density;
-        prd.throughput *= exp(-absorption * distanceInGlass);
-    }
-
 
     // On refraction: toggle medium and apply delta BTDF weight (eta^2)
     if (!useReflect) {
@@ -171,7 +149,8 @@ void main()
     // NOTE: do NOT multiply by a constant TINT here; reflections are neutral,
     // and transmission color comes from Beer’s law above.
 
-    prd.rayOrigin = Pw + newDir * SURF_EPS;
+    float eps = max(1e-4, 1e-3 * max(gl_HitTEXT, 1.0));
+    prd.rayOrigin = Pw + newDir * eps;
     prd.rayDir    = newDir;
     prd.done      = false;
 }

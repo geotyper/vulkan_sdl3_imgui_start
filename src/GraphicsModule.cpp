@@ -131,7 +131,7 @@ void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt,
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
-    float currentIntensity = 3.0f + pulse * 17.0f;
+    float currentIntensity = 1.0f + pulse * 1.0f;
     glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f);
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
 
@@ -272,48 +272,77 @@ void GraphicsModule::CreateScene() {
     GeomCreate::createIcosphere(4, sphereVertices, sphereIndices);
 
     std::vector<Vertex> cubeVertices;   std::vector<uint32_t> cubeIndices;
-    GeomCreate::createCube2(cubeVertices, cubeIndices);
+    //GeomCreate::createCube2(cubeVertices, cubeIndices);
+    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9,5);
 
     // 2) Instances (one list per mesh)
     std::vector<rtx::InstanceData> sphereInstances;
     std::vector<rtx::InstanceData> cubeInstances;
 
     const int   gridSize = 2;
-    const float spacing  = 1.55f;
+    const float spacing  = 1.35f;
 
+    // базовые масштабы
+    const float baseSphereScale = 0.50f;
+    const float baseCubeScale   = 1.25f;
+
+    const float specialScale    = 0.10f;
+
+    // -------- PASS 1: просто собираем трансформы с базовым масштабом ----------
     for (int z = -gridSize; z <= gridSize; ++z) {
         for (int y = -gridSize; y <= gridSize; ++y) {
             for (int x = -gridSize; x <= gridSize; ++x) {
                 glm::vec3 pos = { x * spacing, y * spacing, z * spacing };
                 glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
 
-                // Center cell: big sphere
+                // Центр — большая сфера
                 if (x == 0 && y == 0 && z == 0) {
                     sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
                     continue;
                 }
 
-                // Alternate by parity (true checker across x/y/z neighbors):
                 const bool placeSphere = ((x + y + z) & 1) == 0;
-
                 if (placeSphere) {
-                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.50f)) });
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
                 } else {
-                    // a tiny rotation so cubes look nicer (optional)
+                    // немного повернём кубики для разнообразия
                     M = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
                                         glm::vec3(0, 1, 0));
-                    cubeInstances.push_back({ glm::scale(M, glm::vec3(1.15f)) });
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
                 }
             }
         }
     }
 
-    // 3) Upload: meshId 0 = sphere, meshId 1 = cube (order matters for your packed meshId)
+    // Сколько сфер получилось (они пойдут первыми и получат uniqueID = [0..numSpheres-1])
+    const uint32_t numSpheres = static_cast<uint32_t>(sphereInstances.size());
+
+    // a) Сферы: uniqueID == sphereIndex
+    for (uint32_t si = 0; si < numSpheres; ++si) {
+        if (si != 0 && (si % 27u) == 0u) {
+            const float k = specialScale / baseSphereScale;
+            sphereInstances[si].transform =
+                sphereInstances[si].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
+        }
+    }
+
+    // b) Кубы: uniqueID == numSpheres + cubeIndex
+    for (uint32_t ci = 0; ci < cubeInstances.size(); ++ci) {
+        const uint32_t uid = numSpheres + ci;
+        if ((uid % 27u) == 0u) {
+            const float k = specialScale / baseCubeScale;
+            cubeInstances[ci].transform =
+                cubeInstances[ci].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
+        }
+    }
+
+    // 3) Upload: meshId 0 = sphere, meshId 1 = cube (ВАЖЕН порядок!)
     m_rtxModule->LoadFromMultipleMeshes({
         { sphereVertices, sphereIndices, sphereInstances }, // meshId 0
         { cubeVertices,   cubeIndices,   cubeInstances   }  // meshId 1
     });
 }
+
 
 
 void GraphicsModule::recreateSwapchain() {
