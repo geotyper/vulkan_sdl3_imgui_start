@@ -47,7 +47,7 @@ void main()
     vec3 dir_ndc  = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
     vec3 dir      = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);
 
-    // --- init path ---
+    // init path ---
     vec3 finalColor = vec3(0.0);
     vec3 throughput = vec3(1.0);
 
@@ -55,7 +55,6 @@ void main()
     uint seed = wanghash(pixel.x * 928371u
                        ^ pixel.y * 689287499u
                        ^ uint(U.uni.frameCounter) * 104729u);
-
     const uint MAX_BOUNCES = 8u;
     const uint MIN_BOUNCES = 2u;
 

@@ -30,7 +30,7 @@ readonly buffer IdxBuf { uint   i[]; }  indices[];
 layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
 uniform UniformBlock { UniformData uni; } U;
 
-const float IOR_GLASS = 1.255;
+const float IOR_GLASS = 1.055;
 const vec3  TINT      = vec3(1.0);
 const float SURF_EPS  = 0.01;
 
@@ -139,8 +139,8 @@ void main()
     // map it to per-meter transmittance: T1m = mix(1, 1 - C_lin, strength).
     // Then sigmaA = -ln(T1m)*density
     vec3  C_lin = srgbToLinear(colorFromInstanceID(uniqueID));
-    float absorptionStrength = 0.85;  // 0..1, how much the palette affects absorption
-    float density            = 0.50;  // material thickness scaling
+    float absorptionStrength = 0.95;  // 0..1, how much the palette affects absorption
+    float density            = 0.150;  // material thickness scaling
     vec3  T1m    = mix(vec3(1.0), 1.0 - C_lin, absorptionStrength);
     vec3  sigmaA = -log(clamp(T1m, 0.001, 0.999)) * density;
 
@@ -154,7 +154,7 @@ void main()
     // 7) On refraction: toggle medium + BTDF weight (use the SAME eta)
     if (!useReflect) {
         prd.inMedium = !prd.inMedium;
-        prd.throughput *= sqrt(eta * eta);
+        //prd.throughput *= (eta * eta);
     }
 
     // 8) Ray continuation with adaptive epsilon

@@ -280,7 +280,7 @@ void GraphicsModule::CreateScene() {
     std::vector<rtx::InstanceData> cubeInstances;
 
     const int   gridSize = 1;
-    const float spacing  = 1.55f;
+    const float spacing  = 1.35f;
 
     // базовые масштабы
     const float baseSphereScale = 0.70f;
@@ -297,8 +297,8 @@ void GraphicsModule::CreateScene() {
 
                 // Центр — большая сфера
                 if (x == 0 && y == 0 && z == 0) {
-                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f)) });
-                    continue;
+                   // sphereInstances.push_back({ glm::scale(M, glm::vec3(0.55f)) });
+                   // continue;
                 }
 
                 if (x==0 && y == 0 && z == 1) {
@@ -318,7 +318,7 @@ void GraphicsModule::CreateScene() {
                     M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
                                         glm::vec3(0, 1, 0));
                     cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-                  //  sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
                 }
             }
         }
