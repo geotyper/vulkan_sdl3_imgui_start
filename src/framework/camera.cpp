@@ -9,6 +9,7 @@ Camera::Camera()
     , mPosition(0.0f, 0.0f, 0.0f)
     , mDirection(0.0f, 0.0f, 1.0f)
 {
+    SyncAnglesWithDirection();
 }
 
 Camera::~Camera() {
@@ -38,7 +39,7 @@ void Camera::SetPosition(const vec3& pos) {
 void Camera::LookAt(const vec3& pos, const vec3& target) {
     mPosition = pos;
     mDirection = normalize(target - pos);
-
+    SyncAnglesWithDirection();
     this->MakeTransform();
 }
 
@@ -136,6 +137,8 @@ void Camera::MakeTransform() {
 
 void Camera::RotateYawPitchDeg(float yawDeltaDeg, float pitchDeltaDeg)
 {
+    SyncAnglesWithDirection();
+
     mYawDeg   += yawDeltaDeg;
     mPitchDeg  = std::clamp(mPitchDeg + pitchDeltaDeg, -89.0f, 89.0f);
 
@@ -151,5 +154,11 @@ void Camera::RotateYawPitchDeg(float yawDeltaDeg, float pitchDeltaDeg)
 
     mDirection = f;
     MakeTransform();
+}
+
+void Camera::SyncAnglesWithDirection() {
+    vec3 d = normalize(mDirection);
+    mYawDeg   = Rad2Deg(std::atan2(d.x, d.z));                    // yaw: +Z forward
+    mPitchDeg = Rad2Deg(std::asin(std::clamp(d.y, -1.0f, 1.0f))); // pitch
 }
 

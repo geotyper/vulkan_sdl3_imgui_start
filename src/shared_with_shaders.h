@@ -80,6 +80,7 @@ struct UniformData {
     int volSteps;
     int volVisStride;
     int frameCounter;
+    float exposure;
 
 };
 

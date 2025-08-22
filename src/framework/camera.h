@@ -47,4 +47,6 @@ private:
 
     float mYawDeg   = 0.0f;
     float mPitchDeg = 0.0f; // clamp to [-89, +89]
+
+    void  SyncAnglesWithDirection();
 };

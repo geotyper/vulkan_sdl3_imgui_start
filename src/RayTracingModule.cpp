@@ -107,6 +107,7 @@ namespace rtx {
         ubo.volVisStride = 4;
         ubo.volMaxDist =30.0f;
         ubo.frameCounter =step;
+        ubo.exposure =1.0f;
 
         // The rest of the function remains the same
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));

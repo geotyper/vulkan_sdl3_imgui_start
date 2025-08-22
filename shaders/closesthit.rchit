@@ -30,7 +30,7 @@ readonly buffer IdxBuf { uint   i[]; }  indices[];
 layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
 uniform UniformBlock { UniformData uni; } U;
 
-const float IOR_GLASS = 1.055;
+const float IOR_GLASS = 1.255;
 const vec3  TINT      = vec3(1.0);
 const float SURF_EPS  = 0.01;
 
@@ -63,16 +63,16 @@ void main()
     
     const uint LIGHT_SOURCE_ID = 27; 
 
-    if (uniqueID != 0 && uniqueID % LIGHT_SOURCE_ID == 0) {
+    //if (uniqueID != 0 && uniqueID % LIGHT_SOURCE_ID == 0) {
         // This is a light source.
         // Add its emission to the throughput. The contribution from previous
         // bounces (reflections) is preserved in prd.throughput.
-        prd.throughput += U.uni.lightColor * U.uni.lightIntensity;
+     //   prd.throughput += U.uni.lightColor * U.uni.lightIntensity;
         
         // The path ends here.
-        prd.done = true;
-        return; // Skip all the glass logic
-    }
+       // prd.done = true;
+       // return; // Skip all the glass logic
+    //}
 
     uvec3 tri = uvec3(
         indices[nonuniformEXT(meshId)].i[3*prim + 0],
@@ -107,19 +107,25 @@ void main()
     vec3 Nobj = normalize(b0*n0 + b1*n1 + b2*n2);
     if (all(equal(Nobj, vec3(0.0)))) Nobj = normalize(cross(p1 - p0, p2 - p0));
 
+    // 1) Unchanged: view dir, shading normal, front/back
     vec3 V  = normalize(gl_WorldRayDirectionEXT);
     vec3 Ns = normalize(transpose(mat3(gl_WorldToObjectEXT)) * Nobj);
     Ns = faceforward(Ns, V, Ng);
 
-    bool  frontFace = dot(Ns, V) < 0.0;
-    vec3  N         = frontFace ? Ns : -Ns;
+    bool frontFace = dot(Ns, V) < 0.0;
+    vec3 N         = frontFace ? Ns : -Ns;
 
-    float eta = frontFace ? (1.0 / IOR_GLASS) : IOR_GLASS;
+    // 2) Eta: always compute as incident/transmitted IOR ratio
+    float eta_i = frontFace ? 1.0       : IOR_GLASS;
+    float eta_t = frontFace ? IOR_GLASS : 1.0;
+    float eta   = eta_i / eta_t;
 
+    // 3) Fresnel from your base glass IOR (ok to keep scalar here)
     float F0   = pow((IOR_GLASS - 1.0) / (IOR_GLASS + 1.0), 2.0);
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
 
+    // 4) Specular directions
     vec3 R = reflect(V, N);
     vec3 T = refract(V, N, eta);
 
@@ -127,31 +133,35 @@ void main()
     bool useReflect = tir || (rnd(prd.seed) < Fr);
     vec3 newDir     = useReflect ? R : T;
 
-    // --- per-instance colored glass via Beer’s law ---
-    // Use palette entry as *per-meter transmittance* (T(1m)).
-    vec3  T1m     = clamp(colorFromInstanceID(uniqueID), 0.001, 0.999);
-    float density = 1.0; // increase for stronger coloration
+    // 5) >>> CHANGE HERE: compute Beer absorption ONCE (no duplicates) <<<
+    //
+    // If your PALETTE is authored in sRGB and represents an "artist color",
+    // map it to per-meter transmittance: T1m = mix(1, 1 - C_lin, strength).
+    // Then sigmaA = -ln(T1m)*density
+    vec3  C_lin = srgbToLinear(colorFromInstanceID(uniqueID));
+    float absorptionStrength = 0.85;  // 0..1, how much the palette affects absorption
+    float density            = 0.50;  // material thickness scaling
+    vec3  T1m    = mix(vec3(1.0), 1.0 - C_lin, absorptionStrength);
+    vec3  sigmaA = -log(clamp(T1m, 0.001, 0.999)) * density;
 
-    // Apply absorption to the segment traveled INSIDE the medium
+    // 6) Apply Beer only to segments that were INSIDE the medium
     if (prd.inMedium) {
-        vec3 C = clamp(srgbToLinear(colorFromInstanceID(uniqueID)), 0.0, 0.999); // artist color
-        vec3 T1m = clamp(1.0 - C, 0.001, 0.999);   // derive transmittance from color
-        vec3 sigmaA = -log(T1m) * density;         // Beer
-        prd.throughput *= exp(-sigmaA * gl_HitTEXT);
+        //prd.throughput *= exp(-sigmaA * gl_HitTEXT);
+        vec3 att = exp(-sigmaA * gl_HitTEXT);
+        prd.throughput *= clamp(att, vec3(0.15), vec3(1.0));
     }
 
-    // On refraction: toggle medium and apply delta BTDF weight (eta^2)
+    // 7) On refraction: toggle medium + BTDF weight (use the SAME eta)
     if (!useReflect) {
         prd.inMedium = !prd.inMedium;
-        prd.throughput *= (eta * eta);
+        prd.throughput *= sqrt(eta * eta);
     }
 
-    // NOTE: do NOT multiply by a constant TINT here; reflections are neutral,
-    // and transmission color comes from Beer’s law above.
-
+    // 8) Ray continuation with adaptive epsilon
     float eps = max(1e-4, 1e-3 * max(gl_HitTEXT, 1.0));
     prd.rayOrigin = Pw + newDir * eps;
     prd.rayDir    = newDir;
     prd.done      = false;
 }
+
 

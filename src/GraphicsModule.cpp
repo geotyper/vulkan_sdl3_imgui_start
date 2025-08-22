@@ -272,18 +272,18 @@ void GraphicsModule::CreateScene() {
     GeomCreate::createIcosphere(4, sphereVertices, sphereIndices);
 
     std::vector<Vertex> cubeVertices;   std::vector<uint32_t> cubeIndices;
-    //GeomCreate::createCube2(cubeVertices, cubeIndices);
-    GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9,5);
+    GeomCreate::createCube2(cubeVertices, cubeIndices);
+    //GeomCreate::createCubeCenterHole(cubeVertices, cubeIndices,9,5);
 
     // 2) Instances (one list per mesh)
     std::vector<rtx::InstanceData> sphereInstances;
     std::vector<rtx::InstanceData> cubeInstances;
 
-    const int   gridSize = 2;
-    const float spacing  = 1.35f;
+    const int   gridSize = 1;
+    const float spacing  = 1.55f;
 
     // базовые масштабы
-    const float baseSphereScale = 0.50f;
+    const float baseSphereScale = 0.70f;
     const float baseCubeScale   = 1.25f;
 
     const float specialScale    = 0.10f;
@@ -297,18 +297,28 @@ void GraphicsModule::CreateScene() {
 
                 // Центр — большая сфера
                 if (x == 0 && y == 0 && z == 0) {
-                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f)) });
                     continue;
                 }
 
-                const bool placeSphere = ((x + y + z) & 1) == 0;
-                if (placeSphere) {
-                    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
-                } else {
+                if (x==0 && y == 0 && z == 1) {
+                    //   sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
+                      continue;
+                }
+
+                //const bool placeSphere = ((x + y + z) & 1) == 0;
+                //if (placeSphere) {
+                //    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
+                //    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseCubeScale)) });
+
+                //}
+                //else
+                {
                     // немного повернём кубики для разнообразия
-                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
+                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
                                         glm::vec3(0, 1, 0));
                     cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
+                  //  sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
                 }
             }
         }
@@ -321,8 +331,8 @@ void GraphicsModule::CreateScene() {
     for (uint32_t si = 0; si < numSpheres; ++si) {
         if (si != 0 && (si % 27u) == 0u) {
             const float k = specialScale / baseSphereScale;
-            sphereInstances[si].transform =
-                sphereInstances[si].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
+            //sphereInstances[si].transform =
+            //    sphereInstances[si].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
         }
     }
 
@@ -331,8 +341,8 @@ void GraphicsModule::CreateScene() {
         const uint32_t uid = numSpheres + ci;
         if ((uid % 27u) == 0u) {
             const float k = specialScale / baseCubeScale;
-            cubeInstances[ci].transform =
-                cubeInstances[ci].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
+            //cubeInstances[ci].transform =
+            //    cubeInstances[ci].transform * glm::scale(glm::mat4(1.f), glm::vec3(k));
         }
     }
 
