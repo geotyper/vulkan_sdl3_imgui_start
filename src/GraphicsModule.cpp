@@ -297,8 +297,15 @@ void GraphicsModule::CreateScene() {
 
                 // Центр — большая сфера
                 if (x == 0 && y == 0 && z == 0) {
-                   // sphereInstances.push_back({ glm::scale(M, glm::vec3(0.55f)) });
-                   // continue;
+                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.25f)) });
+                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
+                                        glm::vec3(0, 1, 0));
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.75f *baseCubeScale)) });
+                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
+                                        glm::vec3(0, 1, 0));
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f *baseCubeScale)) });
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
+                    continue;
                 }
 
                 if (x==0 && y == 0 && z == 1) {
@@ -312,13 +319,17 @@ void GraphicsModule::CreateScene() {
                 //    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseCubeScale)) });
 
                 //}
-                //else
+                if (x!=0 || y != 0)
                 {
                     // немного повернём кубики для разнообразия
                     M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
                                         glm::vec3(0, 1, 0));
                     cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-                    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
+                    auto M1 = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
+                                        glm::vec3(0, 1, 0));
+                    cubeInstances.push_back({ glm::scale(M1, glm::vec3(0.5f * baseCubeScale)) });
+
+                    //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
                 }
             }
         }
