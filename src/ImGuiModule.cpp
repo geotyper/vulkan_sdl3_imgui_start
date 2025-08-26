@@ -155,7 +155,7 @@ void ImGuiModule::createFramebuffers(VkExtent2D extent, const std::vector<VkImag
     }
 }
 
-void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer) {
+void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& solverParams) {
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -163,6 +163,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer) {
 
     ImGui::Begin("Solver Menu");
     ImGui::Text("Sphere Options");
+    ImGui::Checkbox("render polymesh", &solverParams.drawPolyMesh);
 
     ImGui::End();
 

@@ -17,6 +17,8 @@ public:
 
     VkPipelineLayout pipelineLayout() const { return m_layout; }
 
+    void SetColoredLines(const std::vector<Vertex>& lineVerts);
+
 private:
     // Vulkan handles
     VkDevice m_dev{VK_NULL_HANDLE};

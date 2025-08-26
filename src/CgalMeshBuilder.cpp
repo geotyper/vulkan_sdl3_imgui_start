@@ -13,6 +13,7 @@
 
 #include <CGAL/Subdivision_method_3/subdivision_methods_3.h>
 #include <unordered_set>
+#include <CGAL/Polygon_mesh_processing/repair.h>
 
 
 namespace S3 = CGAL::Subdivision_method_3;
@@ -175,13 +176,158 @@ void CgalMeshBuilder::buildCube(SurfaceMesh& sm, double size) {
     sm.clear();
     const double h = 0.5 * size;
 
-    CGAL::make_hexahedron(
-        Point_3(-h,-h,-h), Point_3( h,-h,-h),
-        Point_3( h, h,-h), Point_3(-h, h,-h),
-        Point_3(-h,-h, h), Point_3( h,-h, h),
-        Point_3( h,  h, h), Point_3(-h,  h, h),
-        sm);
+    // 1. Создаем 8 вершин куба вручную
+    SurfaceMesh::Vertex_index v0 = sm.add_vertex(Point_3(-h, -h, -h));
+    SurfaceMesh::Vertex_index v1 = sm.add_vertex(Point_3( h, -h, -h));
+    SurfaceMesh::Vertex_index v2 = sm.add_vertex(Point_3( h,  h, -h));
+    SurfaceMesh::Vertex_index v3 = sm.add_vertex(Point_3(-h,  h, -h));
+    SurfaceMesh::Vertex_index v4 = sm.add_vertex(Point_3(-h, -h,  h));
+    SurfaceMesh::Vertex_index v5 = sm.add_vertex(Point_3( h, -h,  h));
+    SurfaceMesh::Vertex_index v6 = sm.add_vertex(Point_3( h,  h,  h));
+    SurfaceMesh::Vertex_index v7 = sm.add_vertex(Point_3(-h,  h,  h));
+
+    // 2. Явно добавляем 6 четырехугольных граней
+    // Важно соблюдать порядок против часовой стрелки (если смотреть снаружи)
+
+    // Нижняя грань (-Y)
+    sm.add_face(v0, v1, v5, v4);
+    // Верхняя грань (+Y)
+    sm.add_face(v3, v7, v6, v2);
+    // Передняя грань (-Z)
+    sm.add_face(v0, v3, v2, v1);
+    // Задняя грань (+Z)
+    sm.add_face(v4, v5, v6, v7);
+    // Левая грань (-X)
+    sm.add_face(v0, v4, v7, v3);
+    // Правая грань (+X)
+    sm.add_face(v1, v2, v6, v5);
 }
+
+
+// Add this new function to the end of your CgalMeshBuilder.cpp file
+// Add this new function to the end of your CgalMeshBuilder.cpp file
+
+void CgalMeshBuilder::buildHollowCuboid(SurfaceMesh& sm, int N, int M, int L, double cellSize)
+{
+    sm.clear();
+    if (N <= 0 || M <= 0 || L <= 0 || cellSize <= 0.0) {
+        return; // Return an empty mesh for invalid dimensions
+    }
+
+    // Calculate the total dimensions of the grid to center it at the origin
+    const double totalWidth  = N * cellSize;
+    const double totalHeight = M * cellSize;
+    const double totalDepth  = L * cellSize;
+    const Point_3 start_corner(-totalWidth / 2.0, -totalHeight / 2.0, -totalDepth / 2.0);
+
+    // 1. Create a 3D grid of all vertices first, just like before.
+    std::vector<std::vector<std::vector<SurfaceMesh::Vertex_index>>> vertex_grid(
+        N + 1,
+        std::vector<std::vector<SurfaceMesh::Vertex_index>>(
+            M + 1,
+            std::vector<SurfaceMesh::Vertex_index>(L + 1)
+            )
+        );
+
+    for (int i = 0; i <= N; ++i) {
+        for (int j = 0; j <= M; ++j) {
+            for (int k = 0; k <= L; ++k) {
+                Point_3 p = start_corner + Vector_3(i * cellSize, j * cellSize, k * cellSize);
+                vertex_grid[i][j][k] = sm.add_vertex(p);
+            }
+        }
+    }
+
+    // 2. Iterate through each cell and create ONLY the exterior faces.
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < M; ++j) {
+            for (int k = 0; k < L; ++k) {
+                // Get the 8 corner vertices for the current cell (i, j, k)
+                SurfaceMesh::Vertex_index v000 = vertex_grid[i][j][k];
+                SurfaceMesh::Vertex_index v100 = vertex_grid[i + 1][j][k];
+                SurfaceMesh::Vertex_index v110 = vertex_grid[i + 1][j + 1][k];
+                SurfaceMesh::Vertex_index v010 = vertex_grid[i][j + 1][k];
+                SurfaceMesh::Vertex_index v001 = vertex_grid[i][j][k + 1];
+                SurfaceMesh::Vertex_index v101 = vertex_grid[i + 1][j][k + 1];
+                SurfaceMesh::Vertex_index v111 = vertex_grid[i + 1][j + 1][k + 1];
+                SurfaceMesh::Vertex_index v011 = vertex_grid[i][j + 1][k + 1];
+
+                // Add faces only if they are on the outer shell of the N x M x L grid
+                if (j == 0)     sm.add_face(v000, v100, v101, v001); // Bottom face of the entire grid
+                if (j == M - 1) sm.add_face(v010, v011, v111, v110); // Top face
+                if (k == 0)     sm.add_face(v000, v010, v110, v100); // Front face
+                if (k == L - 1) sm.add_face(v001, v101, v111, v011); // Back face
+                if (i == 0)     sm.add_face(v000, v001, v011, v010); // Left face
+                if (i == N - 1) sm.add_face(v100, v110, v111, v101); // Right face
+            }
+        }
+    }
+
+    // Clean up any vertices that were created but are not part of any face
+    // (this will remove all the interior vertices).
+    remove_isolated_vertices_safe(sm);
+}
+
+
+
+namespace {
+
+// Разбивает граничные вершины, через которые проходит >1 граничная «дорожка».
+// То есть, если вокруг вершины есть несколько отдельных подряд идущих блоков
+// пограничных полу-ребер, каждую такую группу (кроме первой) отделяем
+// отдельной вершиной с теми же координатами.
+static void split_kissing_border_vertices(SurfaceMesh& sm)
+{
+    std::vector<SurfaceMesh::Vertex_index> candidates;
+    candidates.reserve(sm.number_of_vertices());
+    for (auto v : sm.vertices())
+        if (!sm.is_removed(v) && CGAL::is_border(v, sm))
+            candidates.push_back(v);
+
+    for (auto v : candidates)
+    {
+        // все полуребра, приходящие в v (target = v) по кругу
+        std::vector<SurfaceMesh::Halfedge_index> ring;
+        for (auto h : CGAL::halfedges_around_target(v, sm))
+            ring.push_back(h);
+        if (ring.empty()) continue;
+
+        auto isB = [&](int i)->bool { return CGAL::is_border(ring[i], sm); };
+
+        // Найдём группы подряд идущих граничных полурёбер
+        std::vector<std::pair<int,int>> groups; // [begin,end] по ring
+        const int n = (int)ring.size();
+        int i = 0;
+        while (i < n) {
+            // пропускаем неграничные
+            while (i < n && !isB(i)) ++i;
+            if (i == n) break;
+            int b = i;
+            while (i < n && isB(i)) ++i;
+            int e = i - 1;
+            groups.emplace_back(b, e);
+        }
+
+        if (groups.size() <= 1) continue; // ничего делить
+
+        // Отделяем каждую группу, начиная со второй.
+        // split_vertex(h1,h2,sm) отделяет сектор [h1..h2] в новую вершину.
+        for (size_t g = 1; g < groups.size(); ++g) {
+            auto h_begin = ring[groups[g].first];
+            auto h_end   = ring[groups[g].second];
+            // в некоторых версиях возвращает пару halfedge'ов — игнорируем
+            CGAL::Euler::split_vertex(h_begin, h_end, sm);
+
+            // Дублировать позицию не нужно: split_vertex сам создаёт новую вершину
+            // с той же позицией, что у исходной. Если у вашей версии нет —
+            // можно явно: sm.point(target(h_begin, sm)) = sm.point(v);
+        }
+    }
+
+    sm.collect_garbage();
+}
+
+} // namespace
 
 
 // ---------------- Stage 2 ----------------
@@ -196,19 +342,20 @@ CgalMeshBuilder::selectFacesRandom(const SurfaceMesh& sm, double p01, uint32_t s
     return out;
 }
 
-// ---------------- Stage 3A ----------------
 void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
-                                  const std::vector<SurfaceMesh::Face_index>& faces) {
-    // mark and remove
-    size_t actually_removed = 0;
+                                  const std::vector<SurfaceMesh::Face_index>& faces,
+                                  bool split_kissing_vertices /* = true */)
+{
     for (auto f : faces) {
         if (f == SurfaceMesh::null_face() || sm.is_removed(f)) continue;
         CGAL::Euler::remove_face(sm.halfedge(f), sm);
-        ++actually_removed;
     }
-    std::cerr << "actually removed: " << actually_removed << "\n";
-    //remove_isolated_vertices_safe(sm);
     sm.collect_garbage();
+
+    if (split_kissing_vertices) {
+        PMP::duplicate_non_manifold_vertices(sm); // splits “kissing” corners
+        sm.collect_garbage();
+    }
 }
 
 // ---------------- Stage 3B ----------------
@@ -283,7 +430,7 @@ void CgalMeshBuilder::extrudeFaces(SurfaceMesh& sm,
     }
 
     if (!to_remove.empty()) {
-        deleteFaces(sm, to_remove);
+        deleteFaces(sm, to_remove, true);
     }
 }
 
@@ -845,4 +992,190 @@ void CgalMeshBuilder::catmullClarkRefine_NoInterp(SurfaceMesh& sm, bool keep_bor
         }
 
     // Note: property maps remain; OK to keep or remove them later if you want.
+}
+
+static inline glm::vec3 to_glm3(const Point_3& p) {
+    return glm::vec3((float)p.x(), (float)p.y(), (float)p.z());
+}
+static inline glm::vec3 to_glm3(const Vector_3& v) {
+    return glm::vec3((float)v.x(), (float)v.y(), (float)v.z());
+}
+static inline glm::vec3 safe_norm(const glm::vec3& v) {
+    float l2 = glm::dot(v,v); return (l2>0.f)? v/std::sqrt(l2) : glm::vec3(1,0,0);
+}
+static glm::vec3 hsv2rgb(float h, float s, float v) {
+    h = h - std::floor(h);
+    float c = v*s, x = c*(1.f - std::fabs(std::fmod(h*6.f,2.f)-1.f)), m = v-c;
+    float r=0,g=0,b=0;
+    if      (0.f<=h && h<1.f/6.f) { r=c; g=x; }
+    else if (h<2.f/6.f) { r=x; g=c; }
+    else if (h<3.f/6.f) { g=c; b=x; }
+    else if (h<4.f/6.f) { g=x; b=c; }
+    else if (h<5.f/6.f) { r=x; b=c; }
+    else                { r=c; b=x; }
+    return glm::vec3(r+m,g+m,b+m);
+}
+
+// цвет по id грани – равномерный по кругу оттенков
+static glm::vec3 face_color(uint32_t fid) {
+    float h = std::fmod(fid * 0.61803398875f, 1.0f); // золотое сечение
+    return hsv2rgb(h, 0.65f, 0.95f);
+}
+
+void CgalMeshBuilder::buildHalfedgeArrows(
+    const SurfaceMesh& sm,
+    std::vector<Vertex>& outLineVerts,
+    float inset,
+    float headRel)
+{
+    outLineVerts.clear();
+
+    uint32_t fid = 0;
+    for (auto f : sm.faces()) {
+        if (sm.is_removed(f)) continue;
+
+        // кольцо вершин грани (CCW)
+        std::vector<SurfaceMesh::Vertex_index> ring;
+        auto h0 = sm.halfedge(f), h = h0;
+        do { ring.push_back(target(h, sm)); h = next(h, sm); } while (h != h0);
+        if (ring.size() < 3) { ++fid; continue; }
+
+        // нормаль и центр грани
+        Vector_3 nCG(0,0,0);
+        Point_3  C(0,0,0);
+        for (auto v : ring) { const auto& p = sm.point(v);
+            C = Point_3(C.x()+p.x(), C.y()+p.y(), C.z()+p.z()); }
+        C = Point_3(C.x()/ring.size(), C.y()/ring.size(), C.z()/ring.size());
+        for (size_t i=0;i<ring.size();++i) {
+            const auto& pi = sm.point(ring[i]);
+            const auto& pj = sm.point(ring[(i+1)%ring.size()]);
+            nCG = nCG + CGAL::cross_product(pj - C, pi - C);
+        }
+        glm::vec3 N = safe_norm(to_glm3(nCG));
+        glm::vec3 col = face_color(fid++);
+
+        auto pushSeg = [&](const glm::vec3& A, const glm::vec3& B){
+            outLineVerts.push_back( Vertex{ glm::vec4(A,1), glm::vec4(N,0), glm::vec4(col,1) } );
+            outLineVerts.push_back( Vertex{ glm::vec4(B,1), glm::vec4(N,0), glm::vec4(col,1) } );
+        };
+
+        // пройти по halfedge грани (направление ребра = по грани)
+        for (size_t i=0;i<ring.size(); ++i) {
+            const Point_3  pa = sm.point(ring[i]);
+            const Point_3  pb = sm.point(ring[(i+1)%ring.size()]);
+            glm::vec3 A = to_glm3(pa), B = to_glm3(pb);
+
+            // слегка утопим вглубь грани и укоротим – чтобы стрелка была “внутри”.
+            glm::vec3 M   = 0.5f*(A+B);
+            glm::vec3 toC = safe_norm(to_glm3(C) - M);
+            float     L   = glm::length(B-A);
+            float     insetAbs = inset * L;
+            A = glm::mix(A,B,0.15f) + toC * insetAbs;
+            B = glm::mix(A,B,0.85f) + toC * insetAbs;
+
+            // главный отрезок
+            pushSeg(A,B);
+
+            // наконечник стрелки у B
+            glm::vec3 dir  = safe_norm(B - A);
+            float     hl   = std::min(L*0.25f, L*headRel);
+            glm::vec3 side = safe_norm(glm::cross(N, dir));
+
+            glm::vec3 base = B - dir*hl;
+            glm::vec3 Lft  = base + side*(0.6f*hl);
+            glm::vec3 Rgt  = base - side*(0.6f*hl);
+
+            pushSeg(B, Lft);
+            pushSeg(B, Rgt);
+        }
+    }
+}
+
+
+// CgalMeshBuilder.cpp  (add implementation)
+#include <CGAL/Polygon_mesh_processing/orientation.h>
+namespace PMP = CGAL::Polygon_mesh_processing;
+
+void CgalMeshBuilder::buildBoxGrid(SurfaceMesh& sm,
+                                   int nx, int ny, int nz,
+                                   double cellSize)
+{
+    sm.clear();
+    nx = std::max(1, nx);
+    ny = std::max(1, ny);
+    nz = std::max(1, nz);
+
+    // Box centered at origin
+    const double sx = nx * cellSize;
+    const double sy = ny * cellSize;
+    const double sz = nz * cellSize;
+    const double x0 = -0.5 * sx, y0 = -0.5 * sy, z0 = -0.5 * sz;
+
+    // Allocate (nx+1)*(ny+1)*(nz+1) vertices on the grid
+    const int VX = nx + 1, VY = ny + 1, VZ = nz + 1;
+    auto idx = [=](int i, int j, int k) { return (k*VY + j)*VX + i; };
+
+    std::vector<SurfaceMesh::Vertex_index> V(VX*VY*VZ);
+
+    for (int k = 0; k < VZ; ++k) {
+        const double z = z0 + k * cellSize;
+        for (int j = 0; j < VY; ++j) {
+            const double y = y0 + j * cellSize;
+            for (int i = 0; i < VX; ++i) {
+                const double x = x0 + i * cellSize;
+                V[idx(i,j,k)] = sm.add_vertex(Point_3(x,y,z));
+            }
+        }
+    }
+
+    auto Vid = [&](int i,int j,int k)->SurfaceMesh::Vertex_index& { return V[idx(i,j,k)]; };
+
+    // Emit boundary quads with outward CCW orientation
+    // Z- plane (k = 0)
+    for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i)
+            add_quad_ccw(sm,
+                         Vid(i,  j,  0), Vid(i+1,j,  0),
+                         Vid(i+1,j+1,0), Vid(i,  j+1,0));
+
+    // Z+ plane (k = nz)
+    for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i)
+            add_quad_ccw(sm,
+                         Vid(i,  j,  nz), Vid(i+1,j,  nz),
+                         Vid(i+1,j+1,nz), Vid(i,  j+1,nz));
+
+    // Y- plane (j = 0)
+    for (int k = 0; k < nz; ++k)
+        for (int i = 0; i < nx; ++i)
+            add_quad_ccw(sm,
+                         Vid(i,  0,  k),  Vid(i,  0,  k+1),
+                         Vid(i+1,0,  k+1),Vid(i+1,0,  k));
+
+    // Y+ plane (j = ny)
+    for (int k = 0; k < nz; ++k)
+        for (int i = 0; i < nx; ++i)
+            add_quad_ccw(sm,
+                         Vid(i,  ny, k),  Vid(i+1,ny,k),
+                         Vid(i+1,ny,k+1), Vid(i,  ny,k+1));
+
+    // X- plane (i = 0)
+    for (int k = 0; k < nz; ++k)
+        for (int j = 0; j < ny; ++j)
+            add_quad_ccw(sm,
+                         Vid(0,  j,  k),  Vid(0,  j+1,k),
+                         Vid(0,  j+1,k+1),Vid(0,  j,  k+1));
+
+    // X+ plane (i = nx)
+    for (int k = 0; k < nz; ++k)
+        for (int j = 0; j < ny; ++j)
+            add_quad_ccw(sm,
+                         Vid(nx, j,  k),  Vid(nx, j,  k+1),
+                         Vid(nx, j+1,k+1),Vid(nx, j+1,k));
+
+    sm.collect_garbage();
+
+    // Safety: ensure outward orientation (usually already correct)
+    if (!PMP::is_outward_oriented(sm))
+        PMP::orient_to_bound_a_volume(sm);
 }

@@ -17,6 +17,9 @@ struct PushConstants {
     glm::mat4 model;
 };
 
+struct SolverParameters {
+    bool drawPolyMesh =false;
+};
 
 namespace rtx {
 struct InstanceData {

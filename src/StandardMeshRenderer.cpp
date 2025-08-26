@@ -312,3 +312,36 @@ void StandardMeshRenderer::Draw(VkCommandBuffer cmd, VkExtent2D extent) const
         vkCmdDraw(cmd, m_lineVertCount, 1, 0, 0);
     }
 }
+
+void StandardMeshRenderer::SetColoredLines(const std::vector<Vertex>& lineVerts)
+{
+    const VkDeviceSize sz = sizeof(Vertex) * lineVerts.size();
+
+    if (m_lineVB)  { vkDestroyBuffer(m_dev, m_lineVB, nullptr);  m_lineVB  = VK_NULL_HANDLE; }
+    if (m_lineMem) { vkFreeMemory  (m_dev, m_lineMem, nullptr);  m_lineMem = VK_NULL_HANDLE; }
+
+    if (sz == 0) { m_lineVertCount = 0; return; }
+
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size  = sz;
+    bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VK_CHECK(vkCreateBuffer(m_dev, &bi, nullptr, &m_lineVB), "SMR: create colored line VB");
+
+    VkMemoryRequirements req{};
+    vkGetBufferMemoryRequirements(m_dev, m_lineVB, &req);
+
+    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    ai.allocationSize  = req.size;
+    ai.memoryTypeIndex = findMemoryType(req.memoryTypeBits,
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                        m_memProps);
+    VK_CHECK(vkAllocateMemory(m_dev, &ai, nullptr, &m_lineMem), "SMR: alloc colored line mem");
+    vkBindBufferMemory(m_dev, m_lineVB, m_lineMem, 0);
+
+    void* p = nullptr; vkMapMemory(m_dev, m_lineMem, 0, sz, 0, &p);
+    std::memcpy(p, lineVerts.data(), size_t(sz));
+    vkUnmapMemory(m_dev, m_lineMem);
+
+    m_lineVertCount = static_cast<uint32_t>(lineVerts.size());
+}
+

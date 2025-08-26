@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL.h>
 #include <vector>
+#include "HelpStructures.h"
 
 static void check_vk_result(VkResult err)
 {
@@ -30,7 +31,7 @@ public:
               const std::vector<VkImageView>& swapchainImageViews,
               VkRenderPass renderPass);
 
-    void renderMenu(VkCommandBuffer commandBuffer);
+    void renderMenu(VkCommandBuffer commandBuffer, SolverParameters& solverParams);
     void cleanup();
     void uploadFonts(VkCommandBuffer cmd, VkQueue graphicsQueue);
 

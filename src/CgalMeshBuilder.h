@@ -34,7 +34,9 @@ public:
     selectFacesRandom(const SurfaceMesh& sm, double probability01, uint32_t seed = 42);
 
     // ---- Stage 3A: delete faces ----
-    static void deleteFaces(SurfaceMesh& sm, const std::vector<SurfaceMesh::Face_index>& faces);
+    static void deleteFaces(SurfaceMesh& sm,
+                            const std::vector<SurfaceMesh::Face_index>& faces,bool split_kissing_vertices /* = true */);
+
 
     // ---- Stage 3B: extrude faces (with optional inset) ----
     static void extrudeFaces(SurfaceMesh& sm,
@@ -64,4 +66,17 @@ public:
                                  double sharpness=1.0);
     static void catmullClarkRefineNoSmooth(SurfaceMesh &sm);
     static void catmullClarkRefine_NoInterp(SurfaceMesh &sm, bool keep_borders);
+
+    static void buildHalfedgeArrows(
+        const SurfaceMesh& sm,
+        std::vector<Vertex>& outLineVerts,
+        float inset = 0.02f,
+        float headRel = 0.08f);
+
+    static void buildHollowCuboid(SurfaceMesh& sm, int N, int M, int L, double cellSize);
+
+    static void buildBoxGrid(SurfaceMesh& sm,
+                             int nx, int ny, int nz,
+                             double cellSize);
+    void splitJunctionVertices(SurfaceMesh &sm);
 };

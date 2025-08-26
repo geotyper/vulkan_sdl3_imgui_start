@@ -140,8 +140,8 @@ void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt,
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
-    float currentIntensity = 1.0f + pulse * 1.0f;
-    glm::vec3 color = glm::vec3(0.9f, 0.95f, 0.9f);
+    float currentIntensity = 1.0f + pulse * 0.15f;
+    glm::vec3 color = glm::vec3(0.8f, 0.85f, 0.8f);
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
 
     // --- RECORDING AND SUBMISSION ---
@@ -285,7 +285,10 @@ void GraphicsModule::CreateScene() {
 
     // 1) start with polygonal cube
     SurfaceMesh sm;
-    CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
+    //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
+    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 6, /*M*/ 8, /*L*/ 4, /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildBoxGrid(sm, /*nx=*/3, /*ny=*/4, /*nz=*/3, /*cellSize=*/0.5);
+
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
     const int N = 2;
@@ -298,7 +301,7 @@ void GraphicsModule::CreateScene() {
     // 2) choose faces (e.g., 60% for extrude, 15% for delete)
     auto all     = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 1337);
     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.60, 4242);
-    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.45, 7777);
+    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
 
     // 3A) delete some faces
@@ -318,7 +321,7 @@ void GraphicsModule::CreateScene() {
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
-    CgalMeshBuilder::deleteFaces(sm, toDel);
+    CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
 
@@ -334,7 +337,7 @@ void GraphicsModule::CreateScene() {
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/false);
+    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -351,6 +354,9 @@ void GraphicsModule::CreateScene() {
 
     // Triangulate → export
 
+
+    std::vector<Vertex> heLines;
+    CgalMeshBuilder::buildHalfedgeArrows(sm, heLines, /*inset*/0.02f, /*head*/0.08f);
 
     face_stats(sm);
     CgalMeshBuilder::triangulateAll(sm);
@@ -460,6 +466,9 @@ void GraphicsModule::CreateScene() {
         // Пример линий (для топологии/halfedges):
         // std::vector<glm::vec3> dbgLines = ...;
         // m_meshRenderer->SetLines(dbgLines, {1,0,0});
+
+
+        m_meshRenderer->SetColoredLines(heLines);
     }
 }
 
@@ -605,7 +614,7 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // --- Debug mesh (raster) ---
-    if (m_meshRenderer) {
+    if (m_meshRenderer && solverParams.drawPolyMesh) {
         PushConstants pc{};
         const glm::mat4 model = glm::mat4(1.0f);
 
@@ -625,7 +634,7 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
     }
 
     // Draw the UI
-    m_imguiModule.renderMenu(cmd);
+    m_imguiModule.renderMenu(cmd, solverParams);
 
     vkCmdEndRenderPass(cmd);
 

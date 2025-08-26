@@ -8,6 +8,7 @@
 #include <vector>
 #include <stdexcept>
 #include "StandardMeshRenderer.h"
+#include "HelpStructures.h"
 
 class Camera;
 namespace rtx { class RayTracingModule; }
@@ -47,6 +48,8 @@ public:
 
     float currentTime=0.0f;
     void initRasterRenderers();
+
+    SolverParameters solverParams;
 private:
     // Initialization Steps
     void initSDL();

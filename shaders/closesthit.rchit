@@ -43,7 +43,7 @@ vec3 baryLerp3(vec3 a, vec3 b, vec3 c, float w, float u, float v) {
 
 // ===== DEBUG: нормали (0=off, 1=interp N, 2=geo N, 3=error heat) =====
 #ifndef DEBUG_NORMALS
-#define DEBUG_NORMALS 1
+#define DEBUG_NORMALS 0
 #endif
 
 void main()
