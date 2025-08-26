@@ -78,7 +78,9 @@ FetchContent_Declare(glm
 FetchContent_MakeAvailable(glm)
 include_directories(${glm_SOURCE_DIR}/)
 
-
+#--------------------------------- Find CGAL ---------------------------------#
+list(APPEND CMAKE_PREFIX_PATH "/home/geotyper/CPP_lib")
+find_package(CGAL REQUIRED COMPONENTS Core)
 
 #--------------------------------- Main Target ---------------------------------#
 
@@ -100,6 +102,8 @@ set(HEADERS
     #src/VulkanHelperMethods.h
     src/GeomCreate.h
     src/RayTracingModule.h
+    src/CgalMeshBuilder.h
+
 )
 
 set(SRC
@@ -116,6 +120,7 @@ set(SRC
     src/GeomCreate.cpp
     src/RayTracingModule.cpp
     src/main.cpp
+    src/CgalMeshBuilder.cpp
 )
 
 # === Include dirs ===
@@ -134,8 +139,6 @@ add_subdirectory(external/volk)
 
 # === Executable ===
 add_executable(${TARGET} ${HEADERS} ${SRC}
-
-
 )
 
 
@@ -143,7 +146,8 @@ target_include_directories(${TARGET} PRIVATE stb)
 target_include_directories(${TARGET} PRIVATE external/volk)
 target_include_directories(${TARGET} PRIVATE ${Vulkan_INCLUDE_DIR}/vma)
 target_include_directories(${TARGET} SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
-target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui )
+
+target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui CGAL::CGAL)
 
 ## === Shader Path Macro ===
 #add_compile_definitions(SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")

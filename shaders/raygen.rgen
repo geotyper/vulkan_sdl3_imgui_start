@@ -32,7 +32,7 @@ vec3 tonemapACES(vec3 x){
 }
 
 // Если хочешь хранить в текстуре линейный цвет без тонмапа — поставь 0
-#define ACCUM_TONEMAP_ON_WRITE 1
+#define ACCUM_TONEMAP_ON_WRITE 0
 
 void main()
 {
