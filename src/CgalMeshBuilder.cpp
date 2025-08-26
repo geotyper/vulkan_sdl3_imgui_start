@@ -16,7 +16,6 @@
 
 
 namespace S3 = CGAL::Subdivision_method_3;
-
 namespace PMP = CGAL::Polygon_mesh_processing;
 
 namespace {
@@ -31,11 +30,6 @@ inline void remove_isolated_vertices_safe(SurfaceMesh& sm) {
     for (auto v : dead) sm.remove_vertex(v);
     sm.collect_garbage();
 }
-}
-
-namespace {
-
-
 
 // collect face boundary vertices (CCW as stored)
 static std::vector<SurfaceMesh::Vertex_index>
@@ -206,12 +200,14 @@ CgalMeshBuilder::selectFacesRandom(const SurfaceMesh& sm, double p01, uint32_t s
 void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
                                   const std::vector<SurfaceMesh::Face_index>& faces) {
     // mark and remove
+    size_t actually_removed = 0;
     for (auto f : faces) {
         if (f == SurfaceMesh::null_face() || sm.is_removed(f)) continue;
-        auto h = sm.halfedge(f);
-        CGAL::Euler::remove_face(h, sm);
+        CGAL::Euler::remove_face(sm.halfedge(f), sm);
+        ++actually_removed;
     }
-    remove_isolated_vertices_safe(sm);
+    std::cerr << "actually removed: " << actually_removed << "\n";
+    //remove_isolated_vertices_safe(sm);
     sm.collect_garbage();
 }
 
@@ -444,60 +440,51 @@ static inline glm::vec3 unit3(const glm::vec3& v) {
     float l2 = glm::dot(v,v); return (l2>0.f)? v/std::sqrt(l2) : glm::vec3(0,0,1);
 }
 
-// ---------------- Stage 5 (REPLACE) ----------------
 void CgalMeshBuilder::toVertexIndexFlat(const SurfaceMesh& sm,
                                         std::vector<Vertex>& outV,
                                         std::vector<uint32_t>& outI,
                                         glm::vec4 color)
 {
     outV.clear(); outI.clear();
-
-    // 1) global centroid (so we know "outside" direction)
     const glm::vec3 C = to_glm(mesh_centroid(sm));
 
-    for (auto f : sm.faces()) if (!sm.is_removed(f)) {
-            // ring in stored order
-            std::vector<SurfaceMesh::Vertex_index> ring;
-            auto h = sm.halfedge(f), it = h;
-            do { ring.push_back(target(it, sm)); it = next(it, sm); } while (it != h);
-            if (ring.size() < 3) continue;
+    for (auto f : sm.faces()) {
+        if (sm.is_removed(f)) continue;
 
-            // 2) face center & normal (from current winding)
-            glm::vec3 fc(0);
-            for (auto v : ring) fc += to_glm(sm.point(v));
-            fc *= 1.0f / float(ring.size());
+        std::vector<SurfaceMesh::Vertex_index> ring;
+        auto h = sm.halfedge(f), it = h;
+        do { ring.push_back(target(it, sm)); it = next(it, sm); } while (it != h);
+        if (ring.size() < 3)
+            continue;
 
-            glm::vec3 p0 = to_glm(sm.point(ring[0]));
-            glm::vec3 p1 = to_glm(sm.point(ring[1]));
-            glm::vec3 p2 = to_glm(sm.point(ring[2]));
-            glm::vec3 n  = unit3(glm::cross(p1 - p0, p2 - p0));
-
-            // 3) flip if the face points toward the mesh interior
-            bool flip = (glm::dot(n, fc - C) < 0.0f);
-            if (flip) n = -n;
-
-            // 4) emit triangles (fan) with consistent outward winding
-            for (std::size_t i = 1; i + 1 < ring.size(); ++i) {
-                glm::vec3 a = to_glm(sm.point(ring[0]));
-                glm::vec3 b = to_glm(sm.point(ring[i]));
-                glm::vec3 c = to_glm(sm.point(ring[i+1]));
-
-                const uint32_t base = (uint32_t)outV.size();
-                if (!flip) {
-                    outV.push_back({ glm::vec4(a,1), glm::vec4(n,0), color });
-                    outV.push_back({ glm::vec4(b,1), glm::vec4(n,0), color });
-                    outV.push_back({ glm::vec4(c,1), glm::vec4(n,0), color });
-                    outI.push_back(base+0); outI.push_back(base+1); outI.push_back(base+2);
-                } else {
-                    // reverse winding when flipped
-                    outV.push_back({ glm::vec4(a,1), glm::vec4(n,0), color });
-                    outV.push_back({ glm::vec4(c,1), glm::vec4(n,0), color });
-                    outV.push_back({ glm::vec4(b,1), glm::vec4(n,0), color });
-                    outI.push_back(base+0); outI.push_back(base+1); outI.push_back(base+2);
-                }
-            }
+        // face normal (Newell) + outward flip
+        glm::vec3 n(0);
+        for (size_t i=0; i<ring.size(); ++i) {
+            const glm::vec3 pi = to_glm(sm.point(ring[i]));
+            const glm::vec3 pj = to_glm(sm.point(ring[(i+1)%ring.size()]));
+            n.x += (pi.y - pj.y) * (pi.z + pj.z);
+            n.y += (pi.z - pj.z) * (pi.x + pj.x);
+            n.z += (pi.x - pj.x) * (pi.y + pj.y);
         }
+        n = unit3(n);
+        glm::vec3 fc(0); for (auto v : ring) fc += to_glm(sm.point(v));
+        fc *= 1.f / float(ring.size());
+        if (glm::dot(n, fc - C) < 0.f) n = -n;
+
+        // emit triangle fan — duplicate verts so each tri gets face normal
+        for (size_t i = 1; i + 1 < ring.size(); ++i) {
+            const glm::vec3 a = to_glm(sm.point(ring[0]));
+            const glm::vec3 b = to_glm(sm.point(ring[i]));
+            const glm::vec3 c = to_glm(sm.point(ring[i+1]));
+            const uint32_t base = (uint32_t)outV.size();
+            outV.push_back({ glm::vec4(a,1), glm::vec4(n,0), color });
+            outV.push_back({ glm::vec4(b,1), glm::vec4(n,0), color });
+            outV.push_back({ glm::vec4(c,1), glm::vec4(n,0), color });
+            outI.push_back(base+0); outI.push_back(base+1); outI.push_back(base+2);
+        }
+    }
 }
+
 
 
 // --- vertex normals (area-weighted) ---

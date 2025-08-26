@@ -103,6 +103,7 @@ set(HEADERS
     src/GeomCreate.h
     src/RayTracingModule.h
     src/CgalMeshBuilder.h
+    src/StandardMeshRenderer.h
 
 )
 
@@ -121,6 +122,7 @@ set(SRC
     src/RayTracingModule.cpp
     src/main.cpp
     src/CgalMeshBuilder.cpp
+    src/StandardMeshRenderer.cpp
 )
 
 # === Include dirs ===

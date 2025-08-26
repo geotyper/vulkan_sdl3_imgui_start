@@ -2,166 +2,139 @@
 #extension GL_EXT_ray_tracing          : enable
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : require
+
 #include "../src/shared_with_shaders.h"
 
+// ===== Payloads / attrs =====
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 hitAttributeEXT vec2 attribs;
 
-// распаковка packed instanceCustomIndex = (uniqueID<<8)|meshID
-#ifndef INST_MESHID_BITS
-#define INST_MESHID_BITS 8u
-#endif
-#define INST_MESHID_MASK      ((1u << INST_MESHID_BITS) - 1u)
-#define INST_GET_MESH_ID(p)   ( (p) &  INST_MESHID_MASK )
-#define INST_GET_UNIQUE_ID(p) ( (p) >> INST_MESHID_BITS )
-
-struct Vertex {
-    vec4 position;
-    vec4 normal;
-    vec4 color;
-};
-
-layout(set = SWS_SCENE_AS_SET, binding = SWS_VERTICES_BINDING)
-readonly buffer VtxBuf { Vertex v[]; } vertices[];
-
-layout(set = SWS_SCENE_AS_SET, binding = SWS_INDICES_BINDING)
-readonly buffer IdxBuf { uint   i[]; }  indices[];
-
+// ===== UBO =====
 layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
 uniform UniformBlock { UniformData uni; } U;
 
-const float IOR_GLASS = 1.95;
-const vec3  TINT      = vec3(1.0);
-const float SURF_EPS  = 0.0015;
+// ===== Geometry buffers (array-of-SSBOs per mesh) =====
+struct Vertex { vec4 position; vec4 normal; vec4 color; };
 
-uint  wanghash(uint s){ s = (s ^ 61u) ^ (s >> 16u); s *= 9u; s ^= (s >> 4u); s *= 0x27d4eb2du; s ^= (s >> 15u); return s; }
-float rnd(inout uint seed){ seed = wanghash(seed + 1u); return float(seed) * (1.0/4294967296.0); }
-float fresnelSchlick(float cosTheta, float F0){
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+layout(set = SWS_SCENE_AS_SET, binding = SWS_VERTICES_BINDING) readonly buffer Vertices {
+    Vertex v[];
+} vertices[];
+
+layout(set = SWS_SCENE_AS_SET, binding = SWS_INDICES_BINDING) readonly buffer Indices {
+    uint i[];
+} indices[];
+
+// ===== Instance data (для meshId) =====
+layout(set = SWS_SCENE_AS_SET, binding = SWS_INSTANCE_DATA_BINDING ) readonly buffer InstanceInfo {
+    InstanceData ids[];
+} instanceInfo[];
+
+// ===== helpers =====
+uvec3 getTriangleIndices(uint meshId, uint primitiveIndex) {
+    uint base = 3u * primitiveIndex;
+    return uvec3(indices[meshId].i[base + 0u],
+                 indices[meshId].i[base + 1u],
+                 indices[meshId].i[base + 2u]);
 }
 
-// Put near the top of closesthit.rchit
-const vec3 PALETTE[7] = vec3[7](
-    vec3(0.800, 0.900, 1.000), // icy white-blue
-    vec3(0.600, 0.800, 1.000), // soft sky blue
-    vec3(0.400, 0.700, 1.000), // bright blue
-    vec3(0.200, 0.500, 0.900), // medium blue
-    vec3(0.100, 0.300, 0.700), // deep cold blue
-    vec3(0.000, 0.200, 0.500), // dark navy
-    vec3(0.500, 0.900, 1.000)  // electric cyan
-);
+vec3 baryLerp3(vec3 a, vec3 b, vec3 c, float w, float u, float v) {
+    return a * w + b * u + c * v;
+}
 
-vec3 colorFromInstanceID(uint instanceID) { return PALETTE[instanceID % 7u]; }
-vec3 srgbToLinear(vec3 c){ return pow(c, vec3(2.2)); }
+// ===== DEBUG: нормали (0=off, 1=interp N, 2=geo N, 3=error heat) =====
+#ifndef DEBUG_NORMALS
+#define DEBUG_NORMALS 1
+#endif
 
 void main()
 {
-    uint packed   = uint(gl_InstanceCustomIndexEXT);
-    uint meshId   = INST_GET_MESH_ID(packed);
-    uint uniqueID = INST_GET_UNIQUE_ID(packed);
-    uint prim     = gl_PrimitiveID;
-    
-    const uint LIGHT_SOURCE_ID = 27; 
+    // распакованный customIndex: низшие 8 бит = meshId, старшие = unique instance id
+    uint packedID   = gl_InstanceCustomIndexEXT;
+    uint meshId     = packedID & 0xFFu;
+    uint uniqueID   = packedID >> 8;
 
-    //if (uniqueID != 0 && uniqueID % LIGHT_SOURCE_ID == 0) {
-        // This is a light source.
-        // Add its emission to the throughput. The contribution from previous
-        // bounces (reflections) is preserved in prd.throughput.
-     //   prd.throughput += U.uni.lightColor * U.uni.lightIntensity;
-        
-        // The path ends here.
-       // prd.done = true;
-       // return; // Skip all the glass logic
-    //}
+    // три и барицентрики
+    uvec3 tri = getTriangleIndices(meshId, gl_PrimitiveID);
+    float bu = attribs.x;
+    float bv = attribs.y;
+    float bw = 1.0 - bu - bv;
 
-    uvec3 tri = uvec3(
-        indices[nonuniformEXT(meshId)].i[3*prim + 0],
-        indices[nonuniformEXT(meshId)].i[3*prim + 1],
-        indices[nonuniformEXT(meshId)].i[3*prim + 2]
-    );
+    // --- читаем вершины ---
+    Vertex v0 = vertices[meshId].v[tri.x];
+    Vertex v1 = vertices[meshId].v[tri.y];
+    Vertex v2 = vertices[meshId].v[tri.z];
 
-    // positions
-    vec3 p0 = vertices[nonuniformEXT(meshId)].v[tri.x].position.xyz;
-    vec3 p1 = vertices[nonuniformEXT(meshId)].v[tri.y].position.xyz;
-    vec3 p2 = vertices[nonuniformEXT(meshId)].v[tri.z].position.xyz;
+    // --- мировые позиции вершин и точка пересечения ---
+    vec3 p0w = gl_ObjectToWorldEXT * vec4(v0.position.xyz, 1.0);
+    vec3 p1w = gl_ObjectToWorldEXT * vec4(v1.position.xyz, 1.0);
+    vec3 p2w = gl_ObjectToWorldEXT * vec4(v2.position.xyz, 1.0);
+    vec3  P  = baryLerp3(p0w, p1w, p2w, bw, bu, bv);
 
-    // barycentrics
-    float b1 = attribs.x, b2 = attribs.y, b0 = 1.0 - b1 - b2;
+    // --- нормали в МИРЕ: transform(each vertex normal) -> bary -> normalize ---
+    mat3 Nw_from_No = transpose(mat3(gl_WorldToObjectEXT)); // inverse-transpose 3x3
+    vec3 n0w = normalize(Nw_from_No * v0.normal.xyz);
+    vec3 n1w = normalize(Nw_from_No * v1.normal.xyz);
+    vec3 n2w = normalize(Nw_from_No * v2.normal.xyz);
+    vec3 N   = normalize(n0w * bw + n1w * bu + n2w * bv);
 
-    // interpolated point
-    vec3 Pobj = b0*p0 + b1*p1 + b2*p2;
-
-    // to world
-    vec3 Pw0 = vec3(gl_ObjectToWorldEXT * vec4(p0,   1.0));
-    vec3 Pw1 = vec3(gl_ObjectToWorldEXT * vec4(p1,   1.0));
-    vec3 Pw2 = vec3(gl_ObjectToWorldEXT * vec4(p2,   1.0));
-    vec3 Pw  = vec3(gl_ObjectToWorldEXT * vec4(Pobj, 1.0));
-
-    // geometric normal
-    vec3 Ng = normalize(cross(Pw1 - Pw0, Pw2 - Pw0));
-
-    // shading normal
-    vec3 n0 = vertices[nonuniformEXT(meshId)].v[tri.x].normal.xyz;
-    vec3 n1 = vertices[nonuniformEXT(meshId)].v[tri.y].normal.xyz;
-    vec3 n2 = vertices[nonuniformEXT(meshId)].v[tri.z].normal.xyz;
-    vec3 Nobj = normalize(b0*n0 + b1*n1 + b2*n2);
-    if (all(equal(Nobj, vec3(0.0)))) Nobj = normalize(cross(p1 - p0, p2 - p0));
-
-    // 1) Unchanged: view dir, shading normal, front/back
-    vec3 V  = normalize(gl_WorldRayDirectionEXT);
-    vec3 Ns = normalize(transpose(mat3(gl_WorldToObjectEXT)) * Nobj);
-    Ns = faceforward(Ns, V, Ng);
-
-    bool frontFace = dot(Ns, V) < 0.0;
-    vec3 N         = frontFace ? Ns : -Ns;
-
-    // 2) Eta: always compute as incident/transmitted IOR ratio
-    float eta_i = frontFace ? 1.0       : IOR_GLASS;
-    float eta_t = frontFace ? IOR_GLASS : 1.0;
-    float eta   = eta_i / eta_t;
-
-    // 3) Fresnel from your base glass IOR (ok to keep scalar here)
-    float F0   = pow((IOR_GLASS - 1.0) / (IOR_GLASS + 1.0), 2.0);
-    float cosI = clamp(dot(N, -V), 0.0, 1.0);
-    float Fr   = fresnelSchlick(cosI, F0);
-
-    // 4) Specular directions
-    vec3 R = reflect(V, N);
-    vec3 T = refract(V, N, eta);
-
-    bool tir        = (dot(T,T) == 0.0);
-    bool useReflect = tir || (rnd(prd.seed) < Fr);
-    vec3 newDir     = useReflect ? R : T;
-
-    // 5) >>> CHANGE HERE: compute Beer absorption ONCE (no duplicates) <<<
-    //
-    // If your PALETTE is authored in sRGB and represents an "artist color",
-    // map it to per-meter transmittance: T1m = mix(1, 1 - C_lin, strength).
-    // Then sigmaA = -ln(T1m)*density
-    vec3  C_lin = srgbToLinear(colorFromInstanceID(uniqueID));
-    float absorptionStrength = 0.95;  // 0..1, how much the palette affects absorption
-    float density            = 0.50;  // material thickness scaling
-    vec3  T1m    = mix(vec3(1.0), 1.0 - C_lin, absorptionStrength);
-    vec3  sigmaA = -log(clamp(T1m, 0.001, 0.999)) * density;
-
-    // 6) Apply Beer only to segments that were INSIDE the medium
-    if (prd.inMedium) {
-        //prd.throughput *= exp(-sigmaA * gl_HitTEXT);
-        vec3 att = exp(-sigmaA * gl_HitTEXT);
-        prd.throughput *= clamp(att, vec3(0.15), vec3(1.0));
+    // fallback геометрическая нормаль (если вершинные нормали нулевые)
+    if (length(v0.normal.xyz) + length(v1.normal.xyz) + length(v2.normal.xyz) < 1e-5) {
+        N = normalize(cross(p1w - p0w, p2w - p0w));
     }
 
-    // 7) On refraction: toggle medium + BTDF weight (use the SAME eta)
-    if (!useReflect) {
-        prd.inMedium = !prd.inMedium;
-        prd.throughput *= (eta * eta);
+    // ориентируем к лучу (аналог gl_FrontFacing для RT)
+    vec3 I = -gl_WorldRayDirectionEXT;
+    N = faceforward(N, I, N);
+
+#if DEBUG_NORMALS == 1
+    prd.color = N * 0.5 + 0.5;
+    return;
+#elif DEBUG_NORMALS == 2
+    vec3 Ngeo = normalize(cross(p1w - p0w, p2w - p0w));
+    Ngeo = faceforward(Ngeo, I, Ngeo);
+    prd.color = Ngeo * 0.5 + 0.5;
+    return;
+#elif DEBUG_NORMALS == 3
+    vec3 Ngeo = normalize(cross(p1w - p0w, p2w - p0w));
+    Ngeo = faceforward(Ngeo, I, Ngeo);
+    float d = clamp(dot(N, Ngeo), -1.0, 1.0);
+    float t = acos(d) / 3.14159265; // [0..1]
+    prd.color = mix(vec3(0,1,0), vec3(1,0,0), t);
+    return;
+#endif
+
+    // --- базовый цвет (возьми из вершин или из палитры по instance id) ---
+    vec3 base = baryLerp3(v0.color.rgb, v1.color.rgb, v2.color.rgb, bw, bu, bv);
+    // если цвета «шумные», временно можно принудительно:
+    // base = vec3(0.8);
+
+    // --- освещение: одна точка + wrap diffuse для мягкого градиента ---
+    vec3 Lpos = U.uni.lightPos;
+    vec3 Lcol = U.uni.lightColor * U.uni.lightIntensity;
+
+    vec3 Lvec = Lpos - P;
+    float dist = max(length(Lvec), 1e-3);
+    vec3  L    = Lvec / dist;
+
+    // wrap-диффуз (k в [0..1], больше -> мягче край)
+    float k = 0.2;
+    float diff = clamp((dot(N, L) + k) / (1.0 + k), 0.0, 1.0);
+
+    // лёгкая дистанционная аттенюация
+    float atten = 1.0 / (1.0 + 0.09 * dist + 0.032 * dist * dist);
+
+    // амбиент + диффуз
+    vec3 ambient = 0.08 * base;
+    vec3 color   = ambient + base * Lcol * (diff * atten);
+
+    // небольшой спекуляр (только при «свете»)
+    if (diff > 0.0) {
+        vec3 V = normalize(I);
+        vec3 H = normalize(L + V);
+        float spec = pow(max(dot(N, H), 0.0), 32.0);
+        color += 0.05 * spec;
     }
 
-    // 8) Ray continuation with adaptive epsilon
-    float eps = max(1e-4, 1e-3 * max(gl_HitTEXT, 1.0));
-    prd.rayOrigin = Pw + newDir * eps;
-    prd.rayDir    = newDir;
-    prd.done      = false;
+    prd.color = clamp(color, 0.0, 1.0);
 }
-
 

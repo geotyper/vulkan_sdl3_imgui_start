@@ -52,6 +52,12 @@ void GraphicsModule::Shutdown() {
         m_rtxModule.reset(); // Уничтожаем объект
     }
 
+
+    if (m_meshRenderer) {
+        m_meshRenderer->Cleanup(m_device);
+        m_meshRenderer.reset();
+    }
+
     // 3. Уничтожаем все объекты, связанные со Swapchain.
     cleanupSwapchain();
 
@@ -135,7 +141,7 @@ void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt,
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
     float currentIntensity = 1.0f + pulse * 1.0f;
-    glm::vec3 color = glm::vec3(1.0f, 0.95f, 0.8f);
+    glm::vec3 color = glm::vec3(0.9f, 0.95f, 0.9f);
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
 
     // --- RECORDING AND SUBMISSION ---
@@ -227,6 +233,8 @@ void GraphicsModule::initVulkan(const std::string& appName) {
     //createGraphicsPipeline();
     initImgui();  // sets up descriptor pool, context, SDL bridge, etc.
 
+    initRasterRenderers();
+
     std::cout << "Window @GraphicsModule: " << m_window << std::endl;
 
     createSyncObjects();
@@ -277,23 +285,42 @@ void GraphicsModule::CreateScene() {
 
     // 1) start with polygonal cube
     SurfaceMesh sm;
-    //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/3, /*ny*/3);
+    CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
+    //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
     const int N = 2;
     //CgalMeshBuilder::subdivideQuadFacesGrid(sm, N, N);
 
    // CgalMeshBuilder::catmullClarkRefineNoSmooth(sm);
-    CgalMeshBuilder::catmullClarkRefine_NoInterp(sm, /*keep_borders=*/false);
-    CgalMeshBuilder::catmullClarkRefine_NoInterp(sm, /*keep_borders=*/false);
+//CgalMeshBuilder::catmullClarkRefine_NoInterp(sm, /*keep_borders=*/false);
+//    CgalMeshBuilder::catmullClarkRefine_NoInterp(sm, /*keep_borders=*/false);
 
     // 2) choose faces (e.g., 60% for extrude, 15% for delete)
     auto all     = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 1337);
     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.60, 4242);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.45, 7777);
+    std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
 
     // 3A) delete some faces
+    auto count_faces = [&](const SurfaceMesh& m){
+        std::size_t c=0; for (auto f: m.faces()) if(!m.is_removed(f)) ++c; return c;
+    };
+
+    auto face_stats = [&](const SurfaceMesh& m){
+        size_t F=0, tri=0, quad=0, poly=0;
+        for (auto f: m.faces()) if(!m.is_removed(f)) {
+                ++F;
+                int k=0; for (auto h: CGAL::halfedges_around_face(m.halfedge(f), m)) ++k;
+                if (k==3) ++tri; else if (k==4) ++quad; else ++poly;
+            }
+        std::cerr << "faces="<<F<<"  tris="<<tri<<"  quads="<<quad<<"  polys="<<poly<<"\n";
+    };
+
+    std::cerr << "faces before del: " << count_faces(sm) << "\n";
+    face_stats(sm);
     CgalMeshBuilder::deleteFaces(sm, toDel);
+    std::cerr << "faces after  del: " << count_faces(sm) << "\n";
+    face_stats(sm);
 
     // 3B) extrude some faces (others remain unchanged)
     ExtrudeParams ep;
@@ -302,12 +329,12 @@ void GraphicsModule::CreateScene() {
     ep.keep_base      = true;    // leave floor under frame
     ep.remove_base    = false;   // set true if you want a real hole
     ep.add_outer_wall = false;   // useful when turning shells into solids
-    CgalMeshBuilder::extrudeFaces(sm, toExtr, ep);
+   // CgalMeshBuilder::extrudeFaces(sm, toExtr, ep);
 
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    //CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/false);
+    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/false);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -323,7 +350,12 @@ void GraphicsModule::CreateScene() {
     //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/false);
 
     // Triangulate → export
+
+
+    face_stats(sm);
     CgalMeshBuilder::triangulateAll(sm);
+    face_stats(sm);
+
     std::vector<Vertex>   cubeVertices;
     std::vector<uint32_t> cubeIndices;
     CgalMeshBuilder::toVertexIndexFlat(sm, cubeVertices, cubeIndices);
@@ -420,6 +452,15 @@ void GraphicsModule::CreateScene() {
         { sphereVertices, sphereIndices, sphereInstances }, // meshId 0
         { cubeVertices,   cubeIndices,   cubeInstances   }  // meshId 1
     });
+
+
+    if (m_meshRenderer) {
+        m_meshRenderer->SetMesh(cubeVertices, cubeIndices);
+
+        // Пример линий (для топологии/halfedges):
+        // std::vector<glm::vec3> dbgLines = ...;
+        // m_meshRenderer->SetLines(dbgLines, {1,0,0});
+    }
 }
 
 
@@ -450,10 +491,15 @@ void GraphicsModule::recreateSwapchain() {
     createRenderPass();     // **KEY:** Recreate the render pass
     createFramebuffers();   // **KEY:** Recreate framebuffers for the new image views
 
+    if (m_meshRenderer)
+        m_meshRenderer->OnResize(m_device, m_renderPass);
+
     // Notify other modules that depend on the swapchain size/images
     if (m_rtxModule) {
         m_rtxModule->OnResize(m_swapchainExtent);
     }
+
+
 
     // You'll likely need to notify ImGui as well so it can recreate its
     // own framebuffers and pipelines if they depend on the swapchain.
@@ -558,6 +604,26 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
 
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    // --- Debug mesh (raster) ---
+    if (m_meshRenderer) {
+        PushConstants pc{};
+        const glm::mat4 model = glm::mat4(1.0f);
+
+        // Камера: используем твоё API
+        const glm::mat4 view = cam.GetTransform();     // view matrix
+        const glm::mat4 proj = cam.GetProjection();    // projection matrix
+
+        // Структура PushConstants из HelpStructures.h: { mvp, model }
+        pc.mvp   = proj * view * model;
+        pc.model = model;
+
+        vkCmdPushConstants(cmd, m_meshRenderer->pipelineLayout(),
+                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pc);
+
+        // viewport/scissor внутри Draw()
+        m_meshRenderer->Draw(cmd, m_swapchainExtent);
+    }
+
     // Draw the UI
     m_imguiModule.renderMenu(cmd);
 
@@ -599,7 +665,7 @@ void GraphicsModule::createInstance(const std::string& appName)
 
 #ifndef NDEBUG
     instExt.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    instExt.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);   // цепочка pNext
+    //instExt.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);   // цепочка pNext
 #endif
 
 
@@ -756,7 +822,7 @@ void GraphicsModule::createLogicalDevice() {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        //VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     };
 
     VkDeviceCreateInfo createInfo{};
@@ -848,6 +914,25 @@ void GraphicsModule::createSwapchain(VkSwapchainKHR oldSwapchain) {
     createInfo.clipped = VK_TRUE;
 
     createInfo.oldSwapchain = oldSwapchain;
+
+    // 1) present modes
+    uint32_t presentModeCount = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
+
+    // 2) выбрать режим (FIFO — обязателен по стандарту)
+    auto choosePresentMode = [&]()->VkPresentModeKHR {
+        VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;           // дефолт/всегда есть
+        // если хочешь без vsync — попробуем IMMEDIATE, если поддерживается:
+        if (std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end())
+            mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        // или prefer MAILBOX:
+        // if (std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != presentModes.end())
+        //     mode = VK_PRESENT_MODE_MAILBOX_KHR;
+        return mode;
+    }();
+    createInfo.presentMode = choosePresentMode;
 
     VK_CHECK(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain), "Failed to create swap chain");
 
@@ -1103,4 +1188,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     std::cerr << "[Vulkan Validation] " << pCallbackData->pMessage << std::endl;
     return VK_FALSE;
 }
+
+
+void GraphicsModule::initRasterRenderers() {
+    m_meshRenderer = std::make_unique<StandardMeshRenderer>();
+    m_meshRenderer->Initialize(m_device, m_physicalDevice, m_renderPass, m_graphicsQueueFamilyIndex);
+}
+
 

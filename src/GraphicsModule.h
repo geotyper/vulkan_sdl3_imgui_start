@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 #include <stdexcept>
-
+#include "StandardMeshRenderer.h"
 
 class Camera;
 namespace rtx { class RayTracingModule; }
@@ -46,6 +46,7 @@ public:
     void CreateScene();
 
     float currentTime=0.0f;
+    void initRasterRenderers();
 private:
     // Initialization Steps
     void initSDL();
@@ -135,6 +136,9 @@ private:
     ImGuiModule m_imguiModule;
 
     int instanceId = 0;
+
+    std::unique_ptr<StandardMeshRenderer> m_meshRenderer;
+
 };
 
 //// Forward declare to break circular dependencies
