@@ -286,7 +286,7 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 6, /*M*/ 8, /*L*/ 4, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 4, /*M*/ 4, /*L*/ 4, /*cellSize*/ 0.5);
     //CgalMeshBuilder::buildBoxGrid(sm, /*nx=*/3, /*ny=*/4, /*nz=*/3, /*cellSize=*/0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
@@ -300,9 +300,7 @@ void GraphicsModule::CreateScene() {
 
     // 2) choose faces (e.g., 60% for extrude, 15% for delete)
     auto all     = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 1337);
-    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.60, 4242);
-    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
+
 
     // 3A) delete some faces
     auto count_faces = [&](const SurfaceMesh& m){
@@ -319,25 +317,32 @@ void GraphicsModule::CreateScene() {
         std::cerr << "faces="<<F<<"  tris="<<tri<<"  quads="<<quad<<"  polys="<<poly<<"\n";
     };
 
-    std::cerr << "faces before del: " << count_faces(sm) << "\n";
-    face_stats(sm);
-    CgalMeshBuilder::deleteFaces(sm, toDel, true);
-    std::cerr << "faces after  del: " << count_faces(sm) << "\n";
-    face_stats(sm);
 
+
+
+     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
     // 3B) extrude some faces (others remain unchanged)
     ExtrudeParams ep;
     ep.inset_scale    = 0.75;     // scale toward center
-    ep.distance       = 0.05;    // outward
+    ep.distance       = 0.15;    // outward
     ep.keep_base      = true;    // leave floor under frame
     ep.remove_base    = false;   // set true if you want a real hole
     ep.add_outer_wall = false;   // useful when turning shells into solids
-   // CgalMeshBuilder::extrudeFaces(sm, toExtr, ep);
+    CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
+
+
+    //std::cerr << "faces before del: " << count_faces(sm) << "\n";
+    //face_stats(sm);
+    //auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
+    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    //std::cerr << "faces after  del: " << count_faces(sm) << "\n";
+    //face_stats(sm);
+    //std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
 
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
+    //CgalMeshBuilder::applyCatmullClark(sm, 2, /*keep_borders=*/true);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -350,7 +355,7 @@ void GraphicsModule::CreateScene() {
     //                                   /*sharpness=*/1.2);
 
     // Optional extra CC for overall softness
-    //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/false);
+    //CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/false);
 
     // Triangulate → export
 

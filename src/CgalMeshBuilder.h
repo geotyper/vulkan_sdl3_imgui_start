@@ -78,5 +78,9 @@ public:
     static void buildBoxGrid(SurfaceMesh& sm,
                              int nx, int ny, int nz,
                              double cellSize);
-    void splitJunctionVertices(SurfaceMesh &sm);
+    static void splitJunctionVertices(SurfaceMesh &sm);
+    static void extrudeFace(SurfaceMesh &sm, SurfaceMesh::Face_index f_to_extrude, double distance, double scale);
+    static void extrudeFaces(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
+    static SurfaceMesh::Face_index extrudeFace_one(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> &f_uid, std::uint64_t &nextUID);
+    static void extrudeFaces_in_waves(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
 };
