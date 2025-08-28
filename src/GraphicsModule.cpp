@@ -320,20 +320,10 @@ void GraphicsModule::CreateScene() {
 
 
 
-     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-    // 3B) extrude some faces (others remain unchanged)
-    ExtrudeParams ep;
-    ep.inset_scale    = 0.75;     // scale toward center
-    ep.distance       = 0.15;    // outward
-    ep.keep_base      = true;    // leave floor under frame
-    ep.remove_base    = false;   // set true if you want a real hole
-    ep.add_outer_wall = false;   // useful when turning shells into solids
-    //CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
+    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
     auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-
     auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.15, 0.19);
-
-    //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, 0.15, 0.19);
+    ////auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, 0.15, 0.19);
 
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
@@ -345,18 +335,10 @@ void GraphicsModule::CreateScene() {
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
 
 
-    //{
-    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-    //    // 3B) extrude some faces (others remain unchanged)
-    //    ExtrudeParams ep;
-    //    ep.inset_scale    = 0.75;     // scale toward center
-    //    ep.distance       = 0.15;    // outward
-    //    ep.keep_base      = true;    // leave floor under frame
-    //    ep.remove_base    = false;   // set true if you want a real hole
-    //    ep.add_outer_wall = false;   // useful when turning shells into solids
-    //    //CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
-    //    auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-    //}
+   // {
+   //     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+   //     auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.29);
+   // }
 
     // 4) triangulate as a separate step
 

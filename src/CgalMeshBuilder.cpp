@@ -670,22 +670,23 @@ static inline void push_created_face(SurfaceMesh::Face_index f,
         if (is_cap) out->caps.push_back(f);
     }
 }
-
+// -----------------------------------------------------------------------------
+// 3) Экструзия ОДНОЙ грани — НИЧЕГО не пишем в f_uid внутри! Только собираем out
+// -----------------------------------------------------------------------------
 SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one(
     SurfaceMesh& sm,
     SurfaceMesh::Face_index f,
     double distance,
     double scale,
-    SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t>& f_uid,
-    std::uint64_t& nextUID,
+    /* НЕ НУЖНО юзать f_uid здесь */
+    SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t>& /*f_uid*/,
+    std::uint64_t& /*nextUID*/,
     ExtrudeLists* out)
 {
     using SM = SurfaceMesh;
     if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
 
-    const std::uint64_t parent_uid = f_uid[f];
-
-    // 1) цикл halfedge и базовые вершины (важно: base[i] = source(h_i))
+    // 1) base[i] = source(h_i) — важно для согласованной ориентации
     std::vector<SM::Halfedge_index> ringH;
     std::vector<SM::Vertex_index>   base;
     {
@@ -701,9 +702,8 @@ SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one(
     }
     const std::size_t k = base.size();
     if (k < 3) return SM::null_face();
-    for (auto v : base) if (sm.is_removed(v)) return SM::null_face();
 
-    // 2) геометрия верхнего кольца (top[i] ↔ base[i])
+    // 2) верхнее кольцо
     Point_3  c = average_point(sm, base);
     Vector_3 n = face_normal_unit(sm, base);
     const Point_3 Cmesh = mesh_centroid(sm);
@@ -719,85 +719,158 @@ SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one(
         top[i] = sm.add_vertex(Ptop);
     }
 
-    // 3) удаляем исходную грань → её полурёбра становятся border в том же направлении
+    // 3) удаляем исходную грань → её vi->vj становятся граничными
     CGAL::Euler::remove_face(sm.halfedge(f), sm);
 
-    // 4) боковые стенки: quad = { base[i], base[j], top[j], top[i] }
-    for (std::size_t i = 0; i < k; ++i) {
-        const std::size_t j = (i + 1) % k;
-        const auto vi = base[i];
-        const auto vj = base[j];
-
-        std::array<SM::Vertex_index,4> quad{ vi, vj, top[j], top[i] };
-        auto fwall = CGAL::Euler::add_face(quad, sm);
-        if (fwall != SM::null_face()) {
-            push_created_face(fwall, /*is_cap=*/false, f_uid, nextUID, parent_uid, out);
-        } else {
-            // fallback: два треугольника
-            auto f1 = CGAL::Euler::add_face(std::array<SM::Vertex_index,3>{ quad[0], quad[1], quad[2] }, sm);
-            push_created_face(f1, false, f_uid, nextUID, parent_uid, out);
-            auto f2 = CGAL::Euler::add_face(std::array<SM::Vertex_index,3>{ quad[0], quad[2], quad[3] }, sm);
-            push_created_face(f2, false, f_uid, nextUID, parent_uid, out);
+    // 4) боковины: { base[i], base[j], top[j], top[i] }
+    for (std::size_t i = 0, j = 1; i < k; ++i, j = (i + 1) % k) {
+        auto fwall = CGAL::Euler::add_face(
+            std::array<SM::Vertex_index,4>{ base[i], base[j], top[j], top[i] }, sm);
+        if (out && fwall != SM::null_face()) out->all.push_back(fwall);
+        if (fwall == SM::null_face()) {
+            auto f1 = CGAL::Euler::add_face(std::array<SM::Vertex_index,3>{ base[i], base[j], top[j] }, sm);
+            auto f2 = CGAL::Euler::add_face(std::array<SM::Vertex_index,3>{ base[i], top[j],  top[i] }, sm);
+            if (out && f1 != SM::null_face()) out->all.push_back(f1);
+            if (out && f2 != SM::null_face()) out->all.push_back(f2);
         }
     }
 
-    // 5) верхняя крышка (может быть полигона или триангуляция)
+    // 5) крышка
     SM::Face_index ftop = SM::null_face();
     {
         Vector_3 nt = face_normal_unit(sm, top);
         const bool sameDir = (CGAL::scalar_product(nt, n) > 0.0);
-
-        if (sameDir) {
-            ftop = CGAL::Euler::add_face(top, sm);
-            push_created_face(ftop, /*is_cap=*/true, f_uid, nextUID, parent_uid, out);
-        } else {
+        if (sameDir)  ftop = CGAL::Euler::add_face(top, sm);
+        else {
             std::vector<SM::Vertex_index> r(top.rbegin(), top.rend());
             ftop = CGAL::Euler::add_face(r, sm);
-            push_created_face(ftop, /*is_cap=*/true, f_uid, nextUID, parent_uid, out);
         }
-
+        if (out && ftop != SM::null_face()) {
+            out->all.push_back(ftop);
+            out->caps.push_back(ftop);
+        }
         if (ftop == SM::null_face()) {
-            // триангуляция веером
             for (std::size_t i = 1; i + 1 < k; ++i) {
                 auto ft = CGAL::Euler::add_face(
                     std::array<SM::Vertex_index,3>{ top[0], top[i], top[i+1] }, sm);
-                push_created_face(ft, /*is_cap=*/true, f_uid, nextUID, parent_uid, out);
-                if (i == 1) ftop = ft;
+                if (out && ft != SM::null_face()) {
+                    out->all.push_back(ft);
+                    out->caps.push_back(ft);
+                    if (i == 1) ftop = ft;
+                }
             }
         }
     }
-
-    // collect_garbage() — делай разово снаружи
     return ftop;
 }
 
-// 2) Batch extrude that returns lists -- no collect_garbage() inside!
+
+// -----------------------------------------------------------------------------
+// 2) Оценка ёмкости под волну экструзий и резервирование
+//    (очень помогает от падений на свойствах во время add_face)
+// -----------------------------------------------------------------------------
+static inline void reserve_for_extrusion(
+    SurfaceMesh& sm,
+    const std::vector<SurfaceMesh::Face_index>& todo)
+{
+    std::size_t addV = 0, addH = 0, addF = 0;
+
+    for (auto f : todo) {
+        if (f == SurfaceMesh::null_face() || sm.is_removed(f)) continue;
+
+        // степень грани (число вершин/рёбер по периметру)
+        std::size_t k = 0;
+        auto h0 = sm.halfedge(f);
+        auto h = h0;
+        do { ++k; h = next(h, sm); } while (h != h0);
+
+        // На одну грань: добавим k верхних вершин,
+        // боковые стены ~ k квадов = k граней, и ещё 1 верхнюю "крышку"
+        addV += k;
+        addF += k + 1;
+
+        // Полурёбра грубо: 4 на каждый боковой квад + k для крышки (приближённо)
+        addH += 4*k + k;
+    }
+
+    sm.reserve(
+        sm.number_of_vertices()   + addV,
+        sm.number_of_halfedges()  + addH*2, // halfedge count = 2 * edge count
+        sm.number_of_faces()      + addF
+        );
+}
+
+
+// -----------------------------------------------------------------------------
+// 4) Пакетная экструзия: compact → reserve → refresh map → extrude (без записи)
+//    → единым проходом проставляем UID, причём крышкам — UID родителя
+// -----------------------------------------------------------------------------
+
 ExtrudeLists CgalMeshBuilder::extrudeFaces_collectBoth(
     SurfaceMesh& sm,
     const std::vector<SurfaceMesh::Face_index>& faces,
     double distance,
     double scale)
 {
-    // IMPORTANT: if you just deleted stuff, compact first *here* (before we collect handles)
-    // sm.collect_garbage();
+    // если только что удаляли — стабилизируем индексы ПЕРЕД сбором todo
+    sm.collect_garbage();
 
-    SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> f_uid;
-    std::uint64_t nextUID = 1;
-    refresh_face_uid_map(sm, f_uid, nextUID);
-
+    // собираем валидные хендлы
     std::vector<SurfaceMesh::Face_index> todo;
     todo.reserve(faces.size());
     for (auto f : faces)
         if (f != SurfaceMesh::null_face() && !sm.is_removed(f))
             todo.push_back(f);
 
+    // резерв под добавления
+    reserve_for_extrusion(sm, todo);
+
+    // обновляем карту uid
+    SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> f_uid;
+    std::uint64_t nextUID = 1;
+    refresh_face_uid_map(sm, f_uid, nextUID);
+
+    // экструзия БЕЗ записи в карту (только собираем списки)
     ExtrudeLists out;
     out.all.reserve(todo.size() * 5);
-
     for (auto f : todo)
         extrudeFace_one(sm, f, distance, scale, f_uid, nextUID, &out);
 
-    // DO NOT call sm.collect_garbage() here — it would invalidate out.{all,caps}
+    // ---- единым проходом проставляем UID’ы ----
+    // крышки должны унаследовать uid родителя — достанем его из соседних боковин
+    auto face_uid = [&](SurfaceMesh::Face_index f)->std::uint64_t { return f_uid[f]; };
+
+    // боковины — новые uid
+    for (auto f_new : out.all) {
+        if (f_new == SurfaceMesh::null_face() || sm.is_removed(f_new)) continue;
+        f_uid[f_new] = f_uid[f_new] ? f_uid[f_new] : nextUID++;
+    }
+
+    // крышкам — uid родителя, если удастся найти (иначе оставим как есть)
+    for (auto f_cap : out.caps) {
+        if (f_cap == SurfaceMesh::null_face() || sm.is_removed(f_cap)) continue;
+
+        // попробуем найти соседнюю боковину и взять у неё twin->face как «родителя»
+        std::uint64_t parent = 0;
+        auto h0 = sm.halfedge(f_cap);
+        auto h  = h0;
+        do {
+            auto ht = sm.opposite(h);
+            auto fN = (ht == SurfaceMesh::null_halfedge()) ? SurfaceMesh::null_face()
+                                                           : face(ht, sm);
+            if (fN != SurfaceMesh::null_face() && !sm.is_removed(fN)) {
+                // если у соседней грани UID уже новый — пропустим,
+                // если старый (родительский) — используем
+                std::uint64_t uidN = f_uid[fN];
+                if (uidN) { parent = uidN; break; }
+            }
+            h = next(h, sm);
+        } while (h != h0);
+
+        if (parent) f_uid[f_cap] = parent;
+    }
+
+    // НЕ compact’им здесь — чтобы вернуть валидные дескрипторы
     return out;
 }
 
