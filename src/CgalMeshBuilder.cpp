@@ -760,6 +760,177 @@ static inline void reserve_for_extrusion(
                sm.number_of_faces()     + addK + todo.size());
 }
 
+//SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one_internalOnly(
+//    SurfaceMesh& sm, SurfaceMesh::Face_index f, double distance, double scale, ExtrudeLists* out)
+//{
+//    using SM = SurfaceMesh;
+//    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
+//
+//    // ---------- 0) считываем кольцо и halfedge'ы грани ----------
+//    std::vector<SM::Vertex_index> base;
+//    std::vector<Point_3>          baseP;
+//    std::vector<SM::Halfedge_index> ringH; // h_i: source=h_i -> target=h_i = base[i] -> base[i+1]
+//    {
+//        auto h0 = sm.halfedge(f); if (h0 == SM::null_halfedge()) return SM::null_face();
+//        auto h  = h0;
+//        std::unordered_set<SM::Vertex_index> seen;
+//        do {
+//            if (sm.is_removed(h)) return SM::null_face();
+//            auto vi = source(h, sm);
+//            if (vi == SM::null_vertex() || sm.is_removed(vi)) return SM::null_face();
+//            if (!seen.insert(vi).second) return SM::null_face();
+//            base.push_back(vi);
+//            baseP.push_back(sm.point(vi));
+//            ringH.push_back(h);
+//            h = next(h, sm);
+//        } while (h != h0);
+//        if (base.size() < 3) return SM::null_face();
+//    }
+//    const size_t k = base.size();
+//
+//    // ---------- 1) поднимаем верхнее кольцо (локальные точки) ----------
+//    auto avg = [](const std::vector<Point_3>& R)->Point_3{
+//        double x=0,y=0,z=0; for (auto& p: R){ x+=p.x(); y+=p.y(); z+=p.z(); }
+//        double inv = 1.0 / double(R.size()); return Point_3(x*inv,y*inv,z*inv);
+//    };
+//    auto newell = [](const std::vector<Point_3>& P)->Vector_3{
+//        if (P.size() < 3) return Vector_3(0,0,1);
+//        Vector_3 n(0,0,0);
+//        for (size_t i=0;i<P.size();++i){
+//            const auto& a=P[i]; const auto& b=P[(i+1)%P.size()];
+//            n = n + Vector_3((a.y()-b.y())*(a.z()+b.z()),
+//                             (a.z()-b.z())*(a.x()+b.x()),
+//                             (a.x()-b.x())*(a.y()+b.y()));
+//        }
+//        double L = std::sqrt(n.squared_length());
+//        return (L>1e-12)? n/L : Vector_3(0,0,1);
+//    };
+//
+//    const Point_3  c = avg(baseP);
+//    const Vector_3 n = newell(baseP);
+//
+//    std::vector<SM::Vertex_index> top(k);
+//    std::vector<Point_3>          topP(k);
+//    for (size_t i=0;i<k;++i){
+//        const Vector_3 dc(baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z());
+//        const Point_3  Ptop(c.x()+n.x()*distance + scale*dc.x(),
+//                           c.y()+n.y()*distance + scale*dc.y(),
+//                           c.z()+n.z()*distance + scale*dc.z());
+//        top[i]  = sm.add_vertex(Ptop);
+//        topP[i] = Ptop; // после remove_face читаем только topP
+//    }
+//
+//    // ---------- helpers ----------
+//    constexpr double EPS2 = 1e-28;
+//    auto area2 = [](const Point_3& P, const Point_3& R, const Point_3& S){
+//        const Vector_3 u(R.x()-P.x(),R.y()-P.y(),R.z()-P.z());
+//        const Vector_3 v(S.x()-P.x(),S.y()-P.y(),S.z()-P.z());
+//        return CGAL::cross_product(u,v).squared_length();
+//    };
+//    auto alive = [&](SM::Vertex_index v){ return v!=SM::null_vertex() && !sm.is_removed(v); };
+//
+//    // шить квад, сохраняя НИЖНЕЕ ребро q0->q1, верх — «наоборот»
+//    auto add_wall_keep_lower = [&](SM::Vertex_index q0, SM::Vertex_index q1,
+//                                   SM::Vertex_index tq0, SM::Vertex_index tq1,
+//                                   const Point_3& Q0, const Point_3& Q1,
+//                                   const Point_3& TQ0, const Point_3& TQ1)->SM::Face_index
+//    {
+//        if (q0==q1 || q0==tq0 || q1==tq1 || q0==tq1 || q1==tq0) return SM::null_face();
+//        if (area2(Q0,Q1,TQ1) <= EPS2 && area2(Q0,TQ1,TQ0) <= EPS2) return SM::null_face();
+//
+//        using A4 = std::array<SM::Vertex_index,4>;
+//        // основной вариант: (q0,q1,tq1,tq0) — верх по час/против, но НАОБОРОТ относительно низа
+//        if (auto f = CGAL::Euler::add_face(A4{q0,q1,tq1,tq0}, sm); f != SM::null_face()) return f;
+//        // иногда помогает поменять порядок верхних двух вершин местами (история halfedge)
+//        if (auto f = CGAL::Euler::add_face(A4{q0,q1,tq0,tq1}, sm); f != SM::null_face()) return f;
+//        // и пара циклических сдвигов, сохраняя нижнее ребро
+//        if (auto f = CGAL::Euler::add_face(A4{q1,tq1,tq0,q0}, sm); f != SM::null_face()) return f;
+//        return CGAL::Euler::add_face(A4{tq1,tq0,q0,q1}, sm);
+//    };
+//
+//    auto has_border_ab = [&](SM::Vertex_index a, SM::Vertex_index b)->bool{
+//        auto pr = CGAL::halfedge(a,b,sm);
+//        return pr.second && face(pr.first, sm) == SM::null_face();
+//    };
+//
+//    // ---------- 2) Стены по рёбрам, которые УЖЕ были бордером ----------
+//    for (size_t i=0, j=1; i<k; ++i, j=(i+1)%k){
+//        // соседняя "снаружи" грань отсутствовала до удаления?
+//        bool border_before = (face(opposite(ringH[i], sm), sm) == SM::null_face());
+//        if (!border_before) continue;
+//
+//        // выясняем направление СУЩЕСТВУЮЩЕГО граничного halfedge
+//        bool ab = has_border_ab(base[i], base[j]);
+//        bool ba = has_border_ab(base[j], base[i]);
+//        SM::Vertex_index low0, low1;
+//        const Point_3 *Q0, *Q1;
+//        if (ab)      { low0 = base[i]; low1 = base[j]; Q0=&baseP[i]; Q1=&baseP[j]; }
+//        else if (ba) { low0 = base[j]; low1 = base[i]; Q0=&baseP[j]; Q1=&baseP[i]; }
+//        else         { continue; } // неожиданный случай — пропускаем
+//
+//        // верх берём «наоборот» от низа
+//        SM::Vertex_index tq0 = (low0==base[i]) ? top[i] : top[j];
+//        SM::Vertex_index tq1 = (low1==base[j]) ? top[j] : top[i];
+//        const Point_3&   TQ0 = (low0==base[i]) ? topP[i] : topP[j];
+//        const Point_3&   TQ1 = (low1==base[j]) ? topP[j] : topP[i];
+//
+//        if (auto fw = add_wall_keep_lower(low0,low1,tq0,tq1,*Q0,*Q1,TQ0,TQ1); fw != SM::null_face())
+//            if (out) out->all.push_back(fw);
+//    }
+//
+//    // ---------- 3) Удаляем исходную грань ----------
+//    CGAL::Euler::remove_face(sm.halfedge(f), sm);
+//
+//    // ---------- 4) Стены по остальным (бывшим внутренним) рёбрам ----------
+//    // теперь именно halfedge грани (ringH[i]) стал бордером и идёт как base[i] -> base[j]
+//    for (size_t i=0, j=1; i<k; ++i, j=(i+1)%k){
+//        bool border_before = (face(opposite(ringH[i], sm), sm) == SM::null_face());
+//        if (border_before) continue; // уже обработали на шаге 2
+//
+//        SM::Vertex_index a = base[i], b = base[j];
+//        if (!alive(a) || !alive(b)) continue;
+//
+//        if (auto fw = add_wall_keep_lower(a,b, top[i],top[j], baseP[i],baseP[j], topP[i],topP[j]);
+//            fw != SM::null_face())
+//            if (out) out->all.push_back(fw);
+//    }
+//
+//    // ---------- 5) Крышка: по реальному border-циклу из верхних рёбер ----------
+//    // найдём любой верхний border halfedge (top[j] -> top[i]) или (top[i] -> top[j])
+//    SM::Halfedge_index hcap = SM::null_halfedge();
+//    for (size_t i=0,j=1;i<k;++i,j=(i+1)%k){
+//        auto pr1 = CGAL::halfedge(top[j], top[i], sm);
+//        if (pr1.second && face(pr1.first, sm) == SM::null_face()) { hcap = pr1.first; break; }
+//        auto pr2 = CGAL::halfedge(top[i], top[j], sm);
+//        if (pr2.second && face(pr2.first, sm) == SM::null_face()) { hcap = pr2.first; break; }
+//    }
+//
+//    SM::Face_index fcap = SM::null_face();
+//    if (hcap != SM::null_halfedge()){
+//        std::vector<SM::Vertex_index> cap;
+//        auto h = hcap;
+//        do {
+//            cap.push_back( target(h, sm) ); // порядок ровно как у border-halfedge
+//            h = next(h, sm);                // по границе дырки
+//        } while (h != hcap);
+//
+//        fcap = CGAL::Euler::add_face(cap, sm);
+//        if (fcap == SM::null_face()){
+//            // бывает, что нужен другой старт/реверс — попробуем оба
+//            std::rotate(cap.begin(), cap.begin()+1, cap.end());
+//            fcap = CGAL::Euler::add_face(cap, sm);
+//            if (fcap == SM::null_face()){
+//                std::reverse(cap.begin(), cap.end());
+//                fcap = CGAL::Euler::add_face(cap, sm);
+//            }
+//        }
+//    }
+//
+//    if (out && fcap != SM::null_face()) { out->all.push_back(fcap); out->caps.push_back(fcap); }
+//    return fcap;
+//}
+//
+
 SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one_internalOnly(
     SurfaceMesh& sm, SurfaceMesh::Face_index f, double distance, double scale, ExtrudeLists* out)
 {
@@ -863,7 +1034,6 @@ SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one_internalOnly(
     if (out && fcap != SM::null_face()) { out->all.push_back(fcap); out->caps.push_back(fcap); }
     return fcap;
 }
-
 
 
 ExtrudeLists CgalMeshBuilder::extrudeFaces_collectBoth(
