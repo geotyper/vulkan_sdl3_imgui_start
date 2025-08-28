@@ -24,6 +24,11 @@ struct ExtrudeParams {
     bool   add_outer_wall= false; // vertical wall along the outer boundary (useful on shells)
 };
 
+struct ExtrudeLists {
+    std::vector<SurfaceMesh::Face_index> all;   // всё, что создано
+    std::vector<SurfaceMesh::Face_index> caps;  // только новая(ые) крышка(и)
+};
+
 class CgalMeshBuilder {
 public:
     // ---- Stage 1: create a polygonal mesh (n-gons allowed) ----
@@ -80,7 +85,28 @@ public:
                              double cellSize);
     static void splitJunctionVertices(SurfaceMesh &sm);
     static void extrudeFace(SurfaceMesh &sm, SurfaceMesh::Face_index f_to_extrude, double distance, double scale);
-    static void extrudeFaces(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
-    static SurfaceMesh::Face_index extrudeFace_one(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> &f_uid, std::uint64_t &nextUID);
+    //static void extrudeFaces(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
+    //static SurfaceMesh::Face_index extrudeFace_one(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> &f_uid, std::uint64_t &nextUID);
+
+
+
+
+    // Экструзия одной грани (добавлен out-результат)
+    static SurfaceMesh::Face_index extrudeFace_one(
+        SurfaceMesh& sm,
+        SurfaceMesh::Face_index f,
+        double distance,
+        double scale,
+        SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t>& f_uid,
+        std::uint64_t& nextUID,
+        ExtrudeLists* out // может быть nullptr
+        );
+
+    // Пакетная экструзия — вернёт оба списка суммарно
+    static ExtrudeLists extrudeFaces_collectBoth(
+        SurfaceMesh& sm,
+        const std::vector<SurfaceMesh::Face_index>& faces,
+        double distance,
+        double scale);
     static void extrudeFaces_in_waves(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
 };

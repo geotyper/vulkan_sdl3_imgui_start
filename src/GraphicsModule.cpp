@@ -328,21 +328,40 @@ void GraphicsModule::CreateScene() {
     ep.keep_base      = true;    // leave floor under frame
     ep.remove_base    = false;   // set true if you want a real hole
     ep.add_outer_wall = false;   // useful when turning shells into solids
-    CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
+    //CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
+    auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
+
+    auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.15, 0.19);
+
+    //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, 0.15, 0.19);
 
 
-    //std::cerr << "faces before del: " << count_faces(sm) << "\n";
-    //face_stats(sm);
-    //auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
-    //std::cerr << "faces after  del: " << count_faces(sm) << "\n";
-    //face_stats(sm);
-    //std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
+    std::cerr << "faces before del: " << count_faces(sm) << "\n";
+    face_stats(sm);
+    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
+   // CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    std::cerr << "faces after  del: " << count_faces(sm) << "\n";
+    face_stats(sm);
+    std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
+
+
+    //{
+    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+    //    // 3B) extrude some faces (others remain unchanged)
+    //    ExtrudeParams ep;
+    //    ep.inset_scale    = 0.75;     // scale toward center
+    //    ep.distance       = 0.15;    // outward
+    //    ep.keep_base      = true;    // leave floor under frame
+    //    ep.remove_base    = false;   // set true if you want a real hole
+    //    ep.add_outer_wall = false;   // useful when turning shells into solids
+    //    //CgalMeshBuilder::extrudeFaces(sm, toExtr,  ep.distance ,ep.inset_scale);
+    //    auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
+    //}
 
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    //CgalMeshBuilder::applyCatmullClark(sm, 2, /*keep_borders=*/true);
+    //CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -376,8 +395,8 @@ void GraphicsModule::CreateScene() {
     std::vector<rtx::InstanceData> sphereInstances;
     std::vector<rtx::InstanceData> cubeInstances;
 
-    const int   gridSize = 1;
-    const float spacing  = 1.75f;
+    const int   gridSize = 2;
+    const float spacing  = 2.75f;
 
     // базовые масштабы
     const float baseSphereScale = 0.70f;
