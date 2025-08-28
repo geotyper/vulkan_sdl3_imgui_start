@@ -760,128 +760,107 @@ static inline void reserve_for_extrusion(
                sm.number_of_faces()     + addK + todo.size());
 }
 
-
 SurfaceMesh::Face_index CgalMeshBuilder::extrudeFace_one_internalOnly(
     SurfaceMesh& sm, SurfaceMesh::Face_index f, double distance, double scale, ExtrudeLists* out)
 {
     using SM = SurfaceMesh;
     if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
 
-    // ---- 1) базовое кольцо (как хранится в грани) + пометка border для дуги i->i+1
+    // 1) кольцо грани как хранится
     std::vector<SM::Vertex_index> base;
     std::vector<Point_3>          baseP;
-    std::vector<bool>             is_border; // size=k, для дуги (i->i+1)
     {
         auto h0 = sm.halfedge(f); if (h0 == SM::null_halfedge()) return SM::null_face();
         auto h  = h0;
         std::unordered_set<SM::Vertex_index> seen;
         do {
             if (sm.is_removed(h)) return SM::null_face();
-            auto vi = source(h, sm);
-            if (vi == SM::null_vertex() || sm.is_removed(vi)) return SM::null_face();
-            if (!seen.insert(vi).second) return SM::null_face();
-            base.push_back(vi);
-            baseP.push_back(sm.point(vi));
-            is_border.push_back( face(opposite(h, sm), sm) == SM::null_face() );
+            auto v = source(h, sm);
+            if (v == SM::null_vertex() || sm.is_removed(v)) return SM::null_face();
+            if (!seen.insert(v).second) return SM::null_face();
+            base.push_back(v);
+            baseP.push_back(sm.point(v));
             h = next(h, sm);
         } while (h != h0);
         if (base.size() < 3) return SM::null_face();
     }
     const size_t k = base.size();
 
-    // ---- 2) верхнее кольцо (точки храним локально; sm.point(top[i]) потом не читаем)
-    auto avg = [](const std::vector<Point_3>& R){ double x=0,y=0,z=0;
-        for (auto& p:R){ x+=p.x(); y+=p.y(); z+=p.z(); }
-        double inv = 1.0/double(R.size()); return Point_3(x*inv,y*inv,z*inv);
+    // 2) верхнее кольцо (локально)
+    auto avg = [](const std::vector<Point_3>& R)->Point_3{
+        double x=0,y=0,z=0; for (auto& p:R){ x+=p.x(); y+=p.y(); z+=p.z(); }
+        double inv = 1.0 / double(R.size()); return Point_3(x*inv,y*inv,z*inv);
     };
-    auto newell = [](const std::vector<Point_3>& P)->Vector_3 {
-        Vector_3 n(0,0,0); if (P.size()<3) return Vector_3(0,0,1);
+    auto newell = [](const std::vector<Point_3>& P)->Vector_3{
+        if (P.size()<3) return Vector_3(0,0,1);
+        Vector_3 n(0,0,0);
         for (size_t i=0;i<P.size();++i){
             const auto& a=P[i]; const auto& b=P[(i+1)%P.size()];
             n = n + Vector_3((a.y()-b.y())*(a.z()+b.z()),
                              (a.z()-b.z())*(a.x()+b.x()),
                              (a.x()-b.x())*(a.y()+b.y()));
         }
-        double L = std::sqrt(n.squared_length());
+        const double L = std::sqrt(n.squared_length());
         return (L>1e-12)? n/L : Vector_3(0,0,1);
     };
 
     const Point_3 c = avg(baseP);
-    Vector_3 n = newell(baseP);              // нормаль по обходу грани
-    // если хочешь принудительно «наружу», можно ориентировать по глобальной оси/вектору:
-    // if (CGAL::scalar_product(n, preferred_dir) < 0) n = -n;
+    const Vector_3 n = newell(baseP);
 
     std::vector<SM::Vertex_index> top(k);
     std::vector<Point_3>          topP(k);
     for (size_t i=0;i<k;++i){
-        Vector_3 dc(baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z());
-        Point_3  Ptop(c.x()+n.x()*distance + scale*dc.x(),
-                     c.y()+n.y()*distance + scale*dc.y(),
-                     c.z()+n.z()*distance + scale*dc.z());
+        const Vector_3 dc(baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z());
+        const Point_3  Ptop(c.x()+n.x()*distance + scale*dc.x(),
+                           c.y()+n.y()*distance + scale*dc.y(),
+                           c.z()+n.z()*distance + scale*dc.z());
         top[i]  = sm.add_vertex(Ptop);
         topP[i] = Ptop;
     }
 
     auto area2 = [](const Point_3& P, const Point_3& R, const Point_3& S){
-        Vector_3 u(R.x()-P.x(),R.y()-P.y(),R.z()-P.z());
-        Vector_3 v(S.x()-P.x(),S.y()-P.y(),S.z()-P.z());
+        const Vector_3 u(R.x()-P.x(),R.y()-P.y(),R.z()-P.z());
+        const Vector_3 v(S.x()-P.x(),S.y()-P.y(),S.z()-P.z());
         return CGAL::cross_product(u,v).squared_length();
     };
-    auto try_add_quad = [&](SM::Vertex_index q0, SM::Vertex_index q1,
-                            SM::Vertex_index q2, SM::Vertex_index q3)->SM::Face_index {
-        using A4 = std::array<SM::Vertex_index,4>;
-        SM::Face_index f1 = CGAL::Euler::add_face(A4{q0,q1,q2,q3}, sm);
-        if (f1 != SM::null_face()) return f1;
-        // смена старта/реверс — иногда требуется из-за истории halfedge
-        if ((f1 = CGAL::Euler::add_face(A4{q1,q2,q3,q0}, sm)) != SM::null_face()) return f1;
-        if ((f1 = CGAL::Euler::add_face(A4{q0,q3,q2,q1}, sm)) != SM::null_face()) return f1;
-        return CGAL::Euler::add_face(A4{q3,q2,q1,q0}, sm);
-    };
     auto alive = [&](SM::Vertex_index v){ return v!=SM::null_vertex() && !sm.is_removed(v); };
+    auto try_add_quad_keep_lower = [&](SM::Vertex_index q0, SM::Vertex_index q1,
+                                       SM::Vertex_index q2, SM::Vertex_index q3)->SM::Face_index {
+        using A4 = std::array<SM::Vertex_index,4>;
+        // сохраняем направление нижнего ребра q0->q1 во всех вариантах
+        if (auto f1 = CGAL::Euler::add_face(A4{q0,q1,q2,q3}, sm); f1 != SM::null_face()) return f1;
+        if (auto f2 = CGAL::Euler::add_face(A4{q1,q2,q3,q0}, sm); f2 != SM::null_face()) return f2;
+        if (auto f3 = CGAL::Euler::add_face(A4{q2,q3,q0,q1}, sm); f3 != SM::null_face()) return f3;
+        return CGAL::Euler::add_face(A4{q3,q0,q1,q2}, sm);
+    };
 
-    // ---- 3a) стены по ГРАНИЧНЫМ рёбрам ДО remove_face
-    // схема для border-ребра: низ (b->a), верх (top[b]->top[a])
-    for (size_t i=0, j=1; i<k; ++i, j=(i+1)%k) if (is_border[i]){
-            SM::Vertex_index a = base[i], b = base[j];
-            const Point_3 &A = baseP[i], &B = baseP[j], &C = topP[j], &D = topP[i];
-            if (a==b || a==top[j] || b==top[i]) continue;
-            if (area2(B,A,D)<=1e-24 && area2(B,D,C)<=1e-24) continue; // внимание: низ (B,A,…)
-            if (SM::Face_index fw = try_add_quad(b,a,top[j],top[i]); fw != SM::null_face())
-                if (out) out->all.push_back(fw);
-        }
-
-    // ---- 3b) удаляем исходную грань (теперь все её дуги стали border)
+    // 3) удаляем исходную грань — теперь вдоль каждого ребра остался border halfedge (a->b)
     CGAL::Euler::remove_face(sm.halfedge(f), sm);
 
-    // ---- 3c) стены по ВНУТРЕННИМ рёбрам ПОСЛЕ remove_face
-    // схема: низ (a->b), верх (top[b]->top[a])
-    for (size_t i=0, j=1; i<k; ++i, j=(i+1)%k) if (!is_border[i]){
-            SM::Vertex_index a = base[i], b = base[j];
-            if (!alive(a) || !alive(b)) continue;
-            const Point_3 &A = baseP[i], &B = baseP[j], &C = topP[j], &D = topP[i];
-            if (a==b || a==top[j] || b==top[i]) continue;
-            if (area2(A,B,C)<=1e-24 && area2(A,C,D)<=1e-24) continue;
-            if (SM::Face_index fw = try_add_quad(a,b,top[j],top[i]); fw != SM::null_face())
-                if (out) out->all.push_back(fw);
-        }
+    // 4) стены: низ всегда (a->b), верх всегда (top[b] -> top[a]) — единая ориентация для всех
+    for (size_t i=0, j=1; i<k; ++i, j=(i+1)%k){
+        SM::Vertex_index a = base[i], b = base[j];
+        if (!alive(a) || !alive(b)) continue;
 
-    // ---- 4) крышка
-    // верх стен построен как (top[j] -> top[i]), значит крышка должна идти (top[i] -> top[j])
-    // возьмём кольцо в прямом порядке top[0],top[1],...
+        // отсечка вырожденности
+        const Point_3 &A = baseP[i], &B = baseP[j], &C = topP[j], &D = topP[i];
+        if (a==b || a==top[j] || b==top[i]) continue;
+        if (area2(A,B,C) <= 1e-24 && area2(A,C,D) <= 1e-24) continue;
+
+        // ВАЖНО: низ (a->b), верх (top[b]->top[a])
+        if (SM::Face_index fw = try_add_quad_keep_lower(a, b, top[j], top[i]); fw != SM::null_face())
+            if (out) out->all.push_back(fw);
+    }
+
+    // 5) крышка: cap идёт top[0]→top[1]→… (против верха стен)
     std::vector<SM::Vertex_index> cap(top.begin(), top.end());
-    SM::Face_index fcap = CGAL::Euler::add_face(cap, sm);
-    if (fcap == SM::null_face()){
-        // попробуем сменить старт
-        std::rotate(cap.begin(), cap.begin()+1, cap.end());
+    SM::Face_index fcap = SM::null_face();
+    for (size_t t=0; t<k; ++t){ // попробуем разные стартовые halfedge
         fcap = CGAL::Euler::add_face(cap, sm);
-        if (fcap == SM::null_face()){
-            // и, на крайний случай, полный реверс
-            std::reverse(cap.begin(), cap.end());
-            fcap = CGAL::Euler::add_face(cap, sm);
-        }
+        if (fcap != SM::null_face()) break;
+        std::rotate(cap.begin(), cap.begin()+1, cap.end());
     }
     if (out && fcap != SM::null_face()) { out->all.push_back(fcap); out->caps.push_back(fcap); }
-
     return fcap;
 }
 

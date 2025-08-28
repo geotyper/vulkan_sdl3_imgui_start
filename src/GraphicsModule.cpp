@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 1, /*M*/ 1, /*L*/ 1, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/3, /*M*/3,  /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 4, /*M*/ 4, /*L*/ 4, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/4, /*M*/4,  /*cellSize*/ 0.5);
 
    // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -318,12 +318,10 @@ void GraphicsModule::CreateScene() {
     };
 
 
-
-
     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
     auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-    //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
-    //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
+  //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
+  //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
 
     //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
 
@@ -331,15 +329,15 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
+   // CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
-   // CgalMeshBuilder::cleanup_after_deletions(sm);
+  //  CgalMeshBuilder::cleanup_after_deletions(sm);
 
     {
         auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-      //  auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.29);
+       // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.29);
     }
 
     // 4) triangulate as a separate step
