@@ -286,10 +286,10 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 4, /*M*/ 4, /*L*/ 4, /*cellSize*/ 0.5);
-    //CgalMeshBuilder::buildBoxGrid(sm, /*nx=*/3, /*ny=*/4, /*nz=*/3, /*cellSize=*/0.5);
+    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 1, /*M*/ 1, /*L*/ 1, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/3, /*M*/3,  /*cellSize*/ 0.5);
 
-    //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
+   // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
     const int N = 2;
     //CgalMeshBuilder::subdivideQuadFacesGrid(sm, N, N);
@@ -322,28 +322,30 @@ void GraphicsModule::CreateScene() {
 
     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
     auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-    auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.15, 0.19);
-    ////auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, 0.15, 0.19);
+    //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
+    //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
+
+    //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
 
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-   // CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
+   // CgalMeshBuilder::cleanup_after_deletions(sm);
 
-
-   // {
-   //     auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-   //     auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.29);
-   // }
+    {
+        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+      //  auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.29);
+    }
 
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    //CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
+   // CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -436,7 +438,7 @@ void GraphicsModule::CreateScene() {
     glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
     M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.0f), glm::vec3(0, 1, 0));
     cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-    sphereInstances.push_back({ glm::scale(M, glm::vec3(0.45f * baseSphereScale)) });
+   // sphereInstances.push_back({ glm::scale(M, glm::vec3(0.45f * baseSphereScale)) });
     // Сколько сфер получилось (они пойдут первыми и получат uniqueID = [0..numSpheres-1])
     const uint32_t numSpheres = static_cast<uint32_t>(sphereInstances.size());
 

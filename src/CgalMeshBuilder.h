@@ -76,7 +76,7 @@ public:
         const SurfaceMesh& sm,
         std::vector<Vertex>& outLineVerts,
         float inset = 0.02f,
-        float headRel = 0.08f);
+        float headRel = 0.08f,bool draw_border =true);
 
     static void buildHollowCuboid(SurfaceMesh& sm, int N, int M, int L, double cellSize);
 
@@ -84,12 +84,6 @@ public:
                              int nx, int ny, int nz,
                              double cellSize);
     static void splitJunctionVertices(SurfaceMesh &sm);
-    static void extrudeFace(SurfaceMesh &sm, SurfaceMesh::Face_index f_to_extrude, double distance, double scale);
-    //static void extrudeFaces(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
-    //static SurfaceMesh::Face_index extrudeFace_one(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, SurfaceMesh::Property_map<SurfaceMesh::Face_index, std::uint64_t> &f_uid, std::uint64_t &nextUID);
-
-
-
 
     // Экструзия одной грани (добавлен out-результат)
     static SurfaceMesh::Face_index extrudeFace_one(
@@ -108,5 +102,11 @@ public:
         const std::vector<SurfaceMesh::Face_index>& faces,
         double distance,
         double scale);
-    static void extrudeFaces_in_waves(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
+
+    static void cleanup_after_deletions(SurfaceMesh &sm);
+    static SurfaceMesh::Face_index extrudeFace_one_internalOnly(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, ExtrudeLists *out);
+    static void buildPlaneXY(SurfaceMesh &sm, int N, int M, double cellSize);
+    static void buildPlaneOriented(SurfaceMesh &sm, int N, int M, double cellSize, const Point_3 &center, Vector_3 normal);
+    static ExtrudeLists extrudeRegion(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &region_faces, double distance, double scale);
+
 };
