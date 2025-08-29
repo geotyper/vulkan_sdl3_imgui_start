@@ -287,9 +287,9 @@ void GraphicsModule::CreateScene() {
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
     //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 4, /*M*/ 4, /*L*/ 4, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/8, /*M*/8,  /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/5, /*M*/5,  /*cellSize*/ 0.5);
 
-   // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
+   // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/3.0, /*nx*/3, /*ny*/3);
 
     const int N = 2;
     //CgalMeshBuilder::subdivideQuadFacesGrid(sm, N, N);
@@ -329,7 +329,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    CgalMeshBuilder::deleteFaces(sm, toDel, true);
+  //  CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
@@ -363,7 +363,7 @@ void GraphicsModule::CreateScene() {
 
 
     std::vector<Vertex> heLines;
-    CgalMeshBuilder::buildHalfedgeArrows(sm, heLines, /*inset*/0.02f, /*head*/0.08f);
+    CgalMeshBuilder::buildHalfedgeArrows(sm, heLines, /*inset*/0.017f, /*head*/0.08f, false);
 
     face_stats(sm);
     CgalMeshBuilder::triangulateAll(sm);
@@ -468,7 +468,7 @@ void GraphicsModule::CreateScene() {
 
 
     if (m_meshRenderer) {
-        m_meshRenderer->SetMesh(cubeVertices, cubeIndices);
+        //m_meshRenderer->SetMesh(cubeVertices, cubeIndices);
 
         // Пример линий (для топологии/halfedges):
         // std::vector<glm::vec3> dbgLines = ...;
@@ -567,56 +567,59 @@ void GraphicsModule::recordCommandBuffer(uint32_t imageIndex, const Camera& cam)
     VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo), "Failed to begin recording command buffer");
 
-    // --- 1. Execute Ray Tracing ---
-    // This will trace the scene into an internal storage image and then
-    // copy the final result into the swapchain image.
-    // The final barrier in RecordCommands leaves the swapchain image in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
-    m_rtxModule->RecordCommands(
-        cmd,
-        m_swapchainImageViews[imageIndex], // Target view
-        m_swapchainImages[imageIndex],     // Target image
-        m_swapchainExtent
-        );
 
-    // --- 2. Render ImGui on top of the Ray-Traced Image ---
-    // The previous call left the swapchain image in PRESENT_SRC_KHR layout.
-    // The render pass for ImGui requires it to be in COLOR_ATTACHMENT_OPTIMAL.
-    // We must insert a barrier to handle this transition.
+    if(!solverParams.drawPolyMesh)
+    {
+        // --- 1. Execute Ray Tracing ---
+        // This will trace the scene into an internal storage image and then
+        // copy the final result into the swapchain image.
+        // The final barrier in RecordCommands leaves the swapchain image in VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
+        m_rtxModule->RecordCommands(
+            cmd,
+            m_swapchainImageViews[imageIndex], // Target view
+            m_swapchainImages[imageIndex],     // Target image
+            m_swapchainExtent
+            );
 
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    // No need to specify old/new queues if they are the same
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // The last operation was a copy (transfer)
-    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // Next operation is rendering
-    //barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // IMPORTANT: The layout after the rtx copy
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barrier.image = m_swapchainImages[imageIndex];
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+        // --- 2. Render ImGui on top of the Ray-Traced Image ---
+        // The previous call left the swapchain image in PRESENT_SRC_KHR layout.
+        // The render pass for ImGui requires it to be in COLOR_ATTACHMENT_OPTIMAL.
+        // We must insert a barrier to handle this transition.
 
-    vkCmdPipelineBarrier(
-        cmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,           // Wait for the copy to finish
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // Before color output stage
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-        );
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        // No need to specify old/new queues if they are the same
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // The last operation was a copy (transfer)
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT; // Next operation is rendering
+        //barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // IMPORTANT: The layout after the rtx copy
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.image = m_swapchainImages[imageIndex];
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
 
-    // Now, begin the render pass for ImGui
-    VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
-    VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-    renderPassInfo.renderPass = m_renderPass;
-    renderPassInfo.framebuffer = m_framebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = m_swapchainExtent;
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor; // This value is now ignored due to the loadOp change below
+        vkCmdPipelineBarrier(
+            cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,           // Wait for the copy to finish
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // Before color output stage
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier
+            );
+      }
+        // Now, begin the render pass for ImGui
+        VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+        VkRenderPassBeginInfo renderPassInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+        renderPassInfo.renderPass = m_renderPass;
+        renderPassInfo.framebuffer = m_framebuffers[imageIndex];
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = m_swapchainExtent;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor; // This value is now ignored due to the loadOp change below
 
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 

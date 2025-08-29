@@ -17,11 +17,11 @@
 
 namespace S3 = CGAL::Subdivision_method_3;
 namespace PMP = CGAL::Polygon_mesh_processing;
+using SM = SurfaceMesh;
 
-using SM = CGAL::Surface_mesh<CGAL::Exact_predicates_inexact_constructions_kernel::Point_3>;
-using K  = CGAL::Exact_predicates_inexact_constructions_kernel;
-using Point_3  = K::Point_3;
-using Vector_3 = K::Vector_3;
+using V  = SM::Vertex_index;
+using H  = SM::Halfedge_index;
+using F  = SM::Face_index;
 
 namespace {
 inline void remove_isolated_vertices_safe(SurfaceMesh& sm) {
@@ -184,15 +184,6 @@ static inline glm::vec3 to_glm_2(const Point_3& p) {
     return glm::vec3((float)p.x(), (float)p.y(), (float)p.z());
 }
 
-static Point_3 mesh_centroid(const SurfaceMesh& sm) {
-    double x=0, y=0, z=0; std::size_t n=0;
-    for (auto v : sm.vertices()) if (!sm.is_removed(v)) {
-            auto p = sm.point(v); x+=p.x(); y+=p.y(); z+=p.z(); ++n;
-        }
-    if (n==0) return Point_3(0,0,0);
-    const double inv = 1.0 / double(n);
-    return Point_3(x*inv, y*inv, z*inv);
-}
 
 static inline glm::vec3 unit3_2(const glm::vec3& v) {
     float l2 = glm::dot(v,v); return (l2>0.f)? v/std::sqrt(l2) : glm::vec3(0,0,1);
@@ -291,11 +282,165 @@ find_face_by_uid(const SurfaceMesh& sm,
     return SurfaceMesh::null_face();
 }
 
+
+
+
+// ---- helpers: валидность индексов до обращения к свойствам ----
+static inline bool valid_v(const SM& sm, V v){
+    return v != SM::null_vertex()
+    && (std::size_t)v.idx() < sm.number_of_vertices()
+        && !sm.is_removed(v);
+}
+static inline bool valid_f(const SM& sm, F f){
+    return f != SM::null_face()
+    && (std::size_t)f.idx() < sm.number_of_faces()
+        && !sm.is_removed(f);
+}
+static inline bool valid_h(const SM& sm, H h){
+    return h != SM::null_halfedge()
+    && (std::size_t)h.idx() < sm.number_of_halfedges()
+        && !sm.is_removed(h);
+}
+static inline bool valid_e(const SM& sm, SM::Edge_index e){
+    return e != SM::null_edge()
+    && (std::size_t)e.idx() < sm.number_of_edges()
+        && !sm.is_removed(e);
+}
+
+// безопасный доступ к точке вершины (копирует в out, возвращает ok)
+static inline bool get_point_safe(const SM& sm, V v, Point_3& out){
+    if (!valid_v(sm, v)) return false;
+    out = sm.point(v);
+    return true;
+}
+
 // single helper to avoid “ambiguous” overloads
-static inline SM::Halfedge_index hedg(SM& sm, SM::Vertex_index a, SM::Vertex_index b)
+static inline H hedg(SM& sm, V a, V b)
 {
-    auto pr = CGAL::halfedge(a, b, sm);
-    return pr.second ? pr.first : SM::null_halfedge();
+    if (!valid_v(sm,a) || !valid_v(sm,b) || a==b) return SM::null_halfedge();
+    if (sm.halfedge(a) == SM::null_halfedge())     return SM::null_halfedge(); // у a нет исходящих
+    return sm.halfedge(a, b); // безопаснее, чем CGAL::halfedge(a,b,sm)
+}
+
+
+// Если у вершины нет halfedge — проставляем любой граничный вокруг неё.
+// Безопасно вызывать после add_edge(...) / сшивок.
+static inline void fix_vertex_halfedge_safe(SM& sm, V v) {
+    if (!valid_v(sm, v)) return;
+    if (sm.halfedge(v) != SM::null_halfedge()) return;
+
+    // Попытаться выбрать border-halfedge (CGAL сам найдёт, если есть)
+    if (sm.set_vertex_halfedge_to_border_halfedge(v))
+        return;
+
+    // Фоллбэк: найдём любой инцидентный полурёбер и поставим его
+    // (range вокруг target/source может быть пустым, если старт не задан,
+    // поэтому попробуем напрямую через смежные вершины не надо — см. перегрузку ниже).
+    for (H h : CGAL::halfedges_around_target(v, sm)) { sm.set_halfedge(v, h); return; }
+    for (H h : CGAL::halfedges_around_source(v, sm)) { sm.set_halfedge(v, h); return; }
+}
+
+
+static inline void fix_vertex_halfedge_safe(SM& sm, V v, H prefer) {
+    if (!valid_v(sm, v)) return;
+    if (sm.halfedge(v) != SM::null_halfedge()) return;
+
+    if (prefer != SM::null_halfedge()
+        && (sm.source(prefer)==v || sm.target(prefer)==v))
+    { sm.set_halfedge(v, prefer); return; }
+
+    if (sm.set_vertex_halfedge_to_border_halfedge(v)) return;
+
+    for (H h : CGAL::halfedges_around_target(v, sm)) { sm.set_halfedge(v, h); return; }
+    for (H h : CGAL::halfedges_around_source(v, sm)) { sm.set_halfedge(v, h); return; }
+}
+
+
+struct FacePlan {
+    std::uint64_t fuid = 0;
+    std::vector<std::uint64_t> ring_vuid;  // CCW по исходной грани
+    std::vector<char>          wasBorder;  // по каждому ребру (i->i+1) на момент слепка
+};
+
+// ---------- UID инфраструктура ----------
+static inline void ensure_uid_maps_and_assign_all(SM& sm,
+                                                  SM::Property_map<V, std::uint64_t>& vuid,
+                                                  SM::Property_map<F, std::uint64_t>& fuid,
+                                                  std::uint64_t& next_vuid,
+                                                  std::uint64_t& next_fuid)
+{
+    // создать property map'ы, если их нет
+    vuid = sm.add_property_map<V, std::uint64_t>("v:uid64", 0).first;
+    fuid = sm.add_property_map<F, std::uint64_t>("f:uid64", 0).first;
+
+    next_vuid = 1;
+    next_fuid = 1;
+
+    // пронумеруем существующие вершины/грани и найдём next_*
+    for (auto v : sm.vertices()) {
+        auto& u = vuid[v];
+        if (u == 0) u = next_vuid++;
+        else next_vuid = std::max(next_vuid, u + 1);
+    }
+    for (auto f : sm.faces()) {
+        auto& u = fuid[f];
+        if (u == 0) u = next_fuid++;
+        else next_fuid = std::max(next_fuid, u + 1);
+    }
+}
+
+static inline void assign_uid_vertex_new(V v,
+                                         SM::Property_map<V, std::uint64_t>& vuid,
+                                         std::uint64_t& next_vuid)
+{
+    vuid[v] = (next_vuid ? next_vuid++ : 1); // на случай если забыли инициализировать
+}
+
+static inline void assign_uid_face_new(F f,
+                                       SM::Property_map<F, std::uint64_t>& fuid,
+                                       std::uint64_t& next_fuid)
+{
+    fuid[f] = (next_fuid ? next_fuid++ : 1);
+}
+
+// быстрые словари UID→дескриптор
+static inline void rebuild_vertex_uid_map(const SM& sm,
+                                          const SM::Property_map<V, std::uint64_t>& vuid,
+                                          std::unordered_map<std::uint64_t, V>& out)
+{
+    out.clear(); out.reserve(sm.number_of_vertices()*2);
+    for (auto v : sm.vertices()) out[vuid[v]] = v;
+}
+static inline void rebuild_face_uid_map(const SM& sm,
+                                        const SM::Property_map<F, std::uint64_t>& fuid,
+                                        std::unordered_map<std::uint64_t, F>& out)
+{
+    out.clear(); out.reserve(sm.number_of_faces()*2);
+    for (auto f : sm.faces()) out[fuid[f]] = f;
+}
+
+// ---------- геометрия ----------
+static inline Point_3 centroid_points(const std::vector<Point_3>& R){
+    double x=0,y=0,z=0; for (auto& p: R){ x+=p.x(); y+=p.y(); z+=p.z(); }
+    const double inv = (R.empty()? 0.0 : 1.0/double(R.size()));
+    return Point_3(x*inv,y*inv,z*inv);
+}
+static inline Vector_3 newell_normal(const std::vector<Point_3>& P){
+    Vector_3 n(0,0,0); const size_t m=P.size();
+    for (size_t i=0;i<m;++i){
+        const auto& a=P[i]; const auto& b=P[(i+1)%m];
+        n = n + Vector_3( (a.y()-b.y())*(a.z()+b.z()),
+                         (a.z()-b.z())*(a.x()+b.x()),
+                         (a.x()-b.x())*(a.y()+b.y()) );
+    }
+    const double L = std::sqrt(n.squared_length());
+    return (L>1e-12)? n/L : Vector_3(0,0,1);
+}
+static inline Point_3 mesh_centroid(const SM& sm){
+    double x=0,y=0,z=0; std::size_t n=0;
+    for (auto v : sm.vertices()){ const auto& p=sm.point(v); x+=p.x(); y+=p.y(); z+=p.z(); ++n; }
+    if (!n) return Point_3(0,0,0);
+    const double inv = 1.0/double(n); return Point_3(x*inv,y*inv,z*inv);
 }
 
 
@@ -1067,321 +1212,326 @@ static inline void reserve_for_extrusion(
 //                                  baseP[j], baseP[i], topP[i], topP[j]);
 //        }
 //        if (out && last!=SM::null_face()) out->all.push_back(last);
+//    }
+//    return last; // только стены
+//}
 
 
-static Vector_3 newell_normal(const std::vector<Point_3>& P){
-    Vector_3 n(0,0,0);
-    const size_t m = P.size();
-    for(size_t i=0;i<m;++i){
-        const auto& a=P[i]; const auto& b=P[(i+1)%m];
-        n = n + Vector_3( (a.y()-b.y())*(a.z()+b.z()),
-                         (a.z()-b.z())*(a.x()+b.x()),
-                         (a.x()-b.x())*(a.y()+b.y()) );
-    }
-    const double L = std::sqrt(n.squared_length());
-    return (L>1e-12)? n/L : Vector_3(0,0,1);
-}
 
-static Point_3 centroid(const std::vector<Point_3>& R){
-    double x=0,y=0,z=0;
-    for (auto& p:R){ x+=p.x(); y+=p.y(); z+=p.z(); }
-    const double inv = 1.0 / double(R.size());
-    return Point_3(x*inv,y*inv,z*inv);
-}
-
-// устойчивое добавление квада (пробуем перестановки, сохраняя диагональ 0–2)
-template<class Mesh>
-static auto try_add_quad(const std::array<typename Mesh::Vertex_index,4>& ord, Mesh& sm)
-    -> typename Mesh::Face_index
+// ---------- halfedge helpers (safe for fresh vertices) ----------
+static inline H get_or_make_border_h(SM& sm, V u, V v)
 {
-    using V = typename Mesh::Vertex_index;
-    using F = typename Mesh::Face_index;
+    if (!valid_v(sm, u) || !valid_v(sm, v) || u == v)
+        return SM::null_halfedge();
 
-    auto add = [&](const std::array<V,4>& q)->F{
-        auto f = CGAL::Euler::add_face(q, sm);
-        if (f != Mesh::null_face()) return f;
-        // rotate by 2 (не меняем диагональ 0–2)
-        std::array<V,4> r2{ q[2], q[3], q[0], q[1] };
-        f = CGAL::Euler::add_face(r2, sm);
-        return f;
-    };
+    // Быстрый случай: если у любой вершины нет инцидентного halfedge,
+    // ребра точно нет — создаём.
+    if (sm.halfedge(u) == SM::null_halfedge() || sm.halfedge(v) == SM::null_halfedge()) {
+        H hnew = sm.add_edge(u, v);    // создаст два border halfedge'а
+        fix_vertex_halfedge_safe(sm, u);
+        fix_vertex_halfedge_safe(sm, v);
+        return hnew;
+    }
 
-    if (auto f = add(ord); f != Mesh::null_face()) return f;
+    // Ищем существующее ребро ЧЕРЕЗ ЧЛЕН класса (без CGAL::halfedge!)
+    H h = sm.halfedge(u, v);
+    if (h != SM::null_halfedge()) {
+        if (sm.face(h) == SM::null_face()) return h;          // свободна сторона u->v
+        H ho = sm.opposite(h);
+        if (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face()) return ho; // свободна v->u
+        return SM::null_halfedge(); // обе стороны заняты
+    }
 
-    // попробовать «перевёрнутый» порядок (диагональ та же)
-    std::array<V,4> alt{ ord[2], ord[1], ord[0], ord[3] };
-    if (auto f = add(alt); f != Mesh::null_face()) return f;
-
-    return Mesh::null_face();
+    // Ребра нет — создаём
+    H hnew = sm.add_edge(u, v);
+    fix_vertex_halfedge_safe(sm, u);
+    fix_vertex_halfedge_safe(sm, v);
+    return hnew;
 }
 
-// ориентация квада по вектору «из центра наружу»
-static auto add_wall_oriented(
+// Найти halfedge u->v без использования sm.halfedge(u) / sm.halfedge(u,v).
+static inline H find_halfedge_uv_scan(SM& sm, V u, V v) {
+    if (!valid_v(sm,u) || !valid_v(sm,v) || u==v) return SM::null_halfedge();
+    for (H h : sm.halfedges()) {
+        if (sm.is_removed(h)) continue;
+        if (source(h, sm) == u && target(h, sm) == v) return h;
+    }
+    return SM::null_halfedge();
+}
+
+// Безопасная версия "дать бордерный полурёбер u->v, иначе создать ребро".
+static inline H get_or_make_border_h_safe(SM& sm, V u, V v) {
+    if (!valid_v(sm,u) || !valid_v(sm,v) || u==v) return SM::null_halfedge();
+
+    // 1) Пытаемся найти существующее ребро сканированием
+    if (H h = find_halfedge_uv_scan(sm, u, v); h != SM::null_halfedge()) {
+        if (sm.face(h) == SM::null_face()) return h;                 // свободна сторона u->v
+        H ho = sm.opposite(h);
+        if (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face()) return ho; // v->u свободна
+        return SM::null_halfedge();                                   // обе стороны заняты
+    }
+    if (H h = find_halfedge_uv_scan(sm, v, u); h != SM::null_halfedge()) {
+        if (sm.face(h) == SM::null_face()) return h;                 // уже есть v->u, но свободна
+        H ho = sm.opposite(h);
+        if (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face()) return ho; // обратная свободна
+        return SM::null_halfedge();
+    }
+
+    // 2) Ребра нет — создаём (вернётся u->v)
+    H hnew = sm.add_edge(u, v);
+    // Сразу проставим опорные halfedge'ы вершинам, чтобы не было "пустых" указателей
+    fix_vertex_halfedge_safe(sm, u, hnew);
+    fix_vertex_halfedge_safe(sm, v, sm.opposite(hnew));
+    return hnew;
+}
+
+// Упрощённая замена для "hedg": получить halfedge u->v, если существует (сканированием)
+static inline H hedg_safe(SM& sm, V u, V v) {
+    return find_halfedge_uv_scan(sm, u, v);
+}
+
+static inline F attach_face_from_ring4(SM& sm, H h0, H h1, H h2, H h3){
+    H ring[4] = {h0,h1,h2,h3};
+    for (int i=0;i<4;++i){
+        if (ring[i]==SM::null_halfedge()) return SM::null_face();
+        if (sm.face(ring[i]) != SM::null_face()) return SM::null_face();
+        if (sm.target(ring[i]) != sm.source(ring[(i+1)&3])) return SM::null_face();
+    }
+    F nf = sm.add_face(); if (nf == SM::null_face()) return nf;
+    for (int i=0;i<4;++i){
+        sm.set_face(ring[i], nf);
+        sm.set_next(ring[i], ring[(i+1)&3]);
+    }
+    sm.set_halfedge(nf, ring[0]);
+    return nf;
+}
+
+
+// ========== ПОДГОТОВКА СЕРИИ: слепок по UID ==========
+static inline void build_face_plans_snapshot(
     SM& sm,
-    const Point_3& C,
-    SM::Vertex_index a, SM::Vertex_index b,
-    SM::Vertex_index tb,SM::Vertex_index ta,
-    const Point_3& A,const Point_3& B,
-    const Point_3& TB,const Point_3& TA) -> SM::Face_index
+    const std::vector<F>& faces_in,
+    const SM::Property_map<V,std::uint64_t>& vuid,
+    const SM::Property_map<F,std::uint64_t>& fuid,
+    std::vector<FacePlan>& outPlans)
 {
-    auto newell_quad = [&](const Point_3& A, const Point_3& B,
-                           const Point_3& TB,const Point_3& TA){
-        Vector_3 nrm(0,0,0);
-        auto add = [&](const Point_3& P, const Point_3& Q){
-            nrm = nrm + Vector_3( (P.y()-Q.y())*(P.z()+Q.z()),
-                                 (P.z()-Q.z())*(P.x()+Q.x()),
-                                 (P.x()-Q.x())*(P.y()+Q.y()) );
-        };
-        add(A,B); add(B,TB); add(TB,TA); add(TA,A);
-        return nrm;
-    };
+    outPlans.clear(); outPlans.reserve(faces_in.size());
 
-    Point_3 mid((A.x()+B.x())*0.5, (A.y()+B.y())*0.5, (A.z()+B.z())*0.5);
-    Vector_3 radial(mid.x()-C.x(), mid.y()-C.y(), mid.z()-C.z());
-    Vector_3 n_c = newell_quad(A,B,TB,TA);
+    for (F f : faces_in){
+        if (f == SM::null_face() || sm.is_removed(f)) continue;
 
-    // два варианта порядка, сохраняющие диагональ (a–tb)
-    std::array<SM::Vertex_index,4> order1{ a, b, tb, ta };
-    std::array<SM::Vertex_index,4> order2{ tb, ta, a, b };
+        // кольцо CCW
+        std::vector<std::uint64_t> ring_v;
+        std::vector<char>           wasBorder;
 
-    // выбираем тот, чья нормаль смотрит «вовне»
-    auto pick = (CGAL::scalar_product(n_c, radial) < 0) ? order2 : order1;
-    auto f = try_add_quad<SM>(pick, sm);
-    if (f == SM::null_face()) {
-        // запасной шанс — другой порядок
-        f = try_add_quad<SM>((pick==order1)?order2:order1, sm);
-    }
-    return f;
-}
-SM::Face_index CgalMeshBuilder::extrude_face_like_ts(
-    SM& sm, SM::Face_index f,
-    double distExtrude, double amountExtrude,
-    ExtrudeLists* out /*nullable*/ )
-{
-    using V = SM::Vertex_index;
-    using H = SM::Halfedge_index;
-    using F = SM::Face_index;
-
-    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
-    if (out) { out->all.clear(); out->caps.clear(); }
-
-    // ---------- Утилиты ----------
-    auto centroid = [](const std::vector<Point_3>& R)->Point_3{
-        double x=0,y=0,z=0; for (auto& p: R){ x+=p.x(); y+=p.y(); z+=p.z(); }
-        const double inv = 1.0 / double(R.size());
-        return Point_3(x*inv,y*inv,z*inv);
-    };
-    auto newell_normal = [](const std::vector<Point_3>& P)->Vector_3{
-        Vector_3 n(0,0,0);
-        const size_t m = P.size();
-        for (size_t i=0;i<m;++i){
-            const auto& a=P[i]; const auto& b=P[(i+1)%m];
-            n = n + Vector_3( (a.y()-b.y())*(a.z()+b.z()),
-                             (a.z()-b.z())*(a.x()+b.x()),
-                             (a.x()-b.x())*(a.y()+b.y()) );
-        }
-        const double L = std::sqrt(n.squared_length());
-        return (L>1e-12)? n/L : Vector_3(0,0,1);
-    };
-    auto newell_quad = [&](const Point_3& A,const Point_3& B,
-                           const Point_3& C,const Point_3& D)->Vector_3{
-        Vector_3 nrm(0,0,0);
-        auto add = [&](const Point_3& P, const Point_3& Q){
-            nrm = nrm + Vector_3( (P.y()-Q.y())*(P.z()+Q.z()),
-                                 (P.z()-Q.z())*(P.x()+Q.x()),
-                                 (P.x()-Q.x())*(P.y()+Q.y()) );
-        };
-        add(A,B); add(B,C); add(C,D); add(D,A);
-        return nrm;
-    };
-    auto try_add_quad = [&](const std::array<V,4>& ord)->F{
-        auto add = [&](const std::array<V,4>& q)->F{
-            auto ff = CGAL::Euler::add_face(q, sm);
-            if (ff != SM::null_face()) return ff;
-            // поворот на 2 (диагональ сохраняется)
-            std::array<V,4> r2{ q[2], q[3], q[0], q[1] };
-            return CGAL::Euler::add_face(r2, sm);
-        };
-        if (auto f1 = add(ord); f1 != SM::null_face()) return f1;
-        // альтернативная диагональ, но тот же нижний ребро (см. вызовы ниже)
-        std::array<V,4> alt{ ord[0], ord[1], ord[3], ord[2] };
-        return add(alt);
-    };
-    // добавить стену, сохраняя конкретную ориентацию нижнего ребра (p->q)
-    auto add_wall_with_fixed_bottom =
-        [&](const Point_3& C,
-            V p, V q, V tq, V tp,
-            const Point_3& P,const Point_3& Q,const Point_3& TQ,const Point_3& TP)->F
-    {
-        // две последовательности, обе сохраняют нижнее ребро (p->q)
-        std::array<V,4> ord1{ p, q, tq, tp }; // диагональ (q--tp)
-        std::array<V,4> ord2{ p, q, tp, tq }; // диагональ (q--tq)
-
-        // выберем ту, чья нормаль ближе "наружу" относительно центра грани
-        Point_3 mid( (P.x()+Q.x())*0.5, (P.y()+Q.y())*0.5, (P.z()+Q.z())*0.5 );
-        Vector_3 radial( mid.x()-C.x(), mid.y()-C.y(), mid.z()-C.z() );
-
-        Vector_3 n1 = newell_quad(P,Q,TQ,TP);
-        Vector_3 n2 = newell_quad(P,Q,TP,TQ);
-
-        const double d1 = CGAL::to_double( CGAL::scalar_product(n1, radial) );
-        const double d2 = CGAL::to_double( CGAL::scalar_product(n2, radial) );
-
-        const auto& pick = (d1 >= d2) ? ord1 : ord2;
-        auto fwall = try_add_quad(pick);
-        if (fwall == SM::null_face()){
-            // ещё шанс — вторая последовательность
-            fwall = try_add_quad((pick==ord1)?ord2:ord1);
-        }
-        return fwall;
-    };
-
-    // ---------- 1) Периметр исходной грани (до модификаций) ----------
-    std::vector<V> base;          base.reserve(8);
-    std::vector<Point_3> baseP;   baseP.reserve(8);
-    std::vector<H> ringH;         ringH.reserve(8);
-
-    {
         H h0 = sm.halfedge(f);
-        if (h0 == SM::null_halfedge()) return SM::null_face();
+        if (h0 == SM::null_halfedge()) continue;
         H h = h0;
 
         std::unordered_set<V> seen;
         do{
-            V v = source(h, sm); // ориентировано по грани
-            if (v==SM::null_vertex() || sm.is_removed(h) || sm.is_removed(v))
-                return SM::null_face();
-            if (!seen.insert(v).second) return SM::null_face(); // не простой цикл
+            V v = source(h, sm);
+            if (v==SM::null_vertex() || sm.is_removed(v) || sm.is_removed(h)) { ring_v.clear(); break; }
+            if (!seen.insert(v).second) { ring_v.clear(); break; } // не простой цикл
 
-            base.push_back(v);
-            baseP.push_back(sm.point(v));
-            ringH.push_back(h);
+            ring_v.push_back( vuid[v] );
+            bool is_border_initial = ( face(opposite(h, sm), sm) == SM::null_face() );
+            wasBorder.push_back( is_border_initial ? 1 : 0 );
+
             h = next(h, sm);
         } while(h != h0);
 
-        if (base.size() < 3) return SM::null_face();
+        if (ring_v.size() < 3) continue;
+
+        FacePlan fp;
+        fp.fuid      = fuid[f];
+        fp.ring_vuid = std::move(ring_v);
+        fp.wasBorder = std::move(wasBorder);
+        outPlans.push_back(std::move(fp));
     }
-    const size_t k = base.size();
-
-    // ---------- 2) Геометрия верхнего кольца ----------
-    const Point_3  c     = centroid(baseP);
-    const Vector_3 n_dir = newell_normal(baseP);
-    const Point_3  newCenter( c.x()+n_dir.x()*distExtrude,
-                            c.y()+n_dir.y()*distExtrude,
-                            c.z()+n_dir.z()*distExtrude );
-
-    std::vector<V> top(k);
-    std::vector<Point_3> topP(k);
-    for (size_t i=0;i<k;++i){
-        Vector_3 disp( baseP[i].x()-c.x(),
-                      baseP[i].y()-c.y(),
-                      baseP[i].z()-c.z() );
-        Point_3 Ptop( newCenter.x() + amountExtrude*disp.x(),
-                     newCenter.y() + amountExtrude*disp.y(),
-                     newCenter.z() + amountExtrude*disp.z() );
-        top[i]  = sm.add_vertex(Ptop);
-        topP[i] = Ptop;
-    }
-
-    // ---------- 3) Фаза А: стены на ИЗНАЧАЛЬНЫХ бордер-рёбрах, без удаления грани ----------
-    std::vector<char> wasBorder(k, 0);
-    F last = SM::null_face();
-
-    for (size_t i=0;i<k; ++i){
-        const size_t j = (i+1)%k;
-        H h = ringH[i];
-        bool is_border_initial = ( face(opposite(h, sm), sm) == SM::null_face() );
-        wasBorder[i] = is_border_initial ? 1 : 0;
-        if (!is_border_initial) continue;
-
-        // На бордере доступен нижний halfedge в ориентации (base[j] -> base[i])  (opposite(h))
-        // Значит нижнее ребро для стены должно быть (b->a).
-        V a = base[i], b = base[j];
-        F fw = add_wall_with_fixed_bottom(
-            c,
-            /*p*/ b, /*q*/ a, /*tq*/ top[i], /*tp*/ top[j],
-            /*P*/ baseP[j],  /*Q*/ baseP[i], /*TQ*/ topP[i], /*TP*/ topP[j]);
-
-        if (fw != SM::null_face()){
-            if (out) out->all.push_back(fw);
-            last = fw;
-        }
-    }
-
-    // ---------- 4) Теперь удаляем грань и достраиваем оставшиеся стены ----------
-    // После удаления все остальные ребра грани станут бордером с ориентацией (base[i] -> base[j]).
-    H hf = ringH.front();
-    CGAL::Euler::remove_face(hf, sm); // безопасен даже если часть рёбер была бордером
-    f = SM::null_face(); // больше не использовать
-
-    for (size_t i=0;i<k; ++i){
-        if (wasBorder[i]) continue; // уже построили на Phase A
-        const size_t j = (i+1)%k;
-
-        V a = base[i], b = base[j];
-        F fw = add_wall_with_fixed_bottom(
-            c,
-            /*p*/ a, /*q*/ b, /*tq*/ top[j], /*tp*/ top[i],
-            /*P*/ baseP[i],  /*Q*/ baseP[j], /*TQ*/ topP[j], /*TP*/ topP[i]);
-
-        if (fw != SM::null_face()){
-            if (out) out->all.push_back(fw);
-            last = fw;
-        } else {
-            // fallback (вряд ли понадобится, но пусть будет)
-            std::array<V,4> ord{ a, b, top[j], top[i] };
-            F fb = try_add_quad(ord);
-            if (fb != SM::null_face()){
-                if (out) out->all.push_back(fb);
-                last = fb;
-            }
-        }
-    }
-
-    // ---------- 5) Верхняя крышка ----------
-    if (k >= 3){
-        Vector_3 n_top = newell_normal(topP);
-        bool flip = (CGAL::scalar_product(n_top, n_dir) < 0);
-
-        std::vector<V> cap; cap.reserve(k);
-        if (!flip) for (size_t i=0;i<k;++i) cap.push_back(top[i]);
-        else       for (size_t i=0;i<k;++i) cap.push_back(top[(k-i)%k]);
-
-        F fcap = CGAL::Euler::add_face(cap, sm);
-        if (fcap == SM::null_face()){
-            std::reverse(cap.begin(), cap.end());
-            fcap = CGAL::Euler::add_face(cap, sm);
-        }
-        if (fcap != SM::null_face()){
-            if (out){ out->all.push_back(fcap); out->caps.push_back(fcap); }
-            last = fcap;
-        }
-    }
-
-    // ВНИМАНИЕ: не зови collect_garbage() здесь; сделай это после серии операций, снаружи.
-    return last;
 }
 
+// ========= САМА ЭКСТРУЗИЯ ОДНОЙ ГРАНИ ПО СЛЕПКУ (Только текущие border-стены, без ringH) =========
+static inline F extrude_face_from_plan_uid(
+    SM& sm,
+    const FacePlan& plan,
+    double distExtrude, double amountExtrude,
+    const Point_3& meshC,
+    SM::Property_map<V,std::uint64_t>& vuid,
+    SM::Property_map<F,std::uint64_t>& /*fuid*/,
+    std::uint64_t& next_vuid, std::uint64_t& /*next_fuid*/,
+    std::unordered_map<std::uint64_t,V>& vByUid,
+    std::unordered_map<std::uint64_t,F>& fByUid,
+    ExtrudeLists* out // nullable
+    ){
+    // 0) валидная грань по UID
+    auto itF = fByUid.find(plan.fuid);
+    if (itF == fByUid.end()) return SM::null_face();
+    F f = itF->second;
+    if (!valid_f(sm, f)) return SM::null_face();
+
+    const size_t k = plan.ring_vuid.size();
+    if (k < 3) return SM::null_face();
+
+    // 1) базовое кольцо по UID (+координаты)
+    std::vector<V> base(k);
+    std::vector<Point_3> baseP(k);
+    for (size_t i=0;i<k;++i){
+        auto it = vByUid.find(plan.ring_vuid[i]);
+        if (it == vByUid.end()) return SM::null_face();
+        base[i] = it->second;
+        if (!get_point_safe(sm, base[i], baseP[i])) return SM::null_face();
+    }
+
+    // 2) верхние вершины (смещение наружу и масштаб от центра грани)
+    const Point_3  c = centroid_points(baseP);
+    Vector_3       n = newell_normal(baseP);
+    if (CGAL::scalar_product(n, Vector_3(c.x()-meshC.x(), c.y()-meshC.y(), c.z()-meshC.z())) < 0) n = -n;
+
+    const Point_3 cc( c.x()+n.x()*distExtrude,
+                     c.y()+n.y()*distExtrude,
+                     c.z()+n.z()*distExtrude );
+
+    std::vector<V> top(k);
+    for (size_t i=0;i<k;++i){
+        const Vector_3 d( baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z() );
+        const Point_3  pt( cc.x()+amountExtrude*d.x(),
+                         cc.y()+amountExtrude*d.y(),
+                         cc.z()+amountExtrude*d.z() );
+        V tv = sm.add_vertex(pt);
+        if (!valid_v(sm, tv)) return SM::null_face();
+        assign_uid_vertex_new(tv, vuid, next_vuid);
+        vByUid[vuid[tv]] = tv;
+        top[i] = tv;
+    }
+
+    // 3) только border-ребра СЕЙЧАС (не доверяем ни ringH, ни старому wasBorder)
+    F last = SM::null_face();
+    for (size_t i=0;i<k;++i){
+        const size_t j = (i+1)%k;
+
+        V a = base[i], b = base[j];
+        if (!valid_v(sm,a) || !valid_v(sm,b)) continue;
+
+        // для border-стены нужен низ b->a именно как border halfedge
+        H h_ba = hedg_safe(sm, b, a);
+        if (!valid_h(sm, h_ba) || sm.face(h_ba) != SM::null_face()) /*continue/return*/;
+
+        // было:
+        // H h_a_ta = get_or_make_border_h(sm, a, top[i]);
+        // стало:
+        H h_a_ta  = get_or_make_border_h_safe(sm, a, top[i]);
+        H h_ta_tb = get_or_make_border_h_safe(sm, top[i], top[j]);
+        H h_tb_b  = get_or_make_border_h_safe(sm, top[j], b);
+        if (!valid_h(sm,h_a_ta) || !valid_h(sm,h_ta_tb) || !valid_h(sm,h_tb_b)) continue;
+
+        F fw = attach_face_from_ring4(sm, h_ba, h_a_ta, h_ta_tb, h_tb_b);
+        if (fw != SM::null_face()){
+            fix_vertex_halfedge_safe(sm, a);
+            fix_vertex_halfedge_safe(sm, b);
+            fix_vertex_halfedge_safe(sm, top[i]);
+            fix_vertex_halfedge_safe(sm, top[j]);
+            if (out) out->all.push_back(fw);
+            last = fw;
+        }
+    }
+
+    return last; // только последняя стена (если нужна — можешь не использовать)
+}
+
+
+
+// ======= ПУБЛИЧНЫЕ МЕТОДЫ BUILDER’A =======
+
+// Экструзия ОДНОЙ грани по текущему f, с UID/halfedge-сшивкой.
+// (обёртка: строит FacePlan на лету, полезно для единичного вызова)
+SurfaceMesh::Face_index CgalMeshBuilder::extrude_face_like_ts(
+    SM& sm, F f,
+    double distExtrude, double amountExtrude,
+    ExtrudeLists* out /*nullable*/)
+{
+    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
+    if (out) { out->all.clear(); out->caps.clear(); }
+
+    // 1) UID-карты и счётчики (создадутся, если их ещё нет).
+    SM::Property_map<V, std::uint64_t> vuid;
+    SM::Property_map<F, std::uint64_t> fuid;
+    std::uint64_t next_vuid = 0, next_fuid = 0;
+    ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
+
+    // 2) Снимок только для этой грани (фиксируем кольцо вершин по UID и флаги wasBorder).
+    std::vector<FacePlan> plans;
+    build_face_plans_snapshot(sm, std::vector<F>{f}, vuid, fuid, plans);
+    if (plans.empty()) return SM::null_face();
+
+    // 3) Текущие словари UID→дескриптор.
+    std::unordered_map<std::uint64_t, V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
+    std::unordered_map<std::uint64_t, F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
+
+    // 4) Центр всей сетки — чтобы направлять экструзию «наружу».
+    const Point_3 MC = mesh_centroid(sm);
+
+    // 5) Собственно экструзия по слепку (строит стены через halfedge’ы, создаёт крышку).
+    return extrude_face_from_plan_uid(
+        sm,
+        plans.front(),
+        distExtrude, amountExtrude,
+        MC,
+        vuid, fuid, next_vuid, next_fuid,
+        vByUid, fByUid,
+        out);
+}
+
+// Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
+// затем экструзим по нему каждую грань — порядок меньше влияет.
 ExtrudeLists CgalMeshBuilder::extrudeFaces_collectBoth(
-    SurfaceMesh& sm,
-    const std::vector<SurfaceMesh::Face_index>& faces,
+    SM& sm,
+    const std::vector<F>& faces,
     double distance,
     double scale)
 {
-    sm.collect_garbage(); // один раз до модификаций
-
-    std::vector<SurfaceMesh::Face_index> todo;
-    todo.reserve(faces.size());
+    // соберём валидные дескрипторы (без collect_garbage здесь!)
+    std::vector<F> todo; todo.reserve(faces.size());
     for (auto f : faces)
-        if (f != SurfaceMesh::null_face() && !sm.is_removed(f))
+        if (f != SM::null_face() && !sm.is_removed(f))
             todo.push_back(f);
 
     ExtrudeLists out;
     out.all.reserve(todo.size()*5);
 
-    for (auto f : todo)
-        extrude_face_like_ts(sm, f, distance, scale, &out);
+    // UID карты и next_*
+    SM::Property_map<V,std::uint64_t> vuid;
+    SM::Property_map<F,std::uint64_t> fuid;
+    std::uint64_t next_vuid=0, next_fuid=0;
+    ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
 
+    // общий слепок
+    std::vector<FacePlan> plans;
+    build_face_plans_snapshot(sm, todo, vuid, fuid, plans);
+    if (plans.empty()) return out;
+
+    // словари UID→дескриптор
+    std::unordered_map<std::uint64_t,V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
+    std::unordered_map<std::uint64_t,F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
+
+    const Point_3 MC = mesh_centroid(sm);
+
+    for (const FacePlan& p : plans){
+        (void)extrude_face_from_plan_uid(
+            sm, p, distance, scale, MC,
+            vuid, fuid, next_vuid, next_fuid,
+            vByUid, fByUid, &out);
+
+        // после модификаций дешево обновим только vertex-словарь
+        // (новые вершины появились — их UID уже занесён в vuid)
+        rebuild_vertex_uid_map(sm, vuid, vByUid);
+        // face-словарь мы обновляли внутри (удаляли базовую грань), но
+        // для корректности пересоберём и его (быстро для средних сеток):
+        rebuild_face_uid_map(sm, fuid, fByUid);
+    }
+
+    // НИКАКОГО collect_garbage здесь — иначе вернувшиеся дескрипторы в out
+    // могут инвалидироваться в вызывающем коде.
     return out;
 }
 
@@ -2148,96 +2298,150 @@ static inline void draw_halfedge_arrow(
     push(B2, Rgt);
 }
 
+static inline void draw_halfedge_arrow_inset(
+    const SurfaceMesh& sm,
+    SurfaceMesh::Halfedge_index h,
+    const glm::vec3& faceN,          // нормаль грани
+    const glm::vec3& faceCenter,     // центр грани (в мировых координатах)
+    const glm::vec3& col,
+    float insetRel,                  // 0..1 — доля длины ребра
+    float headRel,                   // 0..1 — доля длины ребра
+    std::vector<Vertex>& out)
+{
+    using H = SurfaceMesh::Halfedge_index;
+    if (h == SurfaceMesh::null_halfedge()) return;
+
+    auto va = source(h, sm);
+    auto vb = target(h, sm);
+    if (va == SurfaceMesh::null_vertex() || vb == SurfaceMesh::null_vertex()) return;
+
+    glm::vec3 A = to_glm3(sm.point(va));
+    glm::vec3 B = to_glm3(sm.point(vb));
+    glm::vec3 C = faceCenter;
+
+    glm::vec3 dir  = safe_norm(B - A);                  // вдоль ребра
+    glm::vec3 side = safe_norm(glm::cross(faceN, dir)); // в плоскости грани, перпендикул. ребру
+
+    // «внутрь» — туда, где центр грани
+    glm::vec3 M      = 0.5f * (A + B);
+    float     signIn = glm::dot(safe_norm(C - M), side) >= 0.f ? 1.f : -1.f;
+
+    float L         = glm::length(B - A);
+    float insetAbs  = insetRel * L;
+    glm::vec3 shift = side * signIn * insetAbs;
+
+    // немного укорачиваем, чтобы не прилипать к вершинам
+    glm::vec3 A2 = glm::mix(A, B, 0.15f) + shift;
+    glm::vec3 B2 = glm::mix(A, B, 0.85f) + shift;
+
+    auto push = [&](const glm::vec3& P, const glm::vec3& Q){
+        out.push_back({ glm::vec4(P,1), glm::vec4(faceN,0), glm::vec4(col,1) });
+        out.push_back({ glm::vec4(Q,1), glm::vec4(faceN,0), glm::vec4(col,1) });
+    };
+
+    // ствол
+    push(A2, B2);
+
+    // наконечник
+    float hl   = std::min(L*0.25f, L*headRel);
+    glm::vec3 base = B2 - dir * hl;
+    glm::vec3 Lft  = base + side * (0.6f*hl) * signIn;
+    glm::vec3 Rgt  = base - side * (0.6f*hl) * signIn;
+    push(B2, Lft);
+    push(B2, Rgt);
+}
+
+
 void CgalMeshBuilder::buildHalfedgeArrows(
     const SurfaceMesh& sm,
     std::vector<Vertex>& outLineVerts,
-    float inset,
-    float headRel,
-    bool draw_border /* = true */)
+    float inset, float headRel, bool draw_border)
 {
     outLineVerts.clear();
 
-    // --- 1) по всем граням (как у вас) ---
-    uint32_t fid = 0;
-    auto fuid_opt = sm.property_map<SurfaceMesh::Face_index, std::uint64_t>("f:uid");
+    // --- 1) по всем граням ---
     for (auto f : sm.faces()) {
-        if (sm.is_removed(f)) { ++fid; continue; }
+        if (sm.is_removed(f)) continue;
 
-        // нормаль и цвет грани
+        // собрать кольцо, центр и нормаль (Newell вокруг центра)
         std::vector<SurfaceMesh::Vertex_index> ring;
-        auto h0 = sm.halfedge(f), h = h0;
-        do { ring.push_back(target(h, sm)); h = next(h, sm); } while (h != h0);
-        if (ring.size() < 3) { ++fid; continue; }
+        auto h0 = sm.halfedge(f); if (h0 == SurfaceMesh::null_halfedge()) continue;
+        auto h = h0;
 
-        // Newell normal
-        Point_3 C(0,0,0); for (auto v : ring){ const auto& p=sm.point(v);
-            C = Point_3(C.x()+p.x(), C.y()+p.y(), C.z()+p.z()); }
-        C = Point_3(C.x()/ring.size(), C.y()/ring.size(), C.z()/ring.size());
+        Point_3 C(0,0,0); size_t cnt=0;
+        do {
+            auto v = target(h, sm);
+            ring.push_back(v);
+            const auto& p = sm.point(v);
+            C = Point_3(C.x()+p.x(), C.y()+p.y(), C.z()+p.z());
+            ++cnt; h = next(h, sm);
+        } while (h != h0);
+        if (cnt < 3) continue;
+        C = Point_3(C.x()/cnt, C.y()/cnt, C.z()/cnt);
 
-        Vector_3 nCG(0,0,0);
+        Vector_3 Nsum(0,0,0);
         for (size_t i=0;i<ring.size();++i){
             const auto& pi = sm.point(ring[i]);
             const auto& pj = sm.point(ring[(i+1)%ring.size()]);
-            nCG = nCG + CGAL::cross_product(pj - C, pi - C);
+            Nsum = Nsum + CGAL::cross_product(pj - C, pi - C);
         }
-        glm::vec3 N   = safe_norm(to_glm3(nCG));
-        //glm::vec3 col = face_color(fid++);
-        uint64_t seed = fuid_opt ? (*fuid_opt)[f] : fid;
+        glm::vec3 N  = safe_norm(to_glm3(Nsum));
+        glm::vec3 Cg = to_glm3(C);
 
-        // стрелки вдоль halfedge грани
+        // стойкий seed: индекс грани
+        uint64_t seed = static_cast<uint64_t>(std::size_t(f));
+
+        // стрелки для halfedge’ов этой грани — смещаем к её центру
         h = h0;
         do {
-            glm::vec3 col = pick_color(/*is_border=*/false, seed);
-            draw_halfedge_arrow(sm, h, N, col, inset, headRel, outLineVerts);
+            glm::vec3 col = pick_color(false, seed);
+            draw_halfedge_arrow_inset(sm, h, N, Cg, col, inset, headRel, outLineVerts);
             h = next(h, sm);
         } while (h != h0);
     }
 
     if (!draw_border) return;
 
-    // --- 2) дополнительно: по граничным рёбрам отверстий ---
-    // рисуем ОДНУ стрелку на каждое граничное ребро, ориентированную вдоль border halfedge
+    // --- 2) для граничных рёбер — смещаем к центру соседней (внутренней) грани ---
     for (auto e : sm.edges()) {
-        auto h  = halfedge(e, sm);
+        auto h  = halfedge(e, sm); if (h == SurfaceMesh::null_halfedge()) continue;
         auto ho = opposite(h, sm);
 
         SurfaceMesh::Halfedge_index hb = SurfaceMesh::null_halfedge();
-        SurfaceMesh::Halfedge_index hi = SurfaceMesh::null_halfedge(); // внутренний (у которого есть face)
+        SurfaceMesh::Halfedge_index hi = SurfaceMesh::null_halfedge();
 
-        if (CGAL::is_border(h, sm) && !CGAL::is_border(ho, sm)) { hb = h;  hi = ho; }
+        if (CGAL::is_border(h, sm)  && !CGAL::is_border(ho, sm)) { hb = h;  hi = ho; }
         else if (CGAL::is_border(ho, sm) && !CGAL::is_border(h, sm)) { hb = ho; hi = h; }
-        else continue; // не граница (две стороны имеют грани)
+        else continue;
 
-        // нормаль берём из соседней (не border) грани, чтобы смещать «внутрь» полости
-        glm::vec3 N = glm::vec3(0,0,1);
-        {
-            // вычислим нормаль как у face(hi)
-            std::vector<SurfaceMesh::Vertex_index> ring;
-            auto hf = sm.halfedge(face(hi, sm));
-            auto t  = hf;
-            Point_3 C(0,0,0);
-            size_t  cnt=0;
-            do { auto v = target(t, sm); ring.push_back(v);
-                const auto& p=sm.point(v);
-                C = Point_3(C.x()+p.x(), C.y()+p.y(), C.z()+p.z());
-                ++cnt; t = next(t, sm);
-            } while (t != hf);
-            C = Point_3(C.x()/cnt, C.y()/cnt, C.z()/cnt);
+        auto ff = face(hi, sm); if (ff == SurfaceMesh::null_face()) continue;
 
-            Vector_3 nCG(0,0,0);
-            for (size_t i=0;i<ring.size();++i){
-                const auto& pi = sm.point(ring[i]);
-                const auto& pj = sm.point(ring[(i+1)%ring.size()]);
-                nCG = nCG + CGAL::cross_product(pj - C, pi - C);
-            }
-            N = safe_norm(to_glm3(nCG));
-        }
+        // центр + нормаль внутренней грани
+        auto hf = sm.halfedge(ff);
+        auto t  = hf;
+        Point_3 C(0,0,0); size_t cnt=0;
+        do { auto v = target(t, sm); const auto& p=sm.point(v);
+            C = Point_3(C.x()+p.x(), C.y()+p.y(), C.z()+p.z());
+            ++cnt; t = next(t, sm);
+        } while (t != hf);
+        C = Point_3(C.x()/cnt, C.y()/cnt, C.z()/cnt);
 
-        glm::vec3 col = pick_color(/*is_border=*/true, /*seed*/0);
-        draw_halfedge_arrow(sm, hb, N, col, inset, headRel, outLineVerts);
+        Vector_3 Nsum(0,0,0);
+        t = hf;
+        do {
+            auto vi = target(t, sm);
+            auto vj = target(next(t, sm), sm);
+            Nsum = Nsum + CGAL::cross_product(sm.point(vj) - C, sm.point(vi) - C);
+            t = next(t, sm);
+        } while (t != hf);
+
+        glm::vec3 N  = safe_norm(to_glm3(Nsum));
+        glm::vec3 Cg = to_glm3(C);
+
+        glm::vec3 col = pick_color(true, 0);
+        draw_halfedge_arrow_inset(sm, hb, N, Cg, col, inset, headRel, outLineVerts);
     }
 }
-
 
 
 // CgalMeshBuilder.cpp  (add implementation)

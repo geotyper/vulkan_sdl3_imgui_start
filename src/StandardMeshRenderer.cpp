@@ -291,7 +291,7 @@ void StandardMeshRenderer::Draw(VkCommandBuffer cmd, VkExtent2D extent) const
     viewport.x = 0.0f; viewport.y = 0.0f;
     viewport.width  = static_cast<float>(extent.width);
     viewport.height = static_cast<float>(extent.height);
-    viewport.minDepth = 0.0001f;
+    viewport.minDepth = 0.000001f;
     viewport.maxDepth = 15.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
