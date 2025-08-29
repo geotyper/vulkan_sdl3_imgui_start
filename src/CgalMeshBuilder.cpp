@@ -1386,7 +1386,36 @@ static inline H get_or_make_border_h_uv(SM& sm, V u, V v) {
     return SM::null_halfedge();                   // обе стороны заняты
 }
 
+// общий пришиватель по произвольному бордер-кольцу halfedge'ов
+static inline F attach_face_from_ringN(SM& sm, const std::vector<H>& ring){
+    if (ring.size() < 3) return SM::null_face();
+    for (size_t i=0;i<ring.size();++i){
+        H h = ring[i];
+        if (h == SM::null_halfedge())                 return SM::null_face();
+        if (sm.face(h) != SM::null_face())            return SM::null_face();
+        if (sm.target(h) != sm.source(ring[(i+1)%ring.size()])) return SM::null_face();
+    }
+    F nf = sm.add_face(); if (nf == SM::null_face()) return nf;
+    for (size_t i=0;i<ring.size();++i){
+        sm.set_face(ring[i], nf);
+        sm.set_next(ring[i], ring[(i+1)%ring.size()]);
+    }
+    sm.set_halfedge(nf, ring[0]);
+    return nf;
+}
 
+// найти любой верхний бордерный halfedge среди рёбер top[i]—top[j]
+static inline H find_top_border_start(SM& sm, const std::vector<V>& top){
+    const size_t k = top.size();
+    for (size_t i=0;i<k;++i){
+        size_t j=(i+1)%k;
+        auto pr = CGAL::halfedge(top[i], top[j], sm);
+        if (pr.second && sm.face(pr.first) == SM::null_face()) return pr.first;
+        pr = CGAL::halfedge(top[j], top[i], sm);
+        if (pr.second && sm.face(pr.first) == SM::null_face()) return pr.first;
+    }
+    return SM::null_halfedge();
+}
 
 
 static inline F extrude_face_from_plan_uid(
@@ -1527,24 +1556,35 @@ static inline F extrude_face_from_plan_uid(
 
 
     // --- 7) крышка из top[] ---
-    //std::vector<Point_3> topP; topP.reserve(k);
-    //for (auto v : top) topP.push_back(sm.point(v));
-    //Vector_3 n_top = newell_normal(topP);
+    // --- 7) крышка из существующего верхнего бордера (одна N-угольная грань)
+    // --- 7) КРЫШКА ИЗ top[] БЕЗ ПОИСКОВ ---
+    F fcap = SM::null_face();
+    {
+        // подстрахуем: у верхних вершин может не стоять vertex->halfedge
+        for (V v : top) fix_vertex_halfedge_safe(sm, v);
 
-    //std::vector<V> cap(top.begin(), top.end());
-    //if (CGAL::scalar_product(n_top, n) < 0) std::reverse(cap.begin(), cap.end());
+        std::vector<H> ring; ring.reserve(top.size());
+        bool ok = true;
+        for (size_t i=0, k = top.size(); i<k; ++i){
+            V a = top[i], b = top[(i+1)%k];
+            H h = get_or_make_border_h_uv(sm, a, b);        // вернуть именно border a->b,
+            if (h == SM::null_halfedge()) { ok = false; break; } // если сторона занята — крышку не шьём
+            ring.push_back(h);
+        }
 
-    //F fcap = CGAL::Euler::add_face(cap, sm);
-    //if (fcap == SM::null_face()){
-    //    std::rotate(cap.begin(), cap.begin()+1, cap.end());
-    //    fcap = CGAL::Euler::add_face(cap, sm);
-    //    if (fcap == SM::null_face()){
-    //        std::reverse(cap.begin(), cap.end());
-    //        fcap = CGAL::Euler::add_face(cap, sm);
-    //    }
-    //}
-    //if (out && fcap != SM::null_face()) { out->all.push_back(fcap); out->caps.push_back(fcap); }
-    //return fcap;
+        if (ok) {
+            fcap = attach_face_from_ringN(sm, ring);
+            if (fcap != SM::null_face() && out){
+                out->all.push_back(fcap);
+                out->caps.push_back(fcap);
+            }
+            // необязательно, но полезно стабилизировать указатель у вершин
+            for (V v : top) fix_vertex_halfedge_safe(sm, v, ring[0]);
+        }
+    }
+    return fcap;
+
+
 }
 
 
