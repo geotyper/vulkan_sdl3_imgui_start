@@ -287,9 +287,9 @@ void GraphicsModule::CreateScene() {
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
     //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 4, /*M*/ 4, /*L*/ 4, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/5, /*M*/5,  /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/2, /*M*/2,  /*cellSize*/ 0.5);
 
-   // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/3.0, /*nx*/3, /*ny*/3);
+   // CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
     const int N = 2;
     //CgalMeshBuilder::subdivideQuadFacesGrid(sm, N, N);
