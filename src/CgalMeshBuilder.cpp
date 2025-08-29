@@ -1632,55 +1632,46 @@ SurfaceMesh::Face_index CgalMeshBuilder::extrude_face_like_ts(
 
 // Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
 // затем экструзим по нему каждую грань — порядок меньше влияет.
-ExtrudeLists CgalMeshBuilder::extrudeFaces_collectBoth(
+std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
     SM& sm,
     const std::vector<F>& faces,
     double distance,
     double scale)
 {
-    // соберём валидные дескрипторы (без collect_garbage здесь!)
-    std::vector<F> todo; todo.reserve(faces.size());
-    for (auto f : faces)
-        if (f != SM::null_face() && !sm.is_removed(f))
-            todo.push_back(f);
+    std::vector<F> todo;
+    for (auto f: faces) if (f!=SM::null_face() && !sm.is_removed(f)) todo.push_back(f);
 
-    ExtrudeLists out;
-    out.all.reserve(todo.size()*5);
-
-    // UID карты и next_*
+    // UID и планы
     SM::Property_map<V,std::uint64_t> vuid;
     SM::Property_map<F,std::uint64_t> fuid;
     std::uint64_t next_vuid=0, next_fuid=0;
     ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
 
-    // общий слепок
     std::vector<FacePlan> plans;
     build_face_plans_snapshot(sm, todo, vuid, fuid, plans);
-    if (plans.empty()) return out;
 
-    // словари UID→дескриптор
     std::unordered_map<std::uint64_t,V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
     std::unordered_map<std::uint64_t,F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
 
     const Point_3 MC = mesh_centroid(sm);
 
-    for (const FacePlan& p : plans){
-        (void)extrude_face_from_plan_uid(
+    std::vector<F> caps; caps.reserve(plans.size());
+    ExtrudeLists dump; // если нужно копить стены; иначе можно убрать
+
+    for (const FacePlan& p : plans) {
+        F cap = extrude_face_from_plan_uid(
             sm, p, distance, scale, MC,
             vuid, fuid, next_vuid, next_fuid,
-            vByUid, fByUid, &out);
+            vByUid, fByUid, &dump);
 
-        // после модификаций дешево обновим только vertex-словарь
-        // (новые вершины появились — их UID уже занесён в vuid)
+        if (cap != SM::null_face()) caps.push_back(cap);
+
+        // обновляем словари под новые вершины/удалённые грани
         rebuild_vertex_uid_map(sm, vuid, vByUid);
-        // face-словарь мы обновляли внутри (удаляли базовую грань), но
-        // для корректности пересоберём и его (быстро для средних сеток):
         rebuild_face_uid_map(sm, fuid, fByUid);
     }
-
-    // НИКАКОГО collect_garbage здесь — иначе вернувшиеся дескрипторы в out
-    // могут инвалидироваться в вызывающем коде.
-    return out;
+    // без collect_garbage, чтобы дескрипторы остались валидными
+    return caps;
 }
 
 

@@ -97,7 +97,7 @@ public:
         );
 
     // Пакетная экструзия — вернёт оба списка суммарно
-    static ExtrudeLists extrudeFaces_collectBoth(
+    static std::vector<SurfaceMesh::Face_index> extrudeFaces_collectBoth(
         SurfaceMesh& sm,
         const std::vector<SurfaceMesh::Face_index>& faces,
         double distance,
