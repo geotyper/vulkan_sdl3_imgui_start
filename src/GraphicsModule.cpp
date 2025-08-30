@@ -287,7 +287,7 @@ void GraphicsModule::CreateScene() {
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
     CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 5, /*cellSize*/ 0.5);
-   // CgalMeshBuilder::buildPlaneXY(sm, /*N*/5, /*M*/5,  /*cellSize*/ 0.5);
+   // CgalMeshBuilder::buildPlaneXY(sm, /*N*/2, /*M*/2,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -318,22 +318,28 @@ void GraphicsModule::CreateScene() {
     };
 
 
-    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-    auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
+
+   // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
+
+
   //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
   //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
 
     //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
-   // CgalMeshBuilder::cleanup_after_deletions(sm);
+    //CgalMeshBuilder::cleanup_after_deletions(sm);
+
+    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+    auto res = CgalMeshBuilder::extrudeFaces(sm, toExtr, 0.15, 0.9);
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
     //CgalMeshBuilder::cleanup_after_deletions(sm);
+
 
     {
         //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
@@ -345,7 +351,7 @@ void GraphicsModule::CreateScene() {
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
-    //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
+    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
 
     // Make each hole rim round-ish (optional)
     //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
@@ -367,7 +373,7 @@ void GraphicsModule::CreateScene() {
 
 
     std::vector<Vertex> heLines;
-    CgalMeshBuilder::buildHalfedgeArrows(sm, heLines, /*inset*/0.017f, /*head*/0.08f, false);
+    CgalMeshBuilder::buildHalfedgeArrows(sm, heLines, /*inset*/0.017f, /*head*/0.08f, true);
 
     face_stats(sm);
     CgalMeshBuilder::triangulateAll(sm);

@@ -510,11 +510,11 @@ void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
         CGAL::Euler::remove_face(sm.halfedge(f), sm);
 
     }
-  //  sm.collect_garbage();
+    sm.collect_garbage();
 
     if (split_kissing_vertices) {
     //    PMP::duplicate_non_manifold_vertices(sm); // splits “kissing” corners
-       // sm.collect_garbage();
+       sm.collect_garbage();
     }
 }
 
@@ -526,11 +526,11 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
         fix_vertex_halfedge_safe(sm, v);
 
     // 2) Раздублировать неманифолдные граничные вершины (kissing)
-    PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
+   // PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
     split_kissing_border_vertices(sm);        // твой fallback
 
     // 3) Подчистить мусор
-    PMP::remove_degenerate_faces(sm);
+   // PMP::remove_degenerate_faces(sm);
     remove_isolated_vertices_safe(sm);
 
     // 4) Компактим индексы (ИНВАЛИДИРУЕТ все старые дескрипторы!)
@@ -977,6 +977,171 @@ SurfaceMesh::Face_index CgalMeshBuilder::extrude_face_like_ts(
         vByUid, fByUid,
         out);
 }
+
+namespace {
+// Helper for hashing CGAL handles in unordered containers
+struct Handle_hash_function {
+    std::size_t operator()(const V& h) const { return CGAL::Handle_hash_function()(h); }
+    std::size_t operator()(const F& h) const { return CGAL::Handle_hash_function()(h); }
+};
+
+static std::pair<
+    SM::Property_map<F, std::uint64_t>,
+    std::uint64_t>
+ensure_face_uid_map(SM& sm)
+{
+    auto opt = sm.property_map<F, std::uint64_t>("f:uid");
+    if (opt) {
+        auto pm = *opt;
+        std::uint64_t next = 1;
+        for (auto f : sm.faces()) if (!sm.is_removed(f))
+                next = std::max(next, pm[f]);
+        return { pm, next + 1 };
+    }
+    auto created = sm.add_property_map<F, std::uint64_t>("f:uid", 0);
+    auto pm = created.first;
+    std::uint64_t next = 1;
+    for (auto f : sm.faces()) if (!sm.is_removed(f)) pm[f] = next++;
+    return { pm, next };
+}
+
+static inline void push_created_face(F f,
+                                     bool is_cap,
+                                     SM::Property_map<F, std::uint64_t>& f_uid,
+                                     std::uint64_t& nextUID,
+                                     std::uint64_t parent_uid,
+                                     ExtrudeLists* out)
+{
+    if (f == SM::null_face()) return;
+    f_uid[f] = is_cap ? parent_uid : nextUID++;
+    if (out) {
+        out->all.push_back(f);
+        if (is_cap) out->caps.push_back(f);
+    }
+}
+
+
+}
+
+ExtrudeLists CgalMeshBuilder::extrudeFaces(
+    SM& sm,
+    const std::vector<F>& faces,
+    double distance,
+    double scale)
+{
+
+    ExtrudeLists results;
+    if (faces.empty()) {
+        return results;
+    }
+    // --- ШАГ 0: Подготовка данных ---
+    auto [f_uid_map, next_fuid] = ensure_face_uid_map(sm);
+
+    std::unordered_set<F, Handle_hash_function> face_set;
+    for(auto f : faces) {
+        if (f != SM::null_face() && !sm.is_removed(f)) {
+            face_set.insert(f);
+        }
+    }
+    if (face_set.empty()) return results;
+
+    // --- ШАГ 1: Найти граничные рёбра и все уникальные вершины региона ---
+    std::vector<std::pair<V, V>> boundary_edges;
+    std::unordered_set<V, Handle_hash_function> region_vertices_set;
+
+    for (auto f : face_set) {
+        if (sm.halfedge(f) == SM::null_halfedge()) continue;
+        for (auto h : sm.halfedges_around_face(sm.halfedge(f))) {
+            region_vertices_set.insert(sm.source(h));
+            H h_opp = sm.opposite(h);
+            if (h_opp == SM::null_halfedge() || face_set.find(sm.face(h_opp)) == face_set.end()) {
+                boundary_edges.push_back({sm.source(h), sm.target(h)});
+            }
+        }
+    }
+
+    // --- ШАГ 2: Создать верхние ("top") вершины ---
+    // ... (этот блок кода для вычисления нормали и центра остается без изменений)
+    Vector_3 region_normal(0, 0, 0);
+    Point_3  region_center_p(0, 0, 0);
+    double total_area = 0;
+    for (auto f : face_set) {
+        double area = PMP::face_area(f, sm);
+        if (area > 1e-12) {
+            total_area += area;
+            region_normal = region_normal + PMP::compute_face_normal(f, sm) * area;
+        }
+    }
+    if (total_area > 1e-12) region_normal = region_normal / total_area;
+    if (region_normal.squared_length() < 1e-12) region_normal = Vector_3(0,0,1);
+    else region_normal = region_normal / std::sqrt(region_normal.squared_length());
+    for (auto v : region_vertices_set) {
+        const auto& p = sm.point(v);
+        region_center_p = Point_3(region_center_p.x() + p.x(), region_center_p.y() + p.y(), region_center_p.z() + p.z());
+    }
+    if(!region_vertices_set.empty()) {
+        double inv_v = 1.0 / region_vertices_set.size();
+        region_center_p = Point_3(region_center_p.x() * inv_v, region_center_p.y() * inv_v, region_center_p.z() * inv_v);
+    }
+    if (CGAL::scalar_product(region_normal, region_center_p - mesh_centroid(sm)) < 0.0) {
+        region_normal = -region_normal;
+    }
+
+    std::unordered_map<V, V, Handle_hash_function> base_to_top_vertex;
+    for (auto v_base : region_vertices_set) {
+        const Point_3& p_base = sm.point(v_base);
+        const Vector_3 to_center = p_base - region_center_p;
+        const Point_3 p_top = region_center_p + (region_normal * distance) + (to_center * scale);
+        base_to_top_vertex[v_base] = sm.add_vertex(p_top);
+    }
+
+    // --- ШАГ 3: Создать грани "крышки" ---
+    std::vector<F> faces_to_remove;
+    faces_to_remove.reserve(face_set.size());
+    for (auto f_base : face_set) {
+        faces_to_remove.push_back(f_base);
+        std::vector<V> base_face_vertices = face_vertices_ring(sm, f_base);
+        std::vector<V> top_face_vertices;
+        top_face_vertices.reserve(base_face_vertices.size());
+        for (auto v_base : base_face_vertices) {
+            top_face_vertices.push_back(base_to_top_vertex.at(v_base));
+        }
+        std::reverse(top_face_vertices.begin(), top_face_vertices.end());
+        F f_top = CGAL::Euler::add_face(top_face_vertices, sm);
+        push_created_face(f_top, true, f_uid_map, next_fuid, f_uid_map[f_base], &results);
+    }
+
+    // --- ШАГ 4: Удалить оригинальные грани ---
+    for (auto f_base : faces_to_remove) {
+        if (sm.halfedge(f_base) != SM::null_halfedge()) {
+            CGAL::Euler::remove_face(sm.halfedge(f_base), sm);
+        }
+    }
+
+    // =====> ШАГ 4.5: ПОЧИНИТЬ УКАЗАТЕЛИ У ВЕРШИН НА ГРАНИЦЕ ДЫРЫ <=====
+    // Это КЛЮЧЕВОЙ шаг для исправления падений.
+    for (auto v : region_vertices_set) {
+        fix_vertex_halfedge_safe(sm, v);
+    }
+
+    // --- ШАГ 5: Построить боковые стенки ---
+    //for (const auto& edge : boundary_edges) {
+    //    V v_start_base = edge.first;
+    //    V v_end_base   = edge.second;
+    //    V v_start_top  = base_to_top_vertex.at(v_start_base);
+    //    V v_end_top    = base_to_top_vertex.at(v_end_base);
+
+    //    F f_wall = CGAL::Euler::add_face(
+    //        std::array<V, 4>{v_start_base, v_end_base, v_end_top, v_start_top}, sm);
+
+    //    push_created_face(f_wall, false, f_uid_map, next_fuid, 0, &results);
+    //}
+
+    sm.collect_garbage();
+    return results;
+}
+
+
 
 void CgalMeshBuilder::applyCatmullClark(SurfaceMesh& sm, int iterations , bool keep_borders)
 {
