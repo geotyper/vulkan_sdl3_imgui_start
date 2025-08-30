@@ -743,16 +743,19 @@ void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
         CGAL::Euler::remove_face(sm.halfedge(f), sm);
 
     }
-    sm.collect_garbage();
+  //  sm.collect_garbage();
 
     if (split_kissing_vertices) {
-        PMP::duplicate_non_manifold_vertices(sm); // splits “kissing” corners
-        sm.collect_garbage();
+    //    PMP::duplicate_non_manifold_vertices(sm); // splits “kissing” corners
+       // sm.collect_garbage();
     }
 }
 
 void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
     namespace PMP = CGAL::Polygon_mesh_processing;
+
+   // sm.collect_garbage();
+
     // 1) убрать вырожденные лица (повторы вершин/нулевая площадь)
   //  PMP::remove_degenerate_faces(sm);
     // 2) раздублировать поцелуйные вершины (у тебя уже делается, но пусть будет тут)
@@ -761,7 +764,7 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
     // 3) выбросить изолированные вершины
     remove_isolated_vertices_safe(sm);
     // 4) компактнуть индексы
-    sm.collect_garbage();
+    //sm.collect_garbage();
 }
 
 static inline void refresh_face_uid_map(
