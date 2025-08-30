@@ -7,5 +7,5 @@
 layout(location = SWS_LOC3_REFLECTION_RAY) rayPayloadInEXT RadiancePayload prd;
 void main(){
     prd.color = vec3(0.02);
-    prd.blocked = false;
+    //prd.blocked = false;
 }
