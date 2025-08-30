@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-   // CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 5, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/5, /*M*/5,  /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 5, /*cellSize*/ 0.5);
+   // CgalMeshBuilder::buildPlaneXY(sm, /*N*/5, /*M*/5,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -324,7 +324,7 @@ void GraphicsModule::CreateScene() {
   //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
 
     //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
-    CgalMeshBuilder::cleanup_after_deletions(sm);
+   // CgalMeshBuilder::cleanup_after_deletions(sm);
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
@@ -333,7 +333,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
-    CgalMeshBuilder::cleanup_after_deletions(sm);
+    //CgalMeshBuilder::cleanup_after_deletions(sm);
 
     {
         //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
