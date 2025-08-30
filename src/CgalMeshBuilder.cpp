@@ -867,6 +867,7 @@ static inline F extrude_face_from_plan_uid(
 
     // --- 7) КРЫШКА ИЗ top[] БЕЗ ПОИСКОВ ---
     F fcap = SM::null_face();
+    if(false)
     {
         // подстрахуем: у верхних вершин может не стоять vertex->halfedge
         for (V v : top) fix_vertex_halfedge_safe(sm, v);
@@ -892,6 +893,7 @@ static inline F extrude_face_from_plan_uid(
     }
     return fcap;
 }
+
 
 // Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
 // затем экструзим по нему каждую грань — порядок меньше влияет.
