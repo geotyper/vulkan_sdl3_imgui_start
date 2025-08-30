@@ -107,7 +107,6 @@ public:
     static SurfaceMesh::Face_index extrudeFace_one_internalOnly(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distance, double scale, ExtrudeLists *out);
     static void buildPlaneXY(SurfaceMesh &sm, int N, int M, double cellSize);
     static void buildPlaneOriented(SurfaceMesh &sm, int N, int M, double cellSize, const Point_3 &center, Vector_3 normal);
-    static ExtrudeLists extrudeRegion(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &region_faces, double distance, double scale);
 
     static SurfaceMesh::Face_index extrude_face_like_ts(SurfaceMesh &sm, SurfaceMesh::Face_index f, double distExtrude, double amountExtrude, ExtrudeLists *out);
 };

@@ -324,7 +324,7 @@ void GraphicsModule::CreateScene() {
   //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
 
     //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
-    //CgalMeshBuilder::cleanup_after_deletions(sm);
+    CgalMeshBuilder::cleanup_after_deletions(sm);
 
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
