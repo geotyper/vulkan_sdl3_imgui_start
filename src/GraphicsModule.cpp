@@ -340,7 +340,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    CgalMeshBuilder::deleteFaces(sm, toDel, true);
+   // CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
@@ -353,6 +353,10 @@ void GraphicsModule::CreateScene() {
         //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.5);
         //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
     }
+
+        CgalMeshBuilder::cleanup_after_deletions(sm);
+
+     //   CgalMeshBuilder::cleanup_after_deletions(sm);
     //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
     // 4) triangulate as a separate step
 
