@@ -348,18 +348,25 @@ void GraphicsModule::CreateScene() {
 
         sm.collect_garbage();
     {
-        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+        //auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+        //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+
+        auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,1);
         auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+
+
+
         //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.5);
         //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
     }
 
-     sm.collect_garbage();
+    sm.collect_garbage();
+
+
+    //CgalMeshBuilder::cleanup_after_deletions(sm);
 
      //   CgalMeshBuilder::cleanup_after_deletions(sm);
-
-     //   CgalMeshBuilder::cleanup_after_deletions(sm);
-    //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
+    CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape
