@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 2, /*M*/ 2, /*L*/ 2, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/2, /*M*/2,  /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 1, /*M*/ 1, /*L*/ 1, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/2, /*M*/1,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -346,7 +346,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
     //CgalMeshBuilder::cleanup_after_deletions(sm);
 
-
+        sm.collect_garbage();
     {
         auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
         auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
@@ -354,7 +354,9 @@ void GraphicsModule::CreateScene() {
         //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
     }
 
-        CgalMeshBuilder::cleanup_after_deletions(sm);
+     sm.collect_garbage();
+
+     //   CgalMeshBuilder::cleanup_after_deletions(sm);
 
      //   CgalMeshBuilder::cleanup_after_deletions(sm);
     //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
