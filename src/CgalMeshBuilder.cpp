@@ -2244,6 +2244,161 @@ static inline F extrude_face_from_plan_uid3(
     return fcap;
 }
 
+
+static inline F extrude_face_from_plan_uid5(
+    SM& sm,
+    const FacePlan& plan,
+    double distExtrude, double amountExtrude,
+    const Point_3& meshC,
+    SM::Property_map<V,std::uint64_t>& vuid,
+    SM::Property_map<F,std::uint64_t>& /*fuid*/,
+    std::uint64_t& next_vuid, std::uint64_t& /*next_fuid*/,
+    std::unordered_map<std::uint64_t,V>& vByUid,
+    std::unordered_map<std::uint64_t,F>& fByUid,
+    ExtrudeLists* out)
+{
+
+
+    //quick_self_test();
+
+    using H = typename SM::Halfedge_index;
+    using V = typename SM::Vertex_index;
+    using F = typename SM::Face_index;
+
+    // --- 0) найти исходную грань f по uid ---
+    auto itF = fByUid.find(plan.fuid);
+    if (itF == fByUid.end()) return SM::null_face();
+    F f = itF->second;
+    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
+
+    // --- 1) кольцо исходной грани (CCW), R[i].h_ab : a_i -> b_i ---
+    struct RingCorner { V a; H h_ab; bool was_border_ba; };
+    std::vector<RingCorner> R; R.reserve(32);
+    std::vector<Point_3>    baseP; baseP.reserve(32);
+
+    H h0 = sm.halfedge(f);
+    if (h0 == SM::null_halfedge())
+        return SM::null_face();
+
+    {
+        H h = h0; std::unordered_set<V> seen;
+        do{
+            if (h == SM::null_halfedge())
+                return SM::null_face();
+            V a = sm.source(h);
+            if (a == SM::null_vertex() || !seen.insert(a).second)
+                return SM::null_face();
+            H ho = sm.opposite(h);
+            bool wasB = (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face());
+            R.push_back({a, h, wasB});
+            baseP.push_back(sm.point(a));
+            h = sm.next(h);
+        } while(h != h0);
+    }
+
+    const size_t k = R.size();
+    if (k < 3) return SM::null_face();
+    auto nexti = [&](size_t i){ return (i+1)%k; };
+
+    // --- 2) верхний контур (геометрия как в вашем TS) ---
+    const Point_3 c  = centroid_points(baseP);
+    Vector_3      n  = newell_normal(baseP);
+    if (CGAL::scalar_product(n, Vector_3(c.x()-meshC.x(), c.y()-meshC.y(), c.z()-meshC.z())) < 0) n = -n;
+    const Point_3 cc(c.x()+n.x()*distExtrude, c.y()+n.y()*distExtrude, c.z()+n.z()*distExtrude);
+
+    std::vector<V> top(k, SM::null_vertex());
+    for (size_t i=0;i<k;++i){
+        const Vector_3 d(baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z());
+        const double len = std::sqrt(d.x()*d.x()+d.y()*d.y()+d.z()*d.z());
+        Vector_3 dn = (len>0) ? Vector_3(d.x()/len, d.y()/len, d.z()/len) : Vector_3(0,0,0);
+        const Point_3 pt(cc.x()+amountExtrude*len*dn.x(),
+                         cc.y()+amountExtrude*len*dn.y(),
+                         cc.z()+amountExtrude*len*dn.z());
+        V tv = sm.add_vertex(pt);
+        vuid[tv] = next_vuid++;    // ваш assign_uid_vertex_new(...)
+        vByUid[vuid[tv]] = tv;
+        top[i] = tv;
+    }
+
+    // --- 3) превратить f в "дырку": все h_ab -> border-цикл по порядку ---
+    for (size_t i=0;i<k;++i) sm.set_face(R[i].h_ab, SM::null_face());
+    for (size_t i=0;i<k;++i) sm.set_next(R[i].h_ab, R[(i+1)%k].h_ab);
+
+    // локальные соседи в «дырке» (чтоб не звать чужие бордер-обходы)
+    std::vector<H> hole_prev(k), hole_next(k);
+    for (size_t i=0;i<k;++i){ hole_prev[i]=R[(i+k-1)%k].h_ab; hole_next[i]=R[(i+1)%k].h_ab; }
+
+    // 4) подготовить стойки и «верх» без дублей
+    std::vector<H> e_up(k), e_top(k);
+    for (size_t i=0;i<k;++i){
+        size_t j=(i+1)%k;
+        e_up[i]  = ensure_oriented_halfedge(sm, R[i].a, top[i]); // a->ta
+        e_top[i] = ensure_oriented_halfedge(sm, top[i], top[j]); // ta->tb
+        if (e_up[i]==SM::null_halfedge() || e_top[i]==SM::null_halfedge())
+            return SM::null_face();
+    }
+
+    // 5) стены + локальный сплайс бордера вместо h_ab
+    for (size_t i=0;i<k;++i){
+        size_t j=(i+1)%k;
+        H h_ab    = R[i].h_ab;                 // низ a->b (уже border)
+        V a       = R[i].a;
+        V b       = sm.target(h_ab);
+        V ta      = top[i];
+        V tb      = top[j];
+
+        H h_b_tb  = ensure_oriented_halfedge(sm, b,  tb);   // b->tb
+        H h_tb_ta = ensure_oriented_halfedge(sm, tb, ta);   // tb->ta
+        H h_ta_a  = ensure_oriented_halfedge(sm, ta, a);    // ta->a
+
+        // кольцо квадра
+        if (sm.face(h_ab)!=SM::null_face() || sm.face(h_b_tb)!=SM::null_face()
+            || sm.face(h_tb_ta)!=SM::null_face() || sm.face(h_ta_a)!=SM::null_face()) continue;
+        if (sm.target(h_ab)!=sm.source(h_b_tb) ||
+            sm.target(h_b_tb)!=sm.source(h_tb_ta) ||
+            sm.target(h_tb_ta)!=sm.source(h_ta_a) ||
+            sm.target(h_ta_a)!=sm.source(h_ab)) continue;
+
+        F fw = sm.add_face(); if (fw==SM::null_face()) continue;
+        H ring[4] = { h_ab, h_b_tb, h_tb_ta, h_ta_a };
+        for (int t=0;t<4;++t){ sm.set_face(ring[t], fw); sm.set_next(ring[t], ring[(t+1)&3]); }
+        sm.set_halfedge(fw, h_ab);
+
+    }
+
+    // 6) крышка одним n-угольником по ta->tb (e_top)
+    std::vector<H> cap_ring; cap_ring.reserve(k);
+    for (size_t i=0;i<k;++i){
+        H h = e_top[i]; // ta->tb
+        if (h==SM::null_halfedge() || sm.face(h)!=SM::null_face()) { cap_ring.clear(); break; }
+        if (!cap_ring.empty() && sm.target(cap_ring.back())!=sm.source(h)) { cap_ring.clear(); break; }
+        cap_ring.push_back(h);
+    }
+    F fcap = SM::null_face();
+    if (!cap_ring.empty()){
+        fcap = attach_polygon_cap_from_ring_manual(sm, cap_ring);
+        // входящий для вершин крышки — удобно выставить
+        for (size_t i=0;i<k;++i){
+            V ta = top[i];
+            H incoming = sm.opposite(e_top[(i+k-1)%k]); // (tb->ta)
+            set_vertex_incoming_if_any(sm, ta, incoming);
+        }
+    }
+
+    // 7) удалить исходную грань и её uid — только теперь!
+    fByUid.erase(plan.fuid);
+    sm.remove_face(f);
+
+    bool ok = CGAL::is_valid_polygon_mesh(sm, true); // true => verbose
+
+    if(!ok)
+    {
+        std::cerr<<"mesh not valid \n";
+    }
+
+    return fcap;
+}
+
 // Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
 // затем экструзим по нему каждую грань — порядок меньше влияет.
 std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
@@ -2273,7 +2428,7 @@ std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
     ExtrudeLists dump; // если нужно копить стены; иначе можно убрать
 
     for (auto p: plans) {
-        F cap = extrude_face_from_plan_uid3(
+        F cap = extrude_face_from_plan_uid5(
             sm, p, distance, scale, MC,
             vuid, fuid, next_vuid, next_fuid,
             vByUid, fByUid, &dump);

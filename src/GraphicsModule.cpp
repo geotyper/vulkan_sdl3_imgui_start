@@ -321,8 +321,8 @@ void GraphicsModule::CreateScene() {
     {
         auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
         auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-      //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.75);
-      //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
+        auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.75);
+        auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
     }
 
    // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
@@ -340,7 +340,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
@@ -348,8 +348,8 @@ void GraphicsModule::CreateScene() {
 
         sm.collect_garbage();
     {
-        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-        auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+       // auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+       // auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
 
         //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
         //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
@@ -391,7 +391,7 @@ void GraphicsModule::CreateScene() {
 
     //  CgalMeshBuilder::cleanup_after_deletions(sm);
 
-    //CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
+    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
 
     // Triangulate → export
 
