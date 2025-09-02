@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 3, /*cellSize*/ 0.5);
-    //CgalMeshBuilder::buildPlaneXY(sm, /*N*/3,/*M*/3,  /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 3, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/11,/*M*/11,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -348,8 +348,8 @@ void GraphicsModule::CreateScene() {
 
         sm.collect_garbage();
     {
-       // auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-       // auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+        auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
 
         //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
         //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
@@ -391,7 +391,7 @@ void GraphicsModule::CreateScene() {
 
     //  CgalMeshBuilder::cleanup_after_deletions(sm);
 
-    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
+    //CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
 
     // Triangulate → export
 
