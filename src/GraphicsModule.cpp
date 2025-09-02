@@ -354,6 +354,11 @@ void GraphicsModule::CreateScene() {
         auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,1);
         auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
 
+       // {
+       //     auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,0);
+       //     auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+
+       // }
 
 
         //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.5);
@@ -366,7 +371,7 @@ void GraphicsModule::CreateScene() {
     //CgalMeshBuilder::cleanup_after_deletions(sm);
 
      //   CgalMeshBuilder::cleanup_after_deletions(sm);
-    CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
+   // CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
     // 4) triangulate as a separate step
 
     // Densify a bit so rims have more verts to shape

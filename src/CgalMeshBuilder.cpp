@@ -919,12 +919,18 @@ static inline F extrude_face_from_plan_uid(
 }
 
 // add (or fetch) oriented halfedge u->v; returns a BORDER halfedge (face==null) on success
-static inline H add_edge_oriented_new(SM& sm, V u, V v) {
-    if (u == v) return SM::null_halfedge();
-    H h = sm.add_edge(u, v);                    // always creates an edge; returns some halfedge of it
-    if (h == SM::null_halfedge()) return SM::null_halfedge();
-    if (sm.source(h) != u) h = sm.opposite(h);  // normalize to u->v
+static inline H add_edge_oriented_new_old(SM& sm, V u, V v){
+    if (u==v) return SM::null_halfedge();
+    H h = sm.add_edge(u,v);
+    if (h==SM::null_halfedge()) return SM::null_halfedge();
+    if (sm.source(h)!=u) h = sm.opposite(h);
     return h;
+}
+
+static inline H add_edge_oriented_new(SM& sm, V u, V v) {
+    H h = sm.add_edge(u, v);
+    if (h == SM::null_halfedge()) return SM::null_halfedge();
+    return (sm.source(h) == u) ? h : sm.opposite(h);
 }
 
 // Полностью заново строит vertex->halfedge.
@@ -1351,67 +1357,33 @@ static inline void repair_face_halfedges_after_ops(SM& sm) {
     }
 }
 
-// h is border if face(h)==null
-inline bool is_border_h(const SM& sm, H h) {
-    return h != SM::null_halfedge() && sm.face(h) == SM::null_face();
-}
-
-// "strict boundary edge": exactly one face across the edge
-inline bool is_strict_boundary_edge(const SM& sm, H h) {
-    if (h == SM::null_halfedge()) return false;
+// === helpers (минимум того, что нужно тут) ===
+inline bool is_border_h(const SM& sm, H h){ return h!=SM::null_halfedge() && sm.face(h)==SM::null_face(); }
+inline bool is_strict_boundary_edge(const SM& sm, H h){
+    if (h==SM::null_halfedge()) return false;
     H ho = sm.opposite(h);
-    return is_border_h(sm,h) && (ho != SM::null_halfedge()) && sm.face(ho) != SM::null_face();
+    return is_border_h(sm,h) && ho!=SM::null_halfedge() && sm.face(ho)!=SM::null_face();
 }
-
-// previous border halfedge (pB) such that next(pB)==hb, found by walking the border cycle
-static inline H border_prev(const SM& sm, H hb) {
-    if (!is_border_h(sm, hb)) return SM::null_halfedge();
+static inline H border_prev(const SM& sm, H hb){
+    if (!is_border_h(sm,hb)) return SM::null_halfedge();
     H h = hb;
-    // walk forward until the next is hb
-    for (std::size_t cap = 0; cap < sm.number_of_halfedges() + 10; ++cap) {
+    for (size_t cap=0; cap<sm.number_of_halfedges()+10; ++cap){
         H n = sm.next(h);
-        if (n == hb) return h;
-        if (n == SM::null_halfedge() || !is_border_h(sm, n)) break; // inconsistent ring
+        if (n==hb) return h;
+        if (n==SM::null_halfedge() || !is_border_h(sm,n)) break;
         h = n;
     }
     return SM::null_halfedge();
 }
 
-
-// "чисто бордерное" полуребро (ни на одной стороне нет грани) — для свежесозданных рёбер
-inline bool is_pure_border(const SM& sm, H h) {
-    if (h == SM::null_halfedge()) return false;
-    H ho = sm.opposite(h);
-    return sm.face(h) == SM::null_face() && (ho == SM::null_halfedge() || sm.face(ho) == SM::null_face());
-}
-
-// кольцо из 4 полурёбер можно пришить в одну грань?
-inline bool can_attach_quad(const SM& sm, H h0, H h1, H h2, H h3) {
-    H ring[4] = {h0,h1,h2,h3};
-    for (int t=0; t<4; ++t) {
-        if (ring[t] == SM::null_halfedge())                return false;
-        if (sm.face(ring[t]) != SM::null_face())           return false; // половинка не должна быть занята
-        if (sm.target(ring[t]) != sm.source(ring[(t+1)&3])) return false; // стыковка
+static inline bool can_attach_quad(const SM& sm, H h0,H h1,H h2,H h3){
+    H r[4]={h0,h1,h2,h3};
+    for (int i=0;i<4;++i){
+        if (r[i]==SM::null_halfedge()) return false;
+        if (sm.face(r[i])!=SM::null_face()) return false;
+        if (sm.target(r[i])!=sm.source(r[(i+1)&3])) return false;
     }
     return true;
-}
-
-// замкнуть локальный border-цикл вокруг одиночной стенки
-static inline void close_local_border_for_single_wall(SM& sm,
-                                                      H h_a_ta, H h_ta_tb, H h_tb_b)
-{
-    H o1 = sm.opposite(h_a_ta);  // ta -> a
-    H o2 = sm.opposite(h_ta_tb); // tb -> ta
-    H o3 = sm.opposite(h_tb_b);  // b  -> tb
-
-    // все три обязаны быть border
-    if (sm.face(o1)!=SM::null_face() || sm.face(o2)!=SM::null_face() || sm.face(o3)!=SM::null_face())
-        return;
-
-    // порядок на бордере обратный порядку грани: opp(h_{i+1}) -> opp(h_i)
-    sm.set_next(o2, o1);
-    sm.set_next(o3, o2);
-    sm.set_next(o1, o3);
 }
 
 
@@ -1420,6 +1392,57 @@ struct RingCorner {
     H h_ab;     // halfedge a->b по исходной грани
     bool was_border_ba; // до удаления грани противоположная половинка b->a была border?
 };
+
+static inline bool attach_single_wall_keep_base_face(
+    SM& sm, H h_ba, V ta, V tb, H* out_top_border=nullptr)
+{
+    if (!is_strict_boundary_edge(sm, h_ba)) return false;
+
+    V b = sm.source(h_ba);
+    V a = sm.target(h_ba);
+
+    // соседние по старому бордер-кольцу
+    H nB = sm.next(h_ba);
+    H pB = border_prev(sm, h_ba);
+    if (!is_border_h(sm,nB) || !is_border_h(sm,pB)) return false;
+
+    // три новые ребра для стены (пока border-половинки)
+    H h_a_ta = add_edge_oriented_new(sm, a,  ta); // a->ta
+    H h_ta_tb= add_edge_oriented_new(sm, ta, tb); // ta->tb (верх)
+    H h_tb_b = add_edge_oriented_new(sm, tb, b);  // tb->b
+    if (!is_border_h(sm,h_a_ta) || !is_border_h(sm,h_ta_tb) || !is_border_h(sm,h_tb_b)) return false;
+
+    // валидное кольцо будущей грани
+    if (!can_attach_quad(sm, h_ba, h_a_ta, h_ta_tb, h_tb_b)) return false;
+
+    // прошиваем face-сторону
+    F nf = sm.add_face(); if (nf==SM::null_face()) return false;
+    H ring[4] = {h_ba, h_a_ta, h_ta_tb, h_tb_b};
+    for (int i=0;i<4;++i){ sm.set_face(ring[i], nf); sm.set_next(ring[i], ring[(i+1)&3]); }
+    sm.set_halfedge(nf, h_ba);
+
+    // подшиваем ГЛОБАЛЬНОЕ бордер-кольцо вместо h_ba
+    H o_a  = sm.opposite(h_a_ta);  // ta->a
+    H o_top= sm.opposite(h_ta_tb); // tb->ta   (нужен для крышки)
+    H o_b  = sm.opposite(h_tb_b);  // b->tb
+    if (!is_border_h(sm,o_a) || !is_border_h(sm,o_top) || !is_border_h(sm,o_b)) return false;
+
+    sm.set_next(pB,   o_b);
+    sm.set_next(o_b,  o_top);
+    sm.set_next(o_top,o_a);
+    sm.set_next(o_a,  nB);
+
+    // входящие опорные hv для затронутых вершин
+    sm.set_halfedge(a,   h_ba);
+    sm.set_halfedge(ta,  h_a_ta);
+    sm.set_halfedge(tb,  h_ta_tb);
+    sm.set_halfedge(b,   h_tb_b);
+
+    if (out_top_border) *out_top_border = o_top; // tb->ta — пригодится на крышку
+    return true;
+}
+
+
 
 // ---- экструзия: единый проход стенок; крышка = opposite верхних рёбер стенок ----
 static inline F extrude_face_from_plan_uid2(
@@ -1507,7 +1530,7 @@ static inline F extrude_face_from_plan_uid2(
     //    }
     //}
 
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         if (!R[i].was_border_ba)
             continue;
         const size_t j = (i + 1) % k;
@@ -1533,9 +1556,9 @@ static inline F extrude_face_from_plan_uid2(
 
 
         // 2) новые рёбра ещё "чисто бордерные" (0 граней на ребре до пришивки)
-        if (!is_pure_border(sm, h_a_ta) ||
-            !is_pure_border(sm, h_ta_tb) ||
-            !is_pure_border(sm, h_tb_b)) {
+        if (!is_border_h(sm, h_a_ta) ||
+            !is_border_h(sm, h_ta_tb) ||
+            !is_border_h(sm, h_tb_b)) {
             continue;
         }
 
@@ -1738,6 +1761,240 @@ static inline F extrude_face_from_plan_uid2(
 }
 
 
+// ---- helper 1: соберём prev для всех halfedge, у которых есть грань ----
+static inline void build_prev_on_faces(SM& sm,
+                                       std::vector<SM::Halfedge_index>& prev_of)
+{
+    prev_of.assign(sm.number_of_halfedges(), SM::null_halfedge());
+    for (SM::Face_index f : sm.faces()) {
+        SM::Halfedge_index h0 = sm.halfedge(f);
+        if (h0 == SM::null_halfedge()) continue;
+        SM::Halfedge_index h = h0, p = SM::null_halfedge();
+        // обойдём кольцо и проставим prev: p -> h
+        do {
+            SM::Halfedge_index n = sm.next(h);
+            // когда дошли до следующего, значит текущий h — prev для n
+            if (n != SM::null_halfedge()) prev_of[n.idx()] = h;
+            h = n;
+        } while (h != h0 && h != SM::null_halfedge());
+    }
+}
+
+// ---- helper 2: корректно восстановим next на ВСЕХ границах ----
+static inline void rebuild_all_border_next_using_prev(SM& sm)
+{
+    std::vector<SM::Halfedge_index> prev_of;
+    build_prev_on_faces(sm, prev_of);
+
+    for (SM::Halfedge_index h : sm.halfedges()) {
+        if (sm.is_removed(h) || sm.face(h) != SM::null_face()) continue; // берём только border
+        SM::Halfedge_index ho = sm.opposite(h);
+        if (ho == SM::null_halfedge()) continue;               // на Surface_mesh не бывает, но на всякий
+        SM::Halfedge_index p  = prev_of[ho.idx()];             // prev вокруг внутренней грани
+        if (p == SM::null_halfedge()) continue;                // если вдруг грань не замкнута
+        SM::Halfedge_index nb = sm.opposite(p);                // формула: next(h) = opposite(prev(opposite(h)))
+        if (nb != SM::null_halfedge()) sm.set_next(h, nb);
+    }
+}
+
+static inline F extrude_face_from_plan_uid3(
+    SM& sm,
+    const FacePlan& plan,
+    double distExtrude, double amountExtrude,
+    const Point_3& meshC,
+    SM::Property_map<V,std::uint64_t>& vuid,
+    SM::Property_map<F,std::uint64_t>& /*fuid*/,
+    std::uint64_t& next_vuid, std::uint64_t& /*next_fuid*/,
+    std::unordered_map<std::uint64_t,V>& vByUid,
+    std::unordered_map<std::uint64_t,F>& fByUid,
+    ExtrudeLists* out)
+{
+    using H = SM::Halfedge_index;
+    using V = SM::Vertex_index;
+    using F = SM::Face_index;
+
+    // --- 0) найти исходную грань f по uid ---
+    auto itF = fByUid.find(plan.fuid);
+    if (itF == fByUid.end()) return SM::null_face();
+    F f = itF->second;
+    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
+
+    // --- 1) кольцо исходной грани (CCW), собираем R[i].h_ab : a_i -> b_i ---
+    std::vector<RingCorner> R; R.reserve(16);
+    std::vector<Point_3>    baseP; baseP.reserve(16);
+
+    H h0 = sm.halfedge(f);
+    if (h0 == SM::null_halfedge()) return SM::null_face();
+
+    {
+        H h = h0; std::unordered_set<V> seen;
+        do{
+            if (h == SM::null_halfedge()) return SM::null_face();
+            V a = sm.source(h);
+            if (a == SM::null_vertex() || !seen.insert(a).second) return SM::null_face();
+            H ho = sm.opposite(h);
+            bool wasB = (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face());
+            R.push_back({a, h, wasB});
+            baseP.push_back(sm.point(a));
+            h = sm.next(h);
+        } while(h != h0);
+    }
+
+    const size_t k = R.size();
+    if (k < 3) return SM::null_face();
+    auto nexti = [&](size_t i){ return (i+1)%k; };
+
+    // --- 2) геометрия верхнего кольца (как в твоём TS-коде) ---
+    const Point_3 c  = centroid_points(baseP);
+    Vector_3      n  = newell_normal(baseP);
+    if (CGAL::scalar_product(n, Vector_3(c.x()-meshC.x(), c.y()-meshC.y(), c.z()-meshC.z())) < 0) n = -n;
+    const Point_3 cc(c.x()+n.x()*distExtrude, c.y()+n.y()*distExtrude, c.z()+n.z()*distExtrude);
+
+    std::vector<V> top(k, SM::null_vertex());
+    for (size_t i=0;i<k;++i){
+        const Vector_3 d(baseP[i].x()-c.x(), baseP[i].y()-c.y(), baseP[i].z()-c.z());
+        const double len = std::sqrt(d.x()*d.x()+d.y()*d.y()+d.z()*d.z());
+        Vector_3 dn = (len > 0) ? Vector_3(d.x()/len, d.y()/len, d.z()/len) : Vector_3(0,0,0);
+        const Point_3  pt(cc.x()+amountExtrude*len*dn.x(),
+                         cc.y()+amountExtrude*len*dn.y(),
+                         cc.z()+amountExtrude*len*dn.z());
+        V tv = sm.add_vertex(pt);
+        assign_uid_vertex_new(tv, vuid, next_vuid);
+        vByUid[vuid[tv]] = tv;
+        top[i] = tv;
+    }
+
+    // --- 3) превратить f в "дырку": все h_ab -> border-цикл по порядку ---
+    for (size_t i=0;i<k;++i) sm.set_face(R[i].h_ab, SM::null_face());
+    for (size_t i=0;i<k;++i) sm.set_next(R[i].h_ab, R[nexti(i)].h_ab);
+    // ВАЖНО: не удаляем f сейчас; уберём в конце, когда все ссылки будут сняты
+
+    // --- 4) заранее создаём ребра стоек и верхние рёбра (пока border) ---
+    std::vector<H> e_up(k, SM::null_halfedge());
+    std::vector<H> e_top(k, SM::null_halfedge());
+    for (size_t i=0;i<k;++i){
+        size_t j = nexti(i);
+        e_up[i]  = add_edge_oriented_new(sm, R[i].a, top[i]);    // a_i -> ta_i
+        e_top[i] = add_edge_oriented_new(sm, top[i], top[j]);    // ta_i -> tb_i
+        if (e_up[i]==SM::null_halfedge() || e_top[i]==SM::null_halfedge()) return SM::null_face();
+    }
+
+    // --- 5) стены: шьём ТОЛЬКО внутренние halfedge'ы каждой стены (без сплайса бордера) ---
+    for (size_t i=0;i<k;++i) {
+        const size_t j = nexti(i);
+
+        H h_ab    = R[i].h_ab;                 // низ:   a -> b (border)
+        H h_b_tb  = e_up[j];                   // правая стойка:  b -> tb (border)
+        H h_tb_ta = sm.opposite(e_top[i]);     // верх:  tb -> ta (border)
+        H h_ta_a  = sm.opposite(e_up[i]);      // левая стойка:   ta -> a (border)
+
+        // проверка стыковки и что все ещё border
+        if (sm.face(h_ab)!=SM::null_face() || sm.face(h_b_tb)!=SM::null_face()
+            || sm.face(h_tb_ta)!=SM::null_face() || sm.face(h_ta_a)!=SM::null_face())
+            continue;
+        if (sm.target(h_ab)!=sm.source(h_b_tb) ||
+            sm.target(h_b_tb)!=sm.source(h_tb_ta) ||
+            sm.target(h_tb_ta)!=sm.source(h_ta_a) ||
+            sm.target(h_ta_a)!=sm.source(h_ab))
+            continue;
+
+        F nf = sm.add_face(); if (nf==SM::null_face()) continue;
+        H ring[4] = { h_ab, h_b_tb, h_tb_ta, h_ta_a };
+        for (int t=0;t<4;++t) { sm.set_face(ring[t], nf); sm.set_next(ring[t], ring[(t+1)&3]); }
+        sm.set_halfedge(nf, ring[0]);
+        if (out && nf!=SM::null_face()) out->all.push_back(nf);
+    }
+
+    // --- 6) крышка: шьём из e_top[i] (ta -> tb). Их opposite ушли в стены.
+    std::vector<H> cap_ring; cap_ring.reserve(k);
+    for (size_t i=0;i<k;++i){
+        H h = e_top[i];
+        if (h==SM::null_halfedge() || sm.face(h)!=SM::null_face()) { cap_ring.clear(); break; }
+        if (!cap_ring.empty() && sm.target(cap_ring.back())!=sm.source(h)) { cap_ring.clear(); break; }
+        cap_ring.push_back(h);
+    }
+
+    F fcap = SM::null_face();
+    if (!cap_ring.empty()){
+        F nf = sm.add_face();
+        if (nf != SM::null_face()){
+            for (size_t t=0;t<cap_ring.size();++t){
+                sm.set_face(cap_ring[t], nf);
+                sm.set_next(cap_ring[t], cap_ring[(t+1)%cap_ring.size()]);
+            }
+            sm.set_halfedge(nf, cap_ring[0]);
+            fcap = nf;
+            if (out){ out->all.push_back(fcap); out->caps.push_back(fcap); }
+        }
+    }
+
+    // --- после шага 6 (крышка прошита) ---
+
+
+    // 8) опорные halfedge у вершин — входящие
+    for (V v : sm.vertices()) {
+        if (sm.is_removed(v)) continue;
+        H hv = sm.halfedge(v);
+        if (hv == SM::null_halfedge() || sm.target(hv) != v) {
+            H pick = SM::null_halfedge();
+            for (H h : CGAL::halfedges_around_target(v, sm)) { pick = h; break; }
+            if (pick != SM::null_halfedge()) sm.set_halfedge(v, pick);
+        }
+    }
+
+    // 9) исходную грань вычистить из uid-таблицы и удалить ОБЪЕКТ грани
+    fByUid.erase(plan.fuid);
+    sm.remove_face(f);
+
+    // 10) (необязательно) мягкая починка
+    for (size_t i=0; i<k; ++i) {
+        fix_vertex_halfedge_safe(sm, R[i].a);
+        fix_vertex_halfedge_safe(sm, top[i]);
+    }
+
+
+
+
+    // 1) каждая face имеет корректное кольцо
+    for (F f : sm.faces()) {
+        H h0 = sm.halfedge(f);
+        if (h0 == SM::null_halfedge()) { std::cerr<<"face "<<f.idx()<<" has null halfedge\n"; }
+        else {
+            H h=h0; bool closed=false;
+            for (int cap=0; cap < (int)sm.number_of_halfedges()+10; ++cap) {
+                if (sm.face(h)!=f) { std::cerr<<"face "<<f.idx()<<" broken ring\n"; break; }
+                h = sm.next(h);
+                if (h==h0) { closed=true; break; }
+            }
+            if (!closed) std::cerr<<"face "<<f.idx()<<" ring not closed\n";
+        }
+    }
+
+    // 2) для border половинок next определён и образует циклы
+    for (H h : sm.halfedges()) {
+        if (sm.face(h)==SM::null_face()) {
+            H n = sm.next(h);
+            if (n==SM::null_halfedge()) std::cerr<<"border h="<<h.idx()<<" has null next\n";
+        }
+    }
+
+    // 3) опорный hv у вершин — входящий
+    for (V v : sm.vertices()) {
+        H hv = sm.halfedge(v);
+        if (hv!=SM::null_halfedge() && sm.target(hv)!=v)
+            std::cerr<<"v "<<v.idx()<<": hv is not incoming ("<<hv.idx()<<")\n";
+    }
+
+    bool ok = CGAL::is_valid_polygon_mesh(sm, true); // true => verbose
+
+    if(!ok)
+    {
+        std::cerr<<"mesh not valid \n";
+    }
+
+    return fcap;
+}
+
 // Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
 // затем экструзим по нему каждую грань — порядок меньше влияет.
 std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
@@ -1767,7 +2024,7 @@ std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
     ExtrudeLists dump; // если нужно копить стены; иначе можно убрать
 
     for (auto p: plans) {
-        F cap = extrude_face_from_plan_uid2(
+        F cap = extrude_face_from_plan_uid3(
             sm, p, distance, scale, MC,
             vuid, fuid, next_vuid, next_fuid,
             vByUid, fByUid, &dump);
