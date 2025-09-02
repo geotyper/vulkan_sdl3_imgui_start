@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 1, /*M*/ 1, /*L*/ 1, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/2, /*M*/1,  /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 3, /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildPlaneXY(sm, /*N*/3,/*M*/3,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -319,8 +319,8 @@ void GraphicsModule::CreateScene() {
 
 
     {
-       // auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-       // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
+        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
+        auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
       //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.75);
       //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
     }
@@ -340,7 +340,7 @@ void GraphicsModule::CreateScene() {
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-   // CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
@@ -348,11 +348,11 @@ void GraphicsModule::CreateScene() {
 
         sm.collect_garbage();
     {
-        //auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-        //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
-
-        auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,1);
+        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
         auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+
+        //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
+        //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
 
        // {
        //     auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,0);
