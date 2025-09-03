@@ -112,4 +112,5 @@ public:
     static ExtrudeLists extrudeFaces(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
     static ExtrudeLists extrudeFaces2(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
     static std::vector<SurfaceMesh::Face_index> selectFaceByIndex(const SurfaceMesh &sm, uint32_t indexFace);
+    static bool checkMesh(SurfaceMesh &sm);
 };

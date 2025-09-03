@@ -286,8 +286,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 3, /*cellSize*/ 0.5);
-    CgalMeshBuilder::buildPlaneXY(sm, /*N*/11,/*M*/11,  /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 2, /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildPlaneXY(sm, /*N*/5,/*M*/5,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -322,52 +322,49 @@ void GraphicsModule::CreateScene() {
         auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
         auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
         auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.75);
-        auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
+        auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, 0.31, 0.25);
+        //CgalMeshBuilder::deleteFaces(sm, res3 , true);
     }
 
    // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
 
-
   //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
   //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
 
-    //auto res = CgalMeshBuilder::extrudeRegion(sm, toExtr,1.0, 4242);
-    //CgalMeshBuilder::cleanup_after_deletions(sm);
-
    // auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
   //  auto res = CgalMeshBuilder::extrudeFaces(sm, toExtr, 0.15, 0.9);
-
+    sm.collect_garbage();
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
-    //CgalMeshBuilder::cleanup_after_deletions(sm);
+  //  CgalMeshBuilder::cleanup_after_deletions(sm);
 
-        sm.collect_garbage();
-    {
-        auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-        auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+    //sm.collect_garbage();
+    //{
+    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+    //    auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.05, 0.9);
 
-        //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
-        //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+    //    //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
+    //    //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+    //}
 
-       // {
-       //     auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm,0);
-       //     auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+    //sm.collect_garbage();
+    //{
+    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+    //    auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.7);
+    //    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
+    //    CgalMeshBuilder::deleteFaces(sm, toDel, true);
 
-       // }
-
-
-        //auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.5);
-        //auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, -0.1, 0.25);
-    }
-
-    sm.collect_garbage();
+    //    //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
+    //    //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
+    //}
 
 
+   // auto checkResult =CgalMeshBuilder::checkMesh(sm);
     //CgalMeshBuilder::cleanup_after_deletions(sm);
 
      //   CgalMeshBuilder::cleanup_after_deletions(sm);
@@ -422,55 +419,55 @@ void GraphicsModule::CreateScene() {
     const float specialScale    = 0.10f;
 
     // -------- PASS 1: просто собираем трансформы с базовым масштабом ----------
-    //for (int z = -gridSize; z <= gridSize; ++z) {
-    //    for (int y = -gridSize; y <= gridSize; ++y) {
-    //        for (int x = -gridSize; x <= gridSize; ++x) {
-    //            glm::vec3 pos = { x * spacing, y * spacing, z * spacing };
-    //            glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
+    for (int z = -gridSize; z <= gridSize; ++z) {
+        for (int y = -gridSize; y <= gridSize; ++y) {
+            for (int x = -gridSize; x <= gridSize; ++x) {
+                glm::vec3 pos = { x * spacing, y * spacing, z * spacing };
+                glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
 
-    //            // Центр — большая сфера
-    //            if (x == 0 && y == 0 && z == 0) {
-    //                //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.25f)) });
-    //                //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-    //                //cubeInstances.push_back({ glm::scale(M, glm::vec3(0.75f *baseCubeScale)) });
-    //                //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-    //                //cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f *baseCubeScale)) });
-    //                //cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-    //                continue;
-    //            }
+                // Центр — большая сфера
+                if (x == 0 && y == 0 && z == 0) {
+                    //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.25f)) });
+                    //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
+                    //                    glm::vec3(0, 1, 0));
+                    //cubeInstances.push_back({ glm::scale(M, glm::vec3(0.75f *baseCubeScale)) });
+                    //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
+                    //                    glm::vec3(0, 1, 0));
+                    //cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f *baseCubeScale)) });
+                    //cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
+                    continue;
+                }
 
-    //            if (x==0 && y == 0 && z == 1) {
-    //                //   sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
-    //                  continue;
-    //            }
+                if (x==0 && y == 0 && z == 1) {
+                    //   sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
+                      continue;
+                }
 
-    //            //const bool placeSphere = ((x + y + z) & 1) == 0;
-    //            //if (placeSphere) {
-    //            //    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
-    //            //    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseCubeScale)) });
+                //const bool placeSphere = ((x + y + z) & 1) == 0;
+                //if (placeSphere) {
+                //    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
+                //    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseCubeScale)) });
 
-    //            //}
-    //            if (x!=0 || y != 0)
-    //            {
-    //                // немного повернём кубики для разнообразия
-    //                M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
-    //                                    glm::vec3(0, 1, 0));
-    //                cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-    //                //auto M1 = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-    //                //cubeInstances.push_back({ glm::scale(M1, glm::vec3(0.5f * baseCubeScale)) });
+                //}
+                if (x!=0 || y != 0)
+                {
+                    // немного повернём кубики для разнообразия
+                    M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
+                                        glm::vec3(0, 1, 0));
+                    cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
+                    //auto M1 = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
+                    //                    glm::vec3(0, 1, 0));
+                    //cubeInstances.push_back({ glm::scale(M1, glm::vec3(0.5f * baseCubeScale)) });
 
-    //                //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
-    //            }
-    //        }
-    //    }
-    //}
+                    //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
+                }
+            }
+        }
+    }
     glm::vec3 pos = { 0.0f, 0.0f, 0.0f };
     glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
     M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.0f), glm::vec3(0, 1, 0));
-    cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
+    //cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
    // sphereInstances.push_back({ glm::scale(M, glm::vec3(0.45f * baseSphereScale)) });
     // Сколько сфер получилось (они пойдут первыми и получат uniqueID = [0..numSpheres-1])
     const uint32_t numSpheres = static_cast<uint32_t>(sphereInstances.size());
