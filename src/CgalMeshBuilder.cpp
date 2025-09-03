@@ -439,54 +439,99 @@ namespace {
 // отдельной вершиной с теми же координатами.
 static void split_kissing_border_vertices(SurfaceMesh& sm)
 {
-    std::vector<SurfaceMesh::Vertex_index> candidates;
-    candidates.reserve(sm.number_of_vertices());
-    for (auto v : sm.vertices())
+    using SM = SurfaceMesh;
+    using V  = SM::Vertex_index;
+    using H  = SM::Halfedge_index;
+
+    auto next_around_target = [&](H h)->H {
+        if (h == SM::null_halfedge()) return h;
+        H n = sm.next(h);                  // v -> w
+        if (n == SM::null_halfedge()) return SM::null_halfedge();
+        return sm.opposite(n);             // w -> v  (снова target == v)
+    };
+
+    // кандидаты — только бордер-вершины
+    std::vector<V> cand;
+    cand.reserve(sm.number_of_vertices());
+    for (V v : sm.vertices())
         if (!sm.is_removed(v) && CGAL::is_border(v, sm))
-            candidates.push_back(v);
+            cand.push_back(v);
 
-    for (auto v : candidates)
+    for (V v : cand)
     {
-        // все полуребра, приходящие в v (target = v) по кругу
-        std::vector<SurfaceMesh::Halfedge_index> ring;
-        for (auto h : CGAL::halfedges_around_target(v, sm))
-            ring.push_back(h);
-        if (ring.empty()) continue;
+        // будем резать, пока вокруг v больше одной бордер-группы
+        while (true)
+        {
+            // 1) кольцо входящих к v
+            std::vector<H> ring;
+            ring.reserve(16);
+            for (H h : CGAL::halfedges_around_target(v, sm))
+                ring.push_back(h);
+            const int n = (int)ring.size();
+            if (n <= 1) break;
 
-        auto isB = [&](int i)->bool { return CGAL::is_border(ring[i], sm); };
+            auto isB = [&](int i){ return CGAL::is_border(ring[i], sm); };
 
-        // Найдём группы подряд идущих граничных полурёбер
-        std::vector<std::pair<int,int>> groups; // [begin,end] по ring
-        const int n = (int)ring.size();
-        int i = 0;
-        while (i < n) {
-            // пропускаем неграничные
-            while (i < n && !isB(i)) ++i;
-            if (i == n) break;
-            int b = i;
-            while (i < n && isB(i)) ++i;
-            int e = i - 1;
-            groups.emplace_back(b, e);
-        }
+            // 2) собрать подряд идущие бордер-участки (учитывая wrap-around)
+            std::vector<std::pair<int,int>> groups; // [b,e], обе границы включительно
+            groups.reserve(4);
 
-        if (groups.size() <= 1) continue; // ничего делить
+            // найдём старт с НЕбордерного, чтобы не рвать группу на границе
+            int start = 0;
+            for (; start<n && isB(start); ++start) {}
+            if (start == n) {
+                // весь веер — бордер; это одна группа, «поцелуев» нет
+                break;
+            }
 
-        // Отделяем каждую группу, начиная со второй.
-        // split_vertex(h1,h2,sm) отделяет сектор [h1..h2] в новую вершину.
-        for (size_t g = 1; g < groups.size(); ++g) {
-            auto h_begin = ring[groups[g].first];
-            auto h_end   = ring[groups[g].second];
-            // в некоторых версиях возвращает пару halfedge'ов — игнорируем
-            CGAL::Euler::split_vertex(h_begin, h_end, sm);
+            int i = start;
+            do {
+                // пропускаем небoрдеры
+                while (!isB(i)) { i = (i+1)%n; if (i==start) break; }
+                if (!isB(i)) break;             // вернулись к старту
 
-            // Дублировать позицию не нужно: split_vertex сам создаёт новую вершину
-            // с той же позицией, что у исходной. Если у вашей версии нет —
-            // можно явно: sm.point(target(h_begin, sm)) = sm.point(v);
+                int b = i;                       // начало бордер-полосы
+                do { i = (i+1)%n; } while (isB(i));
+                int e = (i + n - 1) % n;         // конец бордер-полосы
+                groups.emplace_back(b, e);
+            } while (i != start);
+
+            if (groups.size() <= 1) break;       // уже нет «поцелуев»
+
+            // 3) режем между двумя соседними группами
+            const int b2 = groups[1].first;      // первый halfedge второй группы  (border)
+            const int e1 = groups[0].second;     // последний halfedge первой группы (border)
+
+            H h1 = ring[b2];                     // граница со стороны 2-й группы
+            H h2 = ring[(e1 + 1) % n];           // первый после 1-й группы (не border)
+
+            // страховки пред-условий CGAL::Euler::split_vertex
+            if (h1 == h2) {                      // на всякий
+                h2 = next_around_target(h1);
+                if (h1 == h2) break;
+            }
+            if (sm.target(h1) != v || sm.target(h2) != v)
+                break;
+
+            // 4) сплитим: сектор между h1 и h2 (по кругу target(v)) уедет в новую вершину
+            const auto Pv = sm.point(v);         // запомним позицию исходной вершины
+            CGAL::Euler::split_vertex(h1, h2, sm);
+
+            // В Surface_mesh split_vertex НЕ копирует point-property.
+            // После операции h1 и h2 теперь имеют разный target: один старый v, другой — новая вершина.
+            V va = sm.target(h1);
+            V vb = sm.target(h2);
+            sm.point(va) = Pv;                   // обе получают ту же позицию, что и исходная
+            sm.point(vb) = Pv;
+
+            // продолжаем цикл: переменная v оставляем прежней — это «старая» вершина;
+            // если остались ещё лишние бордер-группы вокруг неё, следующая итерация их найдёт.
         }
     }
 
     sm.collect_garbage();
 }
+
 
 } // namespace
 
@@ -542,11 +587,11 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
 
     sm.collect_garbage();
     // 1) У всех вершин гарантированно выставить какой-то halfedge
- //   for (auto v : sm.vertices())
- //       fix_vertex_halfedge_safe(sm, v);
+    for (auto v : sm.vertices())
+        fix_vertex_halfedge_safe(sm, v);
 
     // 2) Раздублировать неманифолдные граничные вершины (kissing)
-   // PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
+    PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
     split_kissing_border_vertices(sm);        // твой fallback
 
     // 3) Подчистить мусор
@@ -1858,22 +1903,33 @@ static inline F extrude_face_from_plan_uid5(
         V ta      = top[i];
         V tb      = top[j];
 
-        H h_b_tb  = ensure_oriented_halfedge(sm, b,  tb);   // b->tb
-        H h_tb_ta = ensure_oriented_halfedge(sm, tb, ta);   // tb->ta
-        H h_ta_a  = ensure_oriented_halfedge(sm, ta, a);    // ta->a
+        H h_b_tb  = e_up[j];                 // b(=a_j)   -> tb(=ta_j)
+        H h_tb_ta = sm.opposite(e_top[i]);   // tb        -> ta
+        H h_ta_a  = sm.opposite(e_up[i]);    // ta        -> a
 
         // кольцо квадра
         if (sm.face(h_ab)!=SM::null_face() || sm.face(h_b_tb)!=SM::null_face()
-            || sm.face(h_tb_ta)!=SM::null_face() || sm.face(h_ta_a)!=SM::null_face()) continue;
+            || sm.face(h_tb_ta)!=SM::null_face() || sm.face(h_ta_a)!=SM::null_face())
+            continue;
         if (sm.target(h_ab)!=sm.source(h_b_tb) ||
             sm.target(h_b_tb)!=sm.source(h_tb_ta) ||
             sm.target(h_tb_ta)!=sm.source(h_ta_a) ||
-            sm.target(h_ta_a)!=sm.source(h_ab)) continue;
+            sm.target(h_ta_a)!=sm.source(h_ab))
+                continue;
 
-        F fw = sm.add_face(); if (fw==SM::null_face()) continue;
+        F fw = sm.add_face(); if (fw==SM::null_face())
+            continue;
         H ring[4] = { h_ab, h_b_tb, h_tb_ta, h_ta_a };
-        for (int t=0;t<4;++t){ sm.set_face(ring[t], fw); sm.set_next(ring[t], ring[(t+1)&3]); }
+        for (int t=0;t<4;++t){
+            sm.set_face(ring[t], fw); sm.set_next(ring[t], ring[(t+1)&3]);
+        }
         sm.set_halfedge(fw, h_ab);
+
+        sm.set_halfedge(sm.target(h_ab),   h_ab);    // target(h_ab) = b
+        sm.set_halfedge(sm.target(h_b_tb), h_b_tb);  // target = tb
+        sm.set_halfedge(sm.target(h_tb_ta),h_tb_ta); // target = ta
+        sm.set_halfedge(sm.target(h_ta_a), h_ta_a);  // target = a
+
 
     }
 
@@ -1898,6 +1954,7 @@ static inline F extrude_face_from_plan_uid5(
 
     // 7) удалить исходную грань и её uid — только теперь!
     fByUid.erase(plan.fuid);
+    sm.set_halfedge(f, SM::null_halfedge());
     sm.remove_face(f);
 
     return fcap;
