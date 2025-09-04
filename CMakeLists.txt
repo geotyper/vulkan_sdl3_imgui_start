@@ -104,6 +104,7 @@ set(HEADERS
     src/RayTracingModule.h
     src/CgalMeshBuilder.h
     src/StandardMeshRenderer.h
+    src/CgalMeshBuilderTentacles.h
 
 )
 
@@ -123,6 +124,7 @@ set(SRC
     src/main.cpp
     src/CgalMeshBuilder.cpp
     src/StandardMeshRenderer.cpp
+    src/CgalMeshBuilderTentacles.cpp
 )
 
 # === Include dirs ===

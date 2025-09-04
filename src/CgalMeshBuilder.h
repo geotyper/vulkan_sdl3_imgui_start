@@ -113,4 +113,5 @@ public:
     static ExtrudeLists extrudeFaces2(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale);
     static std::vector<SurfaceMesh::Face_index> selectFaceByIndex(const SurfaceMesh &sm, uint32_t indexFace);
     static bool checkMesh(SurfaceMesh &sm);
+    static std::vector<SurfaceMesh::Face_index> extrudeFaces_collectBothRotate(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale, double twist_rad = 0.0, double tilt_rad = 0.0);
 };

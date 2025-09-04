@@ -582,6 +582,8 @@ void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
     }
 }
 
+#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
+
 void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
     namespace PMP = CGAL::Polygon_mesh_processing;
 
@@ -589,6 +591,10 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
     // 1) У всех вершин гарантированно выставить какой-то halfedge
     for (auto v : sm.vertices())
         fix_vertex_halfedge_safe(sm, v);
+
+    std::size_t nb = PMP::stitch_borders(sm);
+    (void)nb; // чтобы компилятор не ворчал
+    sm.collect_garbage();
 
     // 2) Раздублировать неманифолдные граничные вершины (kissing)
     PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
@@ -598,6 +604,8 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
    // PMP::remove_degenerate_faces(sm);
    // remove_isolated_vertices_safe(sm);
 
+
+   // PMP::remove_degenerate_faces(sm);
     // 4) Компактим индексы (ИНВАЛИДИРУЕТ все старые дескрипторы!)
     sm.collect_garbage();
 }
@@ -1993,6 +2001,275 @@ std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
             sm, p, distance, scale, MC,
             vuid, fuid, next_vuid, next_fuid,
             vByUid, fByUid, &dump);
+
+        if (cap != SM::null_face()) caps.push_back(cap);
+
+        // обновляем словари под новые вершины/удалённые грани
+        rebuild_vertex_uid_map(sm, vuid, vByUid);
+        rebuild_face_uid_map(sm, fuid, fByUid);
+    }
+    // без collect_garbage, чтобы дескрипторы остались валидными
+    return caps;
+}
+
+
+static inline double vlen(const Vector_3& v){
+    return std::sqrt(CGAL::to_double(v.squared_length()));
+}
+static inline Vector_3 vnorm(const Vector_3& v){
+    double L = vlen(v); if (L==0) return Vector_3(0,0,0);
+    return Vector_3(v.x()/L, v.y()/L, v.z()/L);
+}
+static inline Vector_3 vscale(const Vector_3& v, double s){
+    return Vector_3(v.x()*s, v.y()*s, v.z()*s);
+}
+static inline Vector_3 rotate_around_axis(const Vector_3& v,
+                                          const Vector_3& axis_unit,
+                                          double ang)
+{
+    if (ang==0) return v;
+    const double c = std::cos(ang), s = std::sin(ang);
+    const Vector_3 a = axis_unit;                    // |a|=1
+    const double vpa = CGAL::to_double(CGAL::scalar_product(v, a));
+    const Vector_3 v_parallel = vscale(a, vpa);
+    const Vector_3 v_perp     = v - v_parallel;
+    const Vector_3 v_perp_rot = vscale(v_perp, c) + vscale(CGAL::cross_product(a, v_perp), s);
+    return v_parallel + v_perp_rot;
+}
+
+
+// Выбираем ось, наименее коллинеарную нормали, и из неё строим t0, t1.
+// Дополнительно фиксируем знак t0 по глобальной оси X (или Y как запасной план).
+inline void canonical_tangent_basis(const Vector_3& n_unit, Vector_3& t0, Vector_3& t1){
+    Vector_3 ref = (std::abs(n_unit.z()) < 0.9) ? Vector_3(0,0,1) : Vector_3(0,1,0);
+    t0 = vnorm(CGAL::cross_product(ref, n_unit));
+    if (t0 == CGAL::NULL_VECTOR) ref = Vector_3(1,0,0), t0 = vnorm(CGAL::cross_product(ref, n_unit));
+    t1 = vnorm(CGAL::cross_product(n_unit, t0));
+
+    // Стабилизируем направление (чтобы t0 не «флипался» от грани к грани)
+    double ex = CGAL::to_double(CGAL::scalar_product(t0, Vector_3(1,0,0)));
+    double ey = CGAL::to_double(CGAL::scalar_product(t0, Vector_3(0,1,0)));
+    if (std::abs(ex) > 1e-9) { if (ex < 0) t0 = -t0, t1 = -t1; }
+    else if (ey < 0)          { t0 = -t0, t1 = -t1; }
+}
+
+
+static inline F extrude_face_from_plan_uidRotate(
+    SM& sm,
+    const FacePlan& plan,
+    double distExtrude, double amountExtrude,
+    const Point_3& meshC,
+    SM::Property_map<V,std::uint64_t>& vuid,
+    SM::Property_map<F,std::uint64_t>& /*fuid*/,
+    std::uint64_t& next_vuid, std::uint64_t& /*next_fuid*/,
+    std::unordered_map<std::uint64_t,V>& vByUid,
+    std::unordered_map<std::uint64_t,F>& fByUid,
+    ExtrudeLists* out,
+    double twist_rad = 0.0,   // NEW: скрутка вокруг нормали (рад)
+    double tilt_rad  = 0.0  )
+{
+
+
+    //quick_self_test();
+
+    using H = typename SM::Halfedge_index;
+    using V = typename SM::Vertex_index;
+    using F = typename SM::Face_index;
+
+    // --- 0) найти исходную грань f по uid ---
+    auto itF = fByUid.find(plan.fuid);
+    if (itF == fByUid.end()) return SM::null_face();
+    F f = itF->second;
+    if (f == SM::null_face() || sm.is_removed(f)) return SM::null_face();
+
+    // --- 1) кольцо исходной грани (CCW), R[i].h_ab : a_i -> b_i ---
+    struct RingCorner { V a; H h_ab; bool was_border_ba; };
+    std::vector<RingCorner> R; R.reserve(32);
+    std::vector<Point_3>    baseP; baseP.reserve(32);
+
+    H h0 = sm.halfedge(f);
+    if (h0 == SM::null_halfedge())
+        return SM::null_face();
+
+    {
+        H h = h0; std::unordered_set<V> seen;
+        do{
+            if (h == SM::null_halfedge())
+                return SM::null_face();
+            V a = sm.source(h);
+            if (a == SM::null_vertex() || !seen.insert(a).second)
+                return SM::null_face();
+            H ho = sm.opposite(h);
+            bool wasB = (ho != SM::null_halfedge() && sm.face(ho) == SM::null_face());
+            R.push_back({a, h, wasB});
+            baseP.push_back(sm.point(a));
+            h = sm.next(h);
+        } while(h != h0);
+    }
+
+    const size_t k = R.size();
+    if (k < 3) return SM::null_face();
+    auto nexti = [&](size_t i){ return (i+1)%k; };
+
+    // --- 2) верхний контур с twist/tilt (стабильная касательная) ---
+    const Point_3 c  = centroid_points(baseP);
+    Vector_3 n0 = newell_normal(baseP);
+    Vector_3      n_unit = vnorm(n0);
+
+    // Каноническое основание
+    Vector_3 t0, t1;
+    canonical_tangent_basis(n_unit, t0, t1);
+
+    // Наклоняем нормаль вокруг t0
+    Vector_3 n_tilt = rotate_around_axis(n_unit, t0, tilt_rad);
+
+    // Центр крышки после смещения вдоль наклонённой нормали
+    const Point_3 cc(c.x()+n_tilt.x()*distExtrude,
+                     c.y()+n_tilt.y()*distExtrude,
+                     c.z()+n_tilt.z()*distExtrude);
+
+    // Верхние вершины
+    std::vector<V> top(k, SM::null_vertex());
+    for (size_t i=0; i<k; ++i){
+        Vector_3 d = baseP[i] - c;
+        double dn  = CGAL::to_double(CGAL::scalar_product(d, n_unit));
+        Vector_3 r_plane = d - n_unit*dn;                 // радиус в плоскости грани
+
+        // Хочешь, чтобы «скрутка» считалась уже в наклонённой плоскости —
+        // крути вокруг n_tilt (а не n_unit). Оба варианта валидны:
+        Vector_3 r_twist = rotate_around_axis(r_plane, /* n_unit или */ n_tilt, twist_rad);
+        Vector_3 r_tilt  = rotate_around_axis(r_twist, t0,          tilt_rad);
+
+        const double r_len = std::sqrt(CGAL::to_double(r_plane.squared_length()));
+        Vector_3 offset    = vnorm(r_tilt) * (amountExtrude * r_len);
+
+        const Point_3 pt(cc.x()+offset.x(), cc.y()+offset.y(), cc.z()+offset.z());
+
+        V tv = sm.add_vertex(pt);
+        vuid[tv] = next_vuid++;
+        vByUid[vuid[tv]] = tv;
+        top[i] = tv;
+    }
+
+
+
+    // --- 3) превратить f в "дырку": все h_ab -> border-цикл по порядку ---
+    for (size_t i=0;i<k;++i) sm.set_face(R[i].h_ab, SM::null_face());
+    for (size_t i=0;i<k;++i) sm.set_next(R[i].h_ab, R[(i+1)%k].h_ab);
+
+    // локальные соседи в «дырке» (чтоб не звать чужие бордер-обходы)
+    std::vector<H> hole_prev(k), hole_next(k);
+    for (size_t i=0;i<k;++i){ hole_prev[i]=R[(i+k-1)%k].h_ab; hole_next[i]=R[(i+1)%k].h_ab; }
+
+    // 4) подготовить стойки и «верх» без дублей
+    std::vector<H> e_up(k), e_top(k);
+    for (size_t i=0;i<k;++i){
+        size_t j=(i+1)%k;
+        e_up[i]  = ensure_oriented_halfedge(sm, R[i].a, top[i]); // a->ta
+        e_top[i] = ensure_oriented_halfedge(sm, top[i], top[j]); // ta->tb
+        if (e_up[i]==SM::null_halfedge() || e_top[i]==SM::null_halfedge())
+            return SM::null_face();
+    }
+
+    // 5) стены + локальный сплайс бордера вместо h_ab
+    for (size_t i=0;i<k;++i){
+        size_t j=(i+1)%k;
+        H h_ab    = R[i].h_ab;                 // низ a->b (уже border)
+        V a       = R[i].a;
+        V b       = sm.target(h_ab);
+        V ta      = top[i];
+        V tb      = top[j];
+
+        H h_b_tb  = e_up[j];                 // b(=a_j)   -> tb(=ta_j)
+        H h_tb_ta = sm.opposite(e_top[i]);   // tb        -> ta
+        H h_ta_a  = sm.opposite(e_up[i]);    // ta        -> a
+
+        // кольцо квадра
+        if (sm.face(h_ab)!=SM::null_face() || sm.face(h_b_tb)!=SM::null_face()
+            || sm.face(h_tb_ta)!=SM::null_face() || sm.face(h_ta_a)!=SM::null_face())
+            continue;
+        if (sm.target(h_ab)!=sm.source(h_b_tb) ||
+            sm.target(h_b_tb)!=sm.source(h_tb_ta) ||
+            sm.target(h_tb_ta)!=sm.source(h_ta_a) ||
+            sm.target(h_ta_a)!=sm.source(h_ab))
+            continue;
+
+        F fw = sm.add_face(); if (fw==SM::null_face())
+            continue;
+        H ring[4] = { h_ab, h_b_tb, h_tb_ta, h_ta_a };
+        for (int t=0;t<4;++t){
+            sm.set_face(ring[t], fw); sm.set_next(ring[t], ring[(t+1)&3]);
+        }
+        sm.set_halfedge(fw, h_ab);
+
+        sm.set_halfedge(sm.target(h_ab),   h_ab);    // target(h_ab) = b
+        sm.set_halfedge(sm.target(h_b_tb), h_b_tb);  // target = tb
+        sm.set_halfedge(sm.target(h_tb_ta),h_tb_ta); // target = ta
+        sm.set_halfedge(sm.target(h_ta_a), h_ta_a);  // target = a
+
+
+    }
+
+    // 6) крышка одним n-угольником по ta->tb (e_top)
+    std::vector<H> cap_ring; cap_ring.reserve(k);
+    for (size_t i=0;i<k;++i){
+        H h = e_top[i]; // ta->tb
+        if (h==SM::null_halfedge() || sm.face(h)!=SM::null_face()) { cap_ring.clear(); break; }
+        if (!cap_ring.empty() && sm.target(cap_ring.back())!=sm.source(h)) { cap_ring.clear(); break; }
+        cap_ring.push_back(h);
+    }
+    F fcap = SM::null_face();
+    if (!cap_ring.empty()){
+        fcap = attach_polygon_cap_from_ring_manual(sm, cap_ring);
+        // входящий для вершин крышки — удобно выставить
+        for (size_t i=0;i<k;++i){
+            V ta = top[i];
+            H incoming = sm.opposite(e_top[(i+k-1)%k]); // (tb->ta)
+            set_vertex_incoming_if_any(sm, ta, incoming);
+        }
+    }
+
+    // 7) удалить исходную грань и её uid — только теперь!
+    fByUid.erase(plan.fuid);
+    sm.set_halfedge(f, SM::null_halfedge());
+    sm.remove_face(f);
+
+    return fcap;
+}
+
+std::vector<F> CgalMeshBuilder::extrudeFaces_collectBothRotate(
+    SM& sm,
+    const std::vector<F>& faces,
+    double distance,
+    double scale,
+    double twist_rad ,   // NEW: скрутка вокруг нормали (рад)
+    double tilt_rad)
+{
+    std::vector<F> todo;
+    for (auto f: faces) if (f!=SM::null_face() && !sm.is_removed(f)) todo.push_back(f);
+
+    // UID и планы
+    SM::Property_map<V,std::uint64_t> vuid;
+    SM::Property_map<F,std::uint64_t> fuid;
+    std::uint64_t next_vuid=0, next_fuid=0;
+    ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
+
+    std::vector<FacePlan> plans;
+    build_face_plans_snapshot(sm, todo, vuid, fuid, plans);
+
+    std::unordered_map<std::uint64_t,V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
+    std::unordered_map<std::uint64_t,F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
+
+    const Point_3 MC = mesh_centroid(sm);
+
+    std::vector<F> caps; caps.reserve(plans.size());
+    ExtrudeLists dump; // если нужно копить стены; иначе можно убрать
+
+    for (auto p: plans) {
+        F cap = extrude_face_from_plan_uidRotate(
+            sm, p, distance, scale, MC,
+            vuid, fuid, next_vuid, next_fuid,
+            vByUid, fByUid, &dump, twist_rad, tilt_rad);
 
         if (cap != SM::null_face()) caps.push_back(cap);
 

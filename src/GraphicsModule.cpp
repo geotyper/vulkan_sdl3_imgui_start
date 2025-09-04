@@ -13,6 +13,7 @@
 #include <fstream>
 
 #include "CgalMeshBuilder.h"
+#include "CgalMeshBuilderTentacles.h"
 
 
 
@@ -286,8 +287,8 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 15, /*M*/ 15, /*L*/ 12, /*cellSize*/ 0.5);
-    //CgalMeshBuilder::buildPlaneXY(sm, /*N*/5,/*M*/5,  /*cellSize*/ 0.5);
+    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 2, /*cellSize*/ 0.5);
+   // CgalMeshBuilder::buildPlaneXY(sm, /*N*/5,/*M*/5,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
@@ -317,80 +318,90 @@ void GraphicsModule::CreateScene() {
         std::cerr << "faces="<<F<<"  tris="<<tri<<"  quads="<<quad<<"  polys="<<poly<<"\n";
     };
 
+    {
+        using SM = SurfaceMesh;                    // CGAL::Surface_mesh<Point_3>
+        using F  = SM::Face_index;
+
+       // auto seeds = CgalMeshBuilder::pick_random_faces(sm, 8, 123u);
+        auto seeds = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+
+        // 2) растим по очереди
+        CgalMeshBuilderTentacles::GrowParams gp;
+        gp.steps             = 12;
+        gp.distPerStep       = 0.15;
+        gp.amountPerStep     = 0.75;
+        gp.twistMinRad       = -0.35; gp.twistMaxRad = +0.45;
+        gp.tiltMinRad        = -0.25; gp.tiltMaxRad  = +0.25;
+        gp.collectEachStep   = true;
+        gp.collectBetweenFaces = true;
+        gp.policy            = CgalMeshBuilderTentacles::CollisionPolicy::Ignore; // пока без коллизий
+
+        // Заготовка под будущие коллизии (пока возвращаем false)
+        auto no_collision_yet = [](const SM& /*sm*/, const std::vector<F>& /*caps*/){
+            return false;
+        };
+
+        std::vector<std::vector<F>> history;
+        auto finals = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
+            sm, seeds, gp, no_collision_yet, &history
+            );
+
+        // по желанию:
+        sm.collect_garbage();
+    }
 
     //{
-    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-    //    auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
-    //    auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.0, 0.75);
-    //    auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2, 0.31, 0.25);
+    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+
+    //    double distance = 0.2;        // сдвиг вдоль нормали
+    //    double scale    = 0.7;        // масштаб верхнего кольца
+    //    double twist    = CGAL::to_double(10.0 * M_PI/180.0); // 10°
+    //    double tilt     = CGAL::to_double(15.0 * M_PI/180.0); // 15° вокруг t0
+
+    //    auto res = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, toExtr, 0.15, 0.9, twist, tilt);
+    //    auto res2 = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, res,  0.05, 0.75, 0, 0);
+
+    //    for(int i=0; i<12;i++)
+    //    {
+    //        if(i%2 ==0)
+    //            tilt *= -1;
+    //        res2 = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, res2, 0.25, 0.9, -twist, tilt);
+    //    }
+    //   // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.75);
+    //   // auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.15, 0.25);
     //    //CgalMeshBuilder::deleteFaces(sm, res3 , true);
     //}
 
    // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
 
-  //  auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res.caps, 0.0, 0.7);
-  //  auto res3 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2.caps, -0.1, 0.25);
-
-   // auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
-  //  auto res = CgalMeshBuilder::extrudeFaces(sm, toExtr, 0.15, 0.9);
     sm.collect_garbage();
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
     auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    CgalMeshBuilder::deleteFaces(sm, toDel, true);
+  //  CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
-  //  CgalMeshBuilder::cleanup_after_deletions(sm);
 
-    //sm.collect_garbage();
-    //{
-    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
-    //    auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.05, 0.9);
+    CgalMeshBuilder::cleanup_after_deletions(sm);
 
-    //    //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
-    //    //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
-    //}
-
-    //sm.collect_garbage();
-    //{
-    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
-    //    auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.7);
-    //    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-    //    CgalMeshBuilder::deleteFaces(sm, toDel, true);
-
-    //    //auto toExtr  = CgalMeshBuilder::selectFaceByIndex(sm, 4);
-    //    //auto res =  CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.1, 0.9);
-    //}
 
 
     auto checkResult =CgalMeshBuilder::checkMesh(sm);
     sm.collect_garbage();
     //CgalMeshBuilder::cleanup_after_deletions(sm);
 
-     //   CgalMeshBuilder::cleanup_after_deletions(sm);
+   // CgalMeshBuilder::cleanup_after_deletions(sm);
    // CgalMeshBuilder::applyCatmullClark(sm, 1, /*keep_borders=*/true);
-    // 4) triangulate as a separate step
 
-    // Densify a bit so rims have more verts to shape
+    //{
+    //    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
+    //    CgalMeshBuilder::deleteFaces(sm, toDel, true);
 
+    //    CgalMeshBuilder::cleanup_after_deletions(sm);
 
-    // Make each hole rim round-ish (optional)
-    //CgalMeshBuilder::circularizeBorderLoops(sm, 1.0);
-
-    // **Fillet**: push K rings from each rim with smooth falloff
-    //CgalMeshBuilder::filletBorderLoops(sm,
-    //                                   /*rings=*/5,          // try 4–8
-    //                                   /*height=*/0.06,      // try 0.03–0.12 relative to cube size 1
-    //                                   /*outward=*/true,
-    //                                   /*sharpness=*/1.2);
-
-    // Optional extra CC for overall softness
-
-    CgalMeshBuilder::cleanup_after_deletions(sm);
-
-    CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
-
+        CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
+    //}
     // Triangulate → export
 
 
