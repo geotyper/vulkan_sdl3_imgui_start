@@ -287,9 +287,12 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 5, /*M*/ 5, /*L*/ 2, /*cellSize*/ 0.5);
-   // CgalMeshBuilder::buildPlaneXY(sm, /*N*/5,/*M*/5,  /*cellSize*/ 0.5);
+   // CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 2, /*cellSize*/ 0.5);
+    //CgalMeshBuilder::buildPlaneXY(sm, /*N*/1,/*M*/2,  /*cellSize*/ 0.5);
 
+    CgalMeshBuilder::buildPlaneOriented(
+        sm, 15, 15, 0.5,
+        Point_3(0,0,0), Vector_3(0,-1,0));
     //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
 
     const int N = 2;
@@ -322,14 +325,16 @@ void GraphicsModule::CreateScene() {
         using SM = SurfaceMesh;                    // CGAL::Surface_mesh<Point_3>
         using F  = SM::Face_index;
 
-       // auto seeds = CgalMeshBuilder::pick_random_faces(sm, 8, 123u);
-        auto seeds = CgalMeshBuilder::selectFacesRandom(sm, 0.5, 4242);
+       // auto seeds = CgalMeshBuilder::selectFaceByIndex(sm, 7);
+        auto seeds = CgalMeshBuilder::selectFacesRandom(sm, 0.1, 4242);
+
+        auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, seeds, 0.0, 0.55);
 
         // 2) растим по очереди
         CgalMeshBuilderTentacles::GrowParams gp;
-        gp.steps             = 12;
+        gp.steps             = 15;
         gp.distPerStep       = 0.15;
-        gp.amountPerStep     = 0.75;
+        gp.amountPerStep     = 0.985;
         gp.twistMinRad       = -0.35; gp.twistMaxRad = +0.45;
         gp.tiltMinRad        = -0.25; gp.tiltMaxRad  = +0.25;
         gp.collectEachStep   = true;
@@ -343,9 +348,28 @@ void GraphicsModule::CreateScene() {
 
         std::vector<std::vector<F>> history;
         auto finals = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
-            sm, seeds, gp, no_collision_yet, &history
+            sm, res, gp, no_collision_yet, &history
             );
 
+
+        {
+
+            auto finals2 = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
+                sm, finals, gp, no_collision_yet, &history);
+
+            //// finals — то, что вернул extrudeTentaclesSequential (концевые крышки)
+            auto finalBulgedCaps = CgalMeshBuilderTentacles::extrudeBulgeOnCaps(
+                sm,
+                finals2,
+                /*steps=*/12,
+                /*distPerStep=*/0.06,
+                /*baseAmount=*/0.65,
+                /*bulgeAmount=*/0.85,   // пик: ~1.5 (0.65 + 0.85)
+                /*twist_rad=*/0.0,
+                /*tilt_rad=*/0.0,
+                /*collectEachStep=*/true
+                );
+        }
         // по желанию:
         sm.collect_garbage();
     }
@@ -377,8 +401,8 @@ void GraphicsModule::CreateScene() {
     sm.collect_garbage();
     std::cerr << "faces before del: " << count_faces(sm) << "\n";
     face_stats(sm);
-    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.25, 7777);
-  //  CgalMeshBuilder::deleteFaces(sm, toDel, true);
+    auto toDel   = CgalMeshBuilder::selectFacesRandom(sm, 0.35, 7777);
+    //CgalMeshBuilder::deleteFaces(sm, toDel, true);
     std::cerr << "faces after  del: " << count_faces(sm) << "\n";
     face_stats(sm);
     std::cerr << "selected: " << toDel.size() << "\n";  // you’ll likely see 2
@@ -400,7 +424,7 @@ void GraphicsModule::CreateScene() {
 
     //    CgalMeshBuilder::cleanup_after_deletions(sm);
 
-        CgalMeshBuilder::applyCatmullClark(sm, 4, /*keep_borders=*/true);
+    CgalMeshBuilder::applyCatmullClark(sm, 3, /*keep_borders=*/true);
     //}
     // Triangulate → export
 

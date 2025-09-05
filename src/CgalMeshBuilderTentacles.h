@@ -75,4 +75,30 @@ struct CgalMeshBuilderTentacles {
 
     // (Опционально) Пометить, что тентакль столкнулась
     static void mark_tentacle_collided(SM& sm, const std::vector<F>& caps);
+
+    // Добавь в public-секцию класса
+    static std::vector<F> add_balls_on_caps(
+        SM& sm,
+        const std::vector<F>& caps,   // концевые "крышки" тентаклей
+        double radius,                // радиус шаров
+        int subdivisions = 2,         // 0..3 обычно достаточно
+        double center_offset_k = 1.0  // множитель смещения центра: center += n * (k*radius)
+        );
+
+    // Утолщение на концах тентаклей "колоколом" без отдельной сферы.
+    // baseAmount — базовый масштаб (как обычно: 0.6..0.9),
+    // bulgeAmount — добавка в пике (на t=0.5), можно > 1.0 для сильного распухания.
+    static std::vector<F> extrudeBulgeOnCaps(
+        SM& sm,
+        const std::vector<F>& caps,
+        int    steps,                // 6..18 обычно хватает
+        double distPerStep,          // шаг вдоль нормали
+        double baseAmount,           // базовый scale (твоя amountExtrude)
+        double bulgeAmount,          // добавка в пике (t=0.5): amount = base + bulge*bell(t)
+        double twist_rad  = 0.0,
+        double tilt_rad   = 0.0,
+        bool   collectEachStep = true
+        );
+
+
 };

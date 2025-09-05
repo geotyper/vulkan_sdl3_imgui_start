@@ -15,6 +15,9 @@
 #include <unordered_set>
 #include <CGAL/Polygon_mesh_processing/repair.h>
 
+
+#include <unordered_map>
+
 namespace S3 = CGAL::Subdivision_method_3;
 namespace PMP = CGAL::Polygon_mesh_processing;
 using SM = SurfaceMesh;
@@ -69,99 +72,103 @@ static inline Point_3 mesh_centroid(const SM& sm){
 }
 
 
-// ---------------------------------------------------------------
-// Главный «роутер» роста: по одной тентакли за раз, каждая — steps шагов.
-// На каждом шаге генерируем новый twist/tilt и экструзим «крышки».
-// При TryAvoid делаем до avoidTries попыток скорректировать углы.
-// ---------------------------------------------------------------
-std::vector<CgalMeshBuilderTentacles::F>
-CgalMeshBuilderTentacles::extrudeTentaclesSequential(
-    SM& sm,
-    const std::vector<F>& seedFaces,
-    const GrowParams& gp,
-    CollisionCallback collision_cb,
-    std::vector<std::vector<F>>* outCapsPerFace)
-{
-    // RNG
-    std::mt19937 rng(gp.seed);
-    std::uniform_real_distribution<double> rndTwist(gp.twistMinRad, gp.twistMaxRad);
-    std::uniform_real_distribution<double> rndTilt (gp.tiltMinRad,  gp.tiltMaxRad);
+//// ---------------------------------------------------------------
+//// Главный «роутер» роста: по одной тентакли за раз, каждая — steps шагов.
+//// На каждом шаге генерируем новый twist/tilt и экструзим «крышки».
+//// При TryAvoid делаем до avoidTries попыток скорректировать углы.
+//// ---------------------------------------------------------------
+//std::vector<CgalMeshBuilderTentacles::F>
+//CgalMeshBuilderTentacles::extrudeTentaclesSequential(
+//    SM& sm,
+//    const std::vector<F>& seedFaces,
+//    const GrowParams& gp,
+//    CollisionCallback collision_cb,
+//    std::vector<std::vector<F>>* outCapsPerFace)
+//{
+//    // RNG
+//    std::mt19937 rng(gp.seed);
+//    std::uniform_real_distribution<double> rndTwist(gp.twistMinRad, gp.twistMaxRad);
+//    std::uniform_real_distribution<double> rndTilt (gp.tiltMinRad,  gp.tiltMaxRad);
+//
+//    // Случайный порядок стартовых граней
+//    std::vector<F> order = seedFaces;
+//    std::shuffle(order.begin(), order.end(), rng);
+//
+//    // Все финальные «крышки» (по последнему шагу каждой тентакли)
+//    std::vector<F> finalCaps;
+//    finalCaps.reserve(order.size());
+//
+//    if (outCapsPerFace) outCapsPerFace->clear();
+//
+//    for (size_t fi = 0; fi < order.size(); ++fi) {
+//        F f0 = order[fi];
+//        if (f0 == SM::null_face() || sm.is_removed(f0)) continue;
+//
+//        // Текущий фронт роста — начинаем с одной стартовой грани
+//        std::vector<F> front = { f0 };
+//        bool stoppedByCollision = false;
+//
+//        // Храним историю крышек для этой тентакли (если нужно наружу)
+//        std::vector<F> lastCaps = front;
+//
+//        for (int step = 0; step < gp.steps; ++step) {
+//            // Случайные углы на шаг
+//            double twist = rndTwist(rng);
+//            double tilt  = rndTilt(rng);
+//
+//            auto try_step = [&](double tw, double tl, std::vector<F>& front, std::vector<F>& outCaps)->bool {
+//                front = extrudeFaces_collectBothRotate(sm, front, gp.distPerStep, gp.amountPerStep, tw, tl);
+//                if (collision_cb) {
+//                    if (collision_cb(sm, outCaps)) return false; // пересечение — попытка неудачна
+//                }
+//                return true; // успех (или нет проверки)
+//            };
+//
+//            std::vector<F> caps;
+//            bool ok = try_step(twist, tilt, front, caps);
+//
+//           // if (!ok && gp.policy == CollisionPolicy::TryAvoid) {
+//           //     // Пытаемся «уйти» — увеличиваем углы в случайную сторону
+//           //     std::uniform_int_distribution<int> sign01(0, 1);
+//           //     for (int a = 0; a < gp.avoidTries && !ok; ++a) {
+//           //         double tw = twist + (sign01(rng) ? +gp.avoidTwistJitter : -gp.avoidTwistJitter);
+//           //         double tl = tilt  + (sign01(rng) ? +gp.avoidTiltJitter  : -gp.avoidTiltJitter);
+//           //         ok = try_step(tw, tl, front, caps);
+//           //     }
+//           // }
+//
+//           // if (!ok) {
+//           //     // Не удалось — политика
+//           //     if (gp.policy == CollisionPolicy::MarkAndStop) {
+//           //         mark_tentacle_collided(sm, lastCaps);
+//           //         stoppedByCollision = true;
+//           //     }
+//           //     break; // выходим из цикла шагов для этой тентакли
+//           // }
+//
+//            // Обновляем фронт
+//            //front = caps;
+//            lastCaps = caps;
+//
+//            //if (gp.collectEachStep) sm.collect_garbage();
+//        }
+//
+//        if (!lastCaps.empty()) {
+//            // Возьмём любую «крышку» как представителя финала (или можно добавить все)
+//            finalCaps.push_back(front.back());
+//        }
+//
+//        if (outCapsPerFace) outCapsPerFace->push_back(std::move(lastCaps));
+//
+//        if (gp.collectBetweenFaces) sm.collect_garbage();
+//
+//        finalCaps.push_back(front[0]);
+//    }
+//
+//    return finalCaps;
+//}
 
-    // Случайный порядок стартовых граней
-    std::vector<F> order = seedFaces;
-    std::shuffle(order.begin(), order.end(), rng);
 
-    // Все финальные «крышки» (по последнему шагу каждой тентакли)
-    std::vector<F> finalCaps;
-    finalCaps.reserve(order.size());
-
-    if (outCapsPerFace) outCapsPerFace->clear();
-
-    for (size_t fi = 0; fi < order.size(); ++fi) {
-        F f0 = order[fi];
-        if (f0 == SM::null_face() || sm.is_removed(f0)) continue;
-
-        // Текущий фронт роста — начинаем с одной стартовой грани
-        std::vector<F> front = { f0 };
-        bool stoppedByCollision = false;
-
-        // Храним историю крышек для этой тентакли (если нужно наружу)
-        std::vector<F> lastCaps = front;
-
-        for (int step = 0; step < gp.steps; ++step) {
-            // Случайные углы на шаг
-            double twist = rndTwist(rng);
-            double tilt  = rndTilt(rng);
-
-            auto try_step = [&](double tw, double tl, std::vector<F>& front, std::vector<F>& outCaps)->bool {
-                front = extrudeFaces_collectBothRotate(sm, front, gp.distPerStep, gp.amountPerStep, tw, tl);
-                if (collision_cb) {
-                    if (collision_cb(sm, outCaps)) return false; // пересечение — попытка неудачна
-                }
-                return true; // успех (или нет проверки)
-            };
-
-            std::vector<F> caps;
-            bool ok = try_step(twist, tilt, front, caps);
-
-           // if (!ok && gp.policy == CollisionPolicy::TryAvoid) {
-           //     // Пытаемся «уйти» — увеличиваем углы в случайную сторону
-           //     std::uniform_int_distribution<int> sign01(0, 1);
-           //     for (int a = 0; a < gp.avoidTries && !ok; ++a) {
-           //         double tw = twist + (sign01(rng) ? +gp.avoidTwistJitter : -gp.avoidTwistJitter);
-           //         double tl = tilt  + (sign01(rng) ? +gp.avoidTiltJitter  : -gp.avoidTiltJitter);
-           //         ok = try_step(tw, tl, front, caps);
-           //     }
-           // }
-
-           // if (!ok) {
-           //     // Не удалось — политика
-           //     if (gp.policy == CollisionPolicy::MarkAndStop) {
-           //         mark_tentacle_collided(sm, lastCaps);
-           //         stoppedByCollision = true;
-           //     }
-           //     break; // выходим из цикла шагов для этой тентакли
-           // }
-
-            // Обновляем фронт
-            //front = caps;
-            lastCaps = caps;
-
-            //if (gp.collectEachStep) sm.collect_garbage();
-        }
-
-        if (!lastCaps.empty()) {
-            // Возьмём любую «крышку» как представителя финала (или можно добавить все)
-            finalCaps.push_back(front.back());
-        }
-
-        if (outCapsPerFace) outCapsPerFace->push_back(std::move(lastCaps));
-
-        if (gp.collectBetweenFaces) sm.collect_garbage();
-    }
-
-    return finalCaps;
-}
 
 // ---------------------------------------------------------------
 // Маркер столкновения — заглушка: например, можно покрасить вершины/грани,
@@ -171,6 +178,7 @@ void CgalMeshBuilderTentacles::mark_tentacle_collided(SM& /*sm*/, const std::vec
 {
     // TODO: set face property "collided" = true, или окрасить в отладочном выводе.
 }
+
 
 
 
@@ -197,6 +205,161 @@ static inline Vector_3 rotate_around_axis(const Vector_3& v,
     const Vector_3 v_perp_rot = vscale(v_perp, c) + vscale(CGAL::cross_product(a, v_perp), s);
     return v_parallel + v_perp_rot;
 }
+
+
+
+
+// ———— вспомогательное: собрать кольцо вершин грани (CCW) и их точки ————
+static inline void face_ring_vertices(const SM& sm, F f,
+                                      std::vector<V>& ringV,
+                                      std::vector<Point_3>& ringP)
+{
+    ringV.clear(); ringP.clear();
+    if (f == SM::null_face()) return;
+    H h0 = sm.halfedge(f);
+    if (h0 == SM::null_halfedge()) return;
+
+    H h = h0;
+    std::unordered_set<V> seen;
+    do {
+        V v = source(h, sm);
+        if (v == SM::null_vertex() || !seen.insert(v).second) { ringV.clear(); ringP.clear(); return; }
+        ringV.push_back(v);
+        ringP.push_back(sm.point(v));
+        h = next(h, sm);
+    } while (h != h0);
+}
+
+// ————  локальный юнит-икосаэдр + сабдив до икосферы ————
+static std::vector<std::array<int,3>> build_icosphere(std::vector<Vector_3>& outUnitVerts,
+                                                       int subdivisions)
+{
+    // 12 вершин икосаэдра (ориентация наружу)
+    const double phi = (1.0 + std::sqrt(5.0)) * 0.5;
+    std::vector<Vector_3> Vloc = {
+        { -1,  phi,  0 }, {  1,  phi,  0 }, { -1, -phi,  0 }, {  1, -phi,  0 },
+        {  0, -1,  phi }, {  0,  1,  phi }, {  0, -1, -phi }, {  0,  1, -phi },
+        {  phi,  0, -1 }, {  phi,  0,  1 }, { -phi,  0, -1 }, { -phi,  0,  1 }
+    };
+
+    // нормализуем к единичной сфере
+    for (auto& v : Vloc) v = vnorm(v);
+
+    // 20 треугольников икосаэдра
+    std::vector<std::array<int,3>> Tris = {
+        {0,11,5},  {0,5,1},   {0,1,7},   {0,7,10},  {0,10,11},
+        {1,5,9},   {5,11,4},  {11,10,2}, {10,7,6},  {7,1,8},
+        {3,9,4},   {3,4,2},   {3,2,6},   {3,6,8},   {3,8,9},
+        {4,9,5},   {2,4,11},  {6,2,10},  {8,6,7},   {9,8,1}
+    };
+
+    auto key_pair = [](int a, int b)->uint64_t{
+        if (a>b) std::swap(a,b);
+        return (uint64_t(uint32_t(a))<<32) | uint32_t(b);
+    };
+
+    for (int it = 0; it < subdivisions; ++it) {
+        std::unordered_map<uint64_t,int> midCache;
+        std::vector<std::array<int,3>> Tris2; Tris2.reserve(Tris.size()*4);
+
+        auto mid = [&](int a, int b)->int {
+            uint64_t k = key_pair(a,b);
+            auto it = midCache.find(k);
+            if (it != midCache.end()) return it->second;
+            Vector_3 m = vnorm( (Vloc[a] + Vloc[b]) * 0.5 );
+            int idx = (int)Vloc.size();
+            Vloc.push_back(m);
+            midCache.emplace(k, idx);
+            return idx;
+        };
+
+        for (auto t : Tris) {
+            int a = t[0], b = t[1], c = t[2];
+            int ab = mid(a,b), bc = mid(b,c), ca = mid(c,a);
+            Tris2.push_back({a,  ab, ca});
+            Tris2.push_back({b,  bc, ab});
+            Tris2.push_back({c,  ca, bc});
+            Tris2.push_back({ab, bc, ca});
+        }
+        Tris.swap(Tris2);
+    }
+
+    outUnitVerts = std::move(Vloc);
+    return Tris;
+}
+
+// ———— добавить одну икосферу в sm вокруг center с радиусом r ————
+static std::vector<F> append_icosphere_to_surface_mesh(SM& sm,
+                                                       const Point_3& center,
+                                                       double r,
+                                                       int subdivisions)
+{
+    std::vector<Vector_3> U;                    // unit vertices
+    auto Tris = build_icosphere(U, subdivisions);
+
+    // добавляем вершины
+    std::vector<V> Vh; Vh.reserve(U.size());
+    for (const auto& u : U) {
+        Point_3 p(center.x() + u.x()*r,
+                  center.y() + u.y()*r,
+                  center.z() + u.z()*r);
+        Vh.push_back(sm.add_vertex(p));
+    }
+
+    // добавляем треугольники (ориентация наружу сохранена)
+    std::vector<F> addedFaces; addedFaces.reserve(Tris.size());
+    for (auto t : Tris) {
+        F f = sm.add_face(Vh[t[0]], Vh[t[1]], Vh[t[2]]);
+        if (f != SM::null_face()) addedFaces.push_back(f);
+    }
+    return addedFaces;
+}
+
+// ———— публичный метод: шары на концах тентаклей (caps) ————
+std::vector<CgalMeshBuilderTentacles::F>
+CgalMeshBuilderTentacles::add_balls_on_caps(
+    SM& sm,
+    const std::vector<F>& caps,
+    double radius,
+    int subdivisions,
+    double center_offset_k)
+{
+    std::vector<F> allNewFaces; allNewFaces.reserve(caps.size() * (20<<subdivisions));
+
+    const Point_3 MC = mesh_centroid(sm); // для ориентации нормали «наружу»
+
+    for (F fcap : caps) {
+        if (fcap == SM::null_face() || sm.is_removed(fcap)) continue;
+
+        // центроид и нормаль крышки
+        std::vector<V> ringV; std::vector<Point_3> ringP;
+        face_ring_vertices(sm, fcap, ringV, ringP);
+        if (ringP.size() < 3) continue;
+
+        Point_3  C = centroid_points(ringP);
+        Vector_3 n = newell_normal(ringP);
+        // пусть нормаль смотрит ВНЕ (от общего центра меша)
+        Vector_3 toOut = Vector_3(C.x()-MC.x(), C.y()-MC.y(), C.z()-MC.z());
+        if (CGAL::to_double(CGAL::scalar_product(n, toOut)) < 0) n = -n;
+        Vector_3 nu = vnorm(n);
+
+        // центр шара чуть вперед по нормали, чтобы шар касался торца
+        Point_3 S(C.x() + nu.x() * (center_offset_k * radius),
+                  C.y() + nu.y() * (center_offset_k * radius),
+                  C.z() + nu.z() * (center_offset_k * radius));
+
+        // сам шар
+        auto facesOfBall = append_icosphere_to_surface_mesh(sm, S, radius, subdivisions);
+        allNewFaces.insert(allNewFaces.end(), facesOfBall.begin(), facesOfBall.end());
+    }
+
+    // можно прошить/подлечить, если нужно:
+    // PMP::remove_isolated_vertices(sm);
+    // sm.collect_garbage(); // если хочется сразу подчистить
+
+    return allNewFaces;
+}
+
 
 
 // Выбираем ось, наименее коллинеарную нормали, и из неё строим t0, t1.
@@ -603,4 +766,227 @@ std::vector<F> CgalMeshBuilderTentacles::extrudeFaces_collectBothRotate(
     }
     // без collect_garbage, чтобы дескрипторы остались валидными
     return caps;
+}
+
+
+
+// ---- shared step: build plans for current front (caps) and extrude each cap ----
+static inline std::vector<CgalMeshBuilderTentacles::F>
+step_extrude_front(
+    SM& sm,
+    const std::vector<F>& front,      // faces (caps) to advance
+    double distPerStep,
+    double amount,
+    double twist_rad,
+    double tilt_rad,
+    SM::Property_map<V,std::uint64_t>& vuid,
+    SM::Property_map<F,std::uint64_t>& fuid,
+    std::uint64_t& next_vuid,
+    std::uint64_t& next_fuid,
+    std::unordered_map<std::uint64_t,V>& vByUid,
+    std::unordered_map<std::uint64_t,F>& fByUid,
+    ExtrudeLists* dump)
+{
+    // plans from current caps
+    std::vector<FacePlan> plans;
+    build_face_plans_snapshot(sm, front, vuid, fuid, plans);
+    if (plans.empty()) return {};
+
+    // recompute centroid per step (robust on big edits)
+    const Point_3 MC = mesh_centroid(sm);
+
+    std::vector<F> caps; caps.reserve(plans.size());
+    for (const FacePlan& p : plans) {
+        F cap = extrude_face_from_plan_uidRotate(
+            sm, p,
+            distPerStep, amount,
+            MC,
+            vuid, fuid, next_vuid, next_fuid,
+            vByUid, fByUid,
+            dump,
+            twist_rad, tilt_rad
+            );
+        if (cap != SM::null_face()) caps.push_back(cap);
+
+        // mesh changed — refresh maps
+        rebuild_vertex_uid_map(sm, vuid, vByUid);
+        rebuild_face_uid_map(sm, fuid, fByUid);
+    }
+    return caps;
+}
+
+std::vector<CgalMeshBuilderTentacles::F>
+CgalMeshBuilderTentacles::extrudeBulgeOnCaps(
+    SM& sm,
+    const std::vector<F>& caps,
+    int    steps,
+    double distPerStep,
+    double baseAmount,
+    double bulgeAmount,
+    double twist_rad,
+    double tilt_rad,
+    bool   collectEachStep)
+{
+    std::vector<F> result;                 // all final caps from all seeds
+    if (steps <= 0 || caps.empty()) return result;
+
+    // UID maps once
+    SM::Property_map<V,std::uint64_t> vuid;
+    SM::Property_map<F,std::uint64_t> fuid;
+    std::uint64_t next_vuid = 0, next_fuid = 0;
+    ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
+
+    std::unordered_map<std::uint64_t,V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
+    std::unordered_map<std::uint64_t,F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
+
+    ExtrudeLists dump; // optional
+    const double PI = std::acos(-1.0);
+
+    // -------- iterate ON CAPS (outer) ----------
+    for (F seedCap : caps) {
+        if (seedCap == SM::null_face() || sm.is_removed(seedCap)) continue;
+
+        std::vector<F> front{ seedCap };   // grow this cap independently
+
+        for (int i = 0; i < steps; ++i) {
+            const double t   = (steps == 1) ? 0.5 : double(i) / double(steps - 1);
+            const double amt = baseAmount + bulgeAmount * std::sin(PI * t);
+
+            // one step for this cap (front has 1 face, but keep it generic)
+            std::vector<FacePlan> plans;
+            build_face_plans_snapshot(sm, front, vuid, fuid, plans);
+            if (plans.empty()) break;
+
+            const Point_3 MC = mesh_centroid(sm);
+
+            std::vector<F> newFront;
+            newFront.reserve(plans.size());
+            for (const FacePlan& p : plans) {
+                F cap = extrude_face_from_plan_uidRotate(
+                    sm, p, distPerStep, amt, MC,
+                    vuid, fuid, next_vuid, next_fuid,
+                    vByUid, fByUid, &dump,
+                    twist_rad, tilt_rad
+                    );
+                if (cap != SM::null_face()) newFront.push_back(cap);
+
+                // mesh changed — refresh maps
+                rebuild_vertex_uid_map(sm, vuid, vByUid);
+                rebuild_face_uid_map(sm, fuid, fByUid);
+            }
+
+            if (newFront.empty()) break;
+            front.swap(newFront);
+           // if (collectEachStep) sm.collect_garbage();
+        }
+
+        // collect final caps from this seed
+        result.insert(result.end(), front.begin(), front.end());
+    }
+    // -------------------------------------------
+
+    return result;
+}
+
+
+
+std::vector<CgalMeshBuilderTentacles::F>
+CgalMeshBuilderTentacles::extrudeTentaclesSequential(
+    SM& sm,
+    const std::vector<F>& seedFaces,
+    const GrowParams& gp,
+    CollisionCallback collision_cb,
+    std::vector<std::vector<F>>* outCapsPerFace)
+{
+    // RNG
+    std::mt19937 rng(gp.seed);
+    std::uniform_real_distribution<double> rndTwist(gp.twistMinRad, gp.twistMaxRad);
+    std::uniform_real_distribution<double> rndTilt (gp.tiltMinRad,  gp.tiltMaxRad);
+
+    // Перемешаем порядок стартовых граней
+    std::vector<F> order = seedFaces;
+    std::shuffle(order.begin(), order.end(), rng);
+
+    // UID-карты и словари — создаём один раз
+    SM::Property_map<V, std::uint64_t> vuid;
+    SM::Property_map<F, std::uint64_t> fuid;
+    std::uint64_t next_vuid = 0, next_fuid = 0;
+    ensure_uid_maps_and_assign_all(sm, vuid, fuid, next_vuid, next_fuid);
+
+    std::unordered_map<std::uint64_t, V> vByUid; rebuild_vertex_uid_map(sm, vuid, vByUid);
+    std::unordered_map<std::uint64_t, F> fByUid; rebuild_face_uid_map(sm, fuid, fByUid);
+
+    std::vector<F> finalCaps;
+    finalCaps.reserve(order.size());
+    if (outCapsPerFace) outCapsPerFace->clear();
+
+    // Буфер для (опционального) сбора стенок; можно убрать
+    ExtrudeLists dump;
+
+    for (F f0 : order) {
+        if (f0 == SM::null_face() || sm.is_removed(f0)) continue;
+
+        // Фронт: текущие "крышки" для этой тентакли
+        std::vector<F> front{ f0 };
+        std::vector<F> lastCaps = front;
+
+        for (int step = 0; step < gp.steps; ++step) {
+            const double twist = rndTwist(rng);
+            const double tilt  = rndTilt (rng);
+
+            // Построим планы только по текущему фронту
+            std::vector<FacePlan> plans;
+            build_face_plans_snapshot(sm, front, vuid, fuid, plans);
+            if (plans.empty()) break;
+
+            // Центр меша можно пересчитывать на шаг (стабильнее для больших изменений)
+            const Point_3 MC = mesh_centroid(sm);
+
+            std::vector<F> caps; caps.reserve(plans.size());
+
+            // Экструдим по каждому плану => собираем новые "крышки"
+            for (const FacePlan& p : plans) {
+                F cap = extrude_face_from_plan_uidRotate(
+                    sm, p,
+                    gp.distPerStep, gp.amountPerStep,
+                    MC,
+                    vuid, fuid, next_vuid, next_fuid,
+                    vByUid, fByUid,
+                    &dump,
+                    twist, tilt
+                    );
+                if (cap != SM::null_face())
+                    caps.push_back(cap);
+
+                // После изменения графа — обновим словари
+                rebuild_vertex_uid_map(sm, vuid, vByUid);
+                rebuild_face_uid_map(sm, fuid, fByUid);
+            }
+
+            // Коллизии проверяем именно на новых caps
+            if (collision_cb && collision_cb(sm, caps)) {
+                // тут можно реализовать TryAvoid/MarkAndStop по gp.policy
+                break;
+            }
+
+            if (caps.empty()) break;
+
+            lastCaps = caps;
+            front.swap(caps);
+
+           // if (gp.collectEachStep)
+           //     sm.collect_garbage();
+        }
+
+        // Финальные крышки этой тентакли — текущий фронт
+        if (!front.empty())
+            finalCaps.insert(finalCaps.end(), front.begin(), front.end());
+
+        if (outCapsPerFace)
+            outCapsPerFace->push_back(std::move(lastCaps));
+
+       // if (gp.collectBetweenFaces) sm.collect_garbage();
+    }
+
+    return finalCaps;
 }
