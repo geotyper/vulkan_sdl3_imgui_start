@@ -31,6 +31,10 @@ struct ExtrudeLists {
 
 class CgalMeshBuilder {
 public:
+
+    using P3 = SurfaceMesh::Point;
+    using V3 = Kernel::Vector_3;
+     using F  = SurfaceMesh::Face_index;
     // ---- Stage 1: create a polygonal mesh (n-gons allowed) ----
     static void buildCube(SurfaceMesh& sm, double size = 1.0);
 
@@ -114,4 +118,16 @@ public:
     static std::vector<SurfaceMesh::Face_index> selectFaceByIndex(const SurfaceMesh &sm, uint32_t indexFace);
     static bool checkMesh(SurfaceMesh &sm);
     static std::vector<SurfaceMesh::Face_index> extrudeFaces_collectBothRotate(SurfaceMesh &sm, const std::vector<SurfaceMesh::Face_index> &faces, double distance, double scale, double twist_rad = 0.0, double tilt_rad = 0.0);
+
+    static std::vector<SurfaceMesh::Face_index> buildHexSphereOriented(
+        SurfaceMesh& sm,
+        int resolution,
+        double radius,
+        const Point_3& center,
+        const Vector_3& up,
+        double seamRotate = 0.0,
+        double mergeEpsRel = 1e-6
+        );
 };
+
+

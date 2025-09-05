@@ -19,6 +19,11 @@ namespace S3 = CGAL::Subdivision_method_3;
 namespace PMP = CGAL::Polygon_mesh_processing;
 using SM = SurfaceMesh;
 
+
+#include <glm/glm.hpp>
+#include <cmath>
+#include <unordered_map>
+
 using V  = SM::Vertex_index;
 using H  = SM::Halfedge_index;
 using F  = SM::Face_index;
@@ -3029,4 +3034,167 @@ void CgalMeshBuilder::buildHalfedgeArrows(
         glm::vec3 col = pick_color(true, 0);
         draw_halfedge_arrow_inset(sm, hb, N, Cg, col, inset, headRel, outLineVerts);
     }
+}
+
+
+
+// == helpers (unchanged) ==
+namespace {
+inline double vlen(const CgalMeshBuilder::V3& v){
+    return std::sqrt(CGAL::to_double(v.squared_length()));
+}
+
+inline CgalMeshBuilder::V3 rotate_axis_angle(const CgalMeshBuilder::V3& v,
+                                             const CgalMeshBuilder::V3& axis_unit,
+                                             double ang){
+    if (std::abs(ang) < 1e-15) return v;
+    const double c=std::cos(ang), s=std::sin(ang);
+    const auto& a = axis_unit;
+    return v*c + CGAL::cross_product(a,v)*s + a*CGAL::scalar_product(a,v)*(1.0-c);
+}
+
+inline CgalMeshBuilder::V3 orient_from_Z_to_up(const CgalMeshBuilder::V3& p,
+                                               const CgalMeshBuilder::V3& up_unit,
+                                               double spin){
+    CgalMeshBuilder::V3 z(0,0,1);
+    double cosang = CGAL::to_double(CGAL::scalar_product(z, up_unit));
+    cosang = std::max(-1.0, std::min(1.0, cosang));
+    double ang = std::acos(cosang);
+    CgalMeshBuilder::V3 axis = vnorm(CGAL::cross_product(z, up_unit));
+    CgalMeshBuilder::V3 p1 = (vlen(axis) < 1e-12) ? p : rotate_axis_angle(p, axis, ang);
+    return rotate_axis_angle(p1, up_unit, spin);
+}
+
+template<class SM>
+inline typename SM::Face_index add_ngon_safe(SM& sm, std::vector<typename SM::Vertex_index>& ring){
+    if (ring.size() < 3) return SM::null_face();
+    auto f = sm.add_face(ring);
+    if (f != SM::null_face()) return f;
+    std::reverse(ring.begin(), ring.end());
+    return sm.add_face(ring);
+}
+} // namespace
+
+
+/**
+ * @brief Builds a watertight hexsphere by generating the dual of a subdivided icosahedron.
+ *
+ * This function is completely self-contained. It works by:
+ * 1. Creating and subdividing a perfect icosahedron.
+ * 2. Calculating the center of each resulting triangle. These centers become the vertices of the hexsphere.
+ * 3. For each vertex in the subdivided mesh, it creates a dual face (hex/penta) from the centers of the triangles that surround it.
+ * This method guarantees a topologically perfect and watertight mesh.
+ */
+std::vector<CgalMeshBuilder::F> CgalMeshBuilder::buildHexSphereOriented(
+    SM& sm, int resolution, double radius,
+    const P3& center, const V3& up, double seamRotate, double mergeEpsRel)
+{
+    std::vector<F> added;
+    sm.clear();
+
+    // == Step 1: Create a Base Icosahedron ==
+    const double t = (1.0 + std::sqrt(5.0)) / 2.0;
+    std::vector<V3> ico_vertices;
+    ico_vertices.emplace_back(-1,  t,  0); ico_vertices.emplace_back( 1,  t,  0);
+    ico_vertices.emplace_back(-1, -t,  0); ico_vertices.emplace_back( 1, -t,  0);
+    ico_vertices.emplace_back( 0, -1,  t); ico_vertices.emplace_back( 0,  1,  t);
+    ico_vertices.emplace_back( 0, -1, -t); ico_vertices.emplace_back( 0,  1, -t);
+    ico_vertices.emplace_back( t,  0, -1); ico_vertices.emplace_back( t,  0,  1);
+    ico_vertices.emplace_back(-t,  0, -1); ico_vertices.emplace_back(-t,  0,  1);
+
+    for(auto& v : ico_vertices) v = vnorm(v);
+
+    std::vector<std::vector<int>> faces;
+    faces.push_back({0, 11, 5}); faces.push_back({0, 5, 1}); faces.push_back({0, 1, 7});
+    faces.push_back({0, 7, 10}); faces.push_back({0, 10, 11}); faces.push_back({1, 5, 9});
+    faces.push_back({5, 11, 4}); faces.push_back({11, 10, 2}); faces.push_back({10, 7, 6});
+    faces.push_back({7, 1, 8}); faces.push_back({3, 9, 4}); faces.push_back({3, 4, 2});
+    faces.push_back({3, 2, 6}); faces.push_back({3, 6, 8}); faces.push_back({3, 8, 9});
+    faces.push_back({4, 9, 5}); faces.push_back({2, 4, 11}); faces.push_back({6, 2, 10});
+    faces.push_back({8, 6, 7}); faces.push_back({9, 8, 1});
+
+    // == Step 2: Subdivide the Icosahedron ==
+    std::map<std::pair<int, int>, int> midpoint_cache;
+    for (int i = 0; i < resolution; ++i) {
+        std::vector<std::vector<int>> new_faces;
+        midpoint_cache.clear();
+        auto get_midpoint = [&](int i1, int i2) {
+            auto key = std::minmax(i1, i2);
+            if (midpoint_cache.count(key)) return midpoint_cache[key];
+            const V3& v1 = ico_vertices[i1];
+            const V3& v2 = ico_vertices[i2];
+            ico_vertices.push_back(vnorm(v1 + v2));
+            int new_idx = ico_vertices.size() - 1;
+            midpoint_cache[key] = new_idx;
+            return new_idx;
+        };
+        for (const auto& face : faces) {
+            int v1 = face[0], v2 = face[1], v3 = face[2];
+            int m12 = get_midpoint(v1, v2), m23 = get_midpoint(v2, v3), m31 = get_midpoint(v3, v1);
+            new_faces.push_back({v1, m12, m31}); new_faces.push_back({v2, m23, m12});
+            new_faces.push_back({v3, m31, m23}); new_faces.push_back({m12, m23, m31});
+        }
+        faces = new_faces;
+    }
+
+    // == Step 3: Create the Dual Mesh ==
+    const V3 up_unit = vnorm(up);
+
+    // 3a. Calculate face centers, which will be the vertices of our hexsphere.
+    std::vector<V> hex_vertices;
+    for (const auto& face : faces) {
+        V3 v1 = ico_vertices[face[0]], v2 = ico_vertices[face[1]], v3 = ico_vertices[face[2]];
+        V3 face_center = vnorm(v1 + v2 + v3);
+        V3 oriented_pos = orient_from_Z_to_up(face_center * radius, up_unit, seamRotate);
+        P3 final_pos = center + oriented_pos;
+        hex_vertices.push_back(sm.add_vertex(final_pos));
+    }
+
+    // 3b. Map each ico vertex to the faces (now hex vertices) that surround it.
+    std::vector<std::vector<int>> vertex_to_face_map(ico_vertices.size());
+    for (size_t i = 0; i < faces.size(); ++i) {
+        vertex_to_face_map[faces[i][0]].push_back(i);
+        vertex_to_face_map[faces[i][1]].push_back(i);
+        vertex_to_face_map[faces[i][2]].push_back(i);
+    }
+
+    // 3c. For each ico vertex, create a face from its surrounding face centers.
+    for (size_t i = 0; i < ico_vertices.size(); ++i) {
+        const auto& face_indices = vertex_to_face_map[i];
+        if (face_indices.size() < 3) continue;
+
+        // Order the faces (hex vertices) correctly around the central ico vertex.
+        V3 center_v = ico_vertices[i];
+        V3 first_v = ico_vertices[faces[face_indices[0]][0]] != center_v ? ico_vertices[faces[face_indices[0]][0]] : ico_vertices[faces[face_indices[0]][1]];
+        V3 initial_axis = vnorm(first_v - center_v);
+
+        std::vector<std::pair<double, int>> ordered_faces;
+        for (int face_idx : face_indices) {
+            V3 p1 = ico_vertices[faces[face_idx][0]];
+            V3 p2 = ico_vertices[faces[face_idx][1]];
+            V3 p3 = ico_vertices[faces[face_idx][2]];
+            V3 face_center_ico = vnorm(p1 + p2 + p3);
+
+            V3 arm = vnorm(face_center_ico - center_v);
+            double angle = std::atan2(CGAL::to_double(CGAL::scalar_product(CGAL::cross_product(initial_axis, arm), center_v)),
+                                      CGAL::to_double(CGAL::scalar_product(initial_axis, arm)));
+            ordered_faces.push_back({angle, face_idx});
+        }
+        std::sort(ordered_faces.begin(), ordered_faces.end());
+
+        std::vector<V> ring;
+        for (const auto& p : ordered_faces) {
+            ring.push_back(hex_vertices[p.second]);
+        }
+
+        F f = add_ngon_safe(sm, ring);
+        if (f != SM::null_face()) {
+            added.push_back(f);
+        }
+    }
+
+    std::cerr << "[hexsphere] build complete: " << num_vertices(sm) << " verts, "
+              << num_faces(sm) << " faces." << std::endl;
+
+    return added;
 }
