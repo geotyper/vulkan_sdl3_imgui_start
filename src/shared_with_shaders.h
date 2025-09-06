@@ -54,8 +54,18 @@ struct ShadowPayload {
     bool blocked;
 };
 
-struct RadiancePayload { vec3 color; };
+struct RadiancePayload {
+    vec3  throughput;
+    vec3  rayOrigin;
+    vec3  color;
+    vec3  rayDir;
+    bool  done;
+    uint  depth;
+    uint  seed;
+    float weight;
 
+    bool  inMedium;   //  сейчас луч внутри стекла?
+};
 
 struct UniformData {
     float uTime;

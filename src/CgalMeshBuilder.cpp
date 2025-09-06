@@ -3090,7 +3090,7 @@ std::vector<CgalMeshBuilder::F> CgalMeshBuilder::buildHexSphereOriented(
     const P3& center, const V3& up, double seamRotate, double mergeEpsRel)
 {
     std::vector<F> added;
-    sm.clear();
+   // sm.clear();
 
     // == Step 1: Create a Base Icosahedron ==
     const double t = (1.0 + std::sqrt(5.0)) / 2.0;
