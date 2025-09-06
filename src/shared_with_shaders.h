@@ -58,9 +58,12 @@ struct RadiancePayload {
     vec3  throughput;
     vec3  rayOrigin;
     vec3  rayDir;
+     vec3  color;
+    float weight;
     bool  done;
     uint  depth;
     uint  seed;
+      bool blocked;
 
     bool  inMedium;   //  сейчас луч внутри стекла?
 };
