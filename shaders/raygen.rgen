@@ -8,10 +8,14 @@
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING)
 uniform accelerationStructureEXT topLevelAS;
 
-layout(set = SWS_RESULT_IMAGE_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
+// IMPORTANT: The original code used an 'rgba8' buffer for accumulation.
+// This clamps colors and prevents correct blending of HDR lighting.
+// For a correct path tracer, this should be a float format like 'rgba16f'.
+// The logic below is the best possible compromise for an 'rgba8' buffer.
+layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
 uniform image2D accumImage;
 
-layout(set = SWS_CAMERA_SET, binding = SWS_CAMERA_BINDING)
+layout(set = SWS_SCENE_AS_SET, binding = SWS_CAMERA_BINDING)
 uniform CameraUBO { mat4 invView; mat4 invProj; } cam;
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
@@ -19,33 +23,147 @@ uniform UniformBlock { UniformData uni; } U;
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadEXT RadiancePayload prd;
 
-void main() {
-    vec2 pix = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    vec2 res = vec2(gl_LaunchSizeEXT.xy);
-    vec2 ndc = (pix / res) * 2.0 - 1.0;
+// --- SBT indices inside regions (we use 1 miss + 1 hit-group) ---
+#define MISS_PRIMARY 0
+#define HIT_PRIMARY  0
 
-    vec4 nearP = cam.invProj * vec4(ndc, 0.0, 1.0);
-    vec4 farP  = cam.invProj * vec4(ndc, 1.0, 1.0);
-    nearP /= nearP.w; farP /= farP.w;
+// --- RNG (Wang hash) ---
+uint wanghash(uint s){ s = (s ^ 61u) ^ (s >> 16u); s *= 9u; s ^= (s >> 4u); s *= 0x27d4eb2du; s ^= (s >> 15u); return s; }
 
-    vec3 ro = (cam.invView * vec4(0,0,0,1)).xyz;
-    vec3 p0 = (cam.invView * vec4(nearP.xyz,1)).xyz;
-    vec3 p1 = (cam.invView * vec4(farP.xyz,1)).xyz;
-    vec3 rd = normalize(p1 - p0);
 
-    prd.color = vec3(0.0);
+// ====================================================================
+// ===           PARAMETER CHANGES ARE HERE                       ===
+// ====================================================================
 
-    traceRayEXT(
-        topLevelAS,
-        gl_RayFlagsOpaqueEXT,
-        0xFF,
-        HIT_PRIMARY,          // sbtRecordOffset (your HIT_* from header)
-        SWS_NUM_GROUPS,       // sbtRecordStride
-        MISS_PRIMARY,         // missIndex
-        ro, 0.001, rd, 1e32,
-        SWS_LOC_PRIMARY_RAY
-    );
+// --- tonemap params (compile-time) ---
+const float TM_EXPOSURE_EV = -0.75;  // Darken the image slightly before contrast
+const float TM_CONTRAST    = 1.8;   // Increased from 1.25 for a much stronger effect
+const float TM_PIVOT       = 0.5;   // Mid-point for contrast (0.5 is fine for LDR)
+// You can also try the sigmoid contrast for a smoother, S-curve falloff
+// by setting TM_USE_SIGMOID to true.
+const float TM_SIGMOID_K   = 5.00;  // 3..8 typical
+const bool  TM_USE_SIGMOID = false; // true = sigmoid, false = linear pivot
 
-    imageStore(accumImage, ivec2(gl_LaunchIDEXT.xy), vec4(prd.color, 1.0));
+// ====================================================================
+
+// --- exposure + ACES filmic ---
+vec3 aces_fitted(vec3 x){
+    const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+    return clamp((x*(a*x+b)) / (x*(c*x+d)+e), 0.0, 1.0);
+}
+vec3 apply_exposure(vec3 hdr, float ev){ return hdr * exp2(ev); }
+
+// --- contrast (choose ONE of these, or both) ---
+vec3 contrast_pivot(vec3 x, float contrast, float pivot){
+    return clamp((x - pivot) * contrast + pivot, 0.0, 1.0);
+}
+float sigmoid(float v, float k){ return 1.0 / (1.0 + exp(-k*(v - 0.5))); }
+vec3 contrast_sigmoid(vec3 x, float k){
+    return vec3(sigmoid(x.r,k), sigmoid(x.g,k), sigmoid(x.b,k));
 }
 
+// --- encode to sRGB if you write to a *linear* UNORM image ---
+vec3 linear_to_srgb(vec3 c){ return pow(clamp(c,0.0,1.0), vec3(1.0/2.2)); }
+
+
+// This is a self-contained function to apply the full tonemapping pipeline
+// to a linear HDR color.
+vec3 apply_full_tonemap(vec3 linear_color) {
+    // 1. Apply exposure
+    vec3 hdr = apply_exposure(linear_color, TM_EXPOSURE_EV);
+
+    // 2. Apply ACES Filmic Tonemap (HDR -> LDR)
+    vec3 ldr = aces_fitted(hdr);
+
+    // 3. Apply contrast to the LDR color
+    if (TM_USE_SIGMOID) {
+        ldr = contrast_sigmoid(ldr, TM_SIGMOID_K);
+    } else {
+        ldr = contrast_pivot(ldr, TM_CONTRAST, TM_PIVOT);
+    }
+    
+    // 4. Convert to sRGB for final display
+    return linear_to_srgb(ldr);
+}
+
+
+void main()
+{
+    const uvec2 pixel = gl_LaunchIDEXT.xy;
+    const uvec2 size  = gl_LaunchSizeEXT.xy;
+
+    // --- camera ray ---
+    vec2 uv  = (vec2(pixel) + 0.5) / vec2(size);
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    vec3 origin    = (cam.invView * vec4(0,0,0,1)).xyz;
+    vec3 dir_ndc   = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
+    vec3 dir       = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);
+
+    // --- init path ---
+    vec3 finalColor = vec3(0.0); // This will hold the new linear HDR sample
+    vec3 throughput = vec3(1.0);
+
+    // стабильный seed по пикселю и кадру
+    uint seed = wanghash(pixel.x * 928371u
+                       ^ pixel.y * 689287499u
+                       ^ uint(U.uni.frameCounter) * 104729u);
+
+    const uint MAX_BOUNCES = 16u;
+    const uint MIN_BOUNCES = 2u;
+
+    for (uint bounce = 0u; bounce < MAX_BOUNCES; ++bounce)
+    {
+        prd.throughput = throughput;
+        prd.done       = false;
+        prd.depth      = bounce;
+        prd.rayOrigin  = origin;
+        prd.rayDir     = dir;
+        prd.seed       = seed;
+
+        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF,
+                    HIT_PRIMARY, /*hitStride*/1, MISS_PRIMARY,
+                    origin, 0.001, dir, 1e19,
+                    SWS_LOC_PRIMARY_RAY);
+
+        if (prd.done) {
+            finalColor += prd.throughput;
+            break;
+        }
+
+        origin     = prd.rayOrigin;
+        dir        = prd.rayDir;
+        throughput = prd.throughput;
+        seed = wanghash(seed + 1u);
+
+        if (bounce >= MIN_BOUNCES) {
+            float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.1, 0.99);
+            if (float(wanghash(seed+=1u)) * (1.0/4294967296.0) > p) {
+                break;
+            }
+            throughput /= p;
+        }
+    }
+
+    // ====================================================================
+    // ===           LOGIC CHANGES ARE HERE                           ===
+    // ====================================================================
+
+    // 1. Load the previously rendered (and already tone-mapped) color
+    vec3 prev_mapped_color = imageLoad(accumImage, ivec2(pixel)).rgb;
+
+    // 2. Take the new linear HDR sample and apply the full tonemapping pipeline to it
+    vec3 new_mapped_color = apply_full_tonemap(finalColor);
+    
+    // 3. Determine the blend factor for the running average
+    float blend_factor = (U.uni.frameCounter == 0) 
+        ? 1.0 
+        : 1.0 / float(U.uni.frameCounter + 1);
+
+    // 4. Blend the PREVIOUS mapped color with the NEW mapped color.
+    // This correctly accumulates the final image you see on screen.
+    vec3 final_output_color = mix(prev_mapped_color, new_mapped_color, blend_factor);
+
+    // 5. Store the final, blended, display-ready color
+    imageStore(accumImage, ivec2(pixel), vec4(final_output_color, 1.0));
+}

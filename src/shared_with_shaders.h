@@ -63,6 +63,7 @@ struct RadiancePayload {
     uint  depth;
     uint  seed;
     float weight;
+    bool blocked;
 
     bool  inMedium;   //  сейчас луч внутри стекла?
 };

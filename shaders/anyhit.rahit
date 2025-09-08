@@ -23,12 +23,12 @@ void main()
     }
 
     // 2. Аккумулируем цвет
-   // prd.color  += prd.weight * A * C;
-   // prd.weight *= (1.0 - A);
+    prd.color  += prd.weight * A * C;
+    prd.weight *= (1.0 - A);
 
     // 3. Решаем, нужен ли ещё один проход
-   // if (prd.weight > MIN_WEIGHT && prd.depth < 8)
-   //     ignoreIntersectionEXT;          // идём дальше (сквозь окно)
-   // else
-    //    terminateRayEXT;                // «завершаем» луч на этом слое
+    if (prd.weight > MIN_WEIGHT && prd.depth < 8)
+        ignoreIntersectionEXT;          // идём дальше (сквозь окно)
+    else
+        terminateRayEXT;                // «завершаем» луч на этом слое
 }

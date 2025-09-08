@@ -1557,27 +1557,71 @@ static inline H find_halfedge_sm_only(SM& sm, V a, V b) {
     return SM::null_halfedge();
 }
 
-// гарантирует ориентированный a->b: сначала ищем, иначе создаём ровно ОДНУ пару
+// === было ===
+// static inline H find_halfedge_sm_only(SM& sm, V a, V b) { ...O(E)... }
+static inline void set_vertex_incoming_if_any(SM& sm, V v, H prefer=SM::null_halfedge()){
+    if (v==SM::null_vertex()) return;
+    if (prefer!=SM::null_halfedge() && sm.target(prefer)==v){ sm.set_halfedge(v,prefer); return; }
+    H hv = sm.halfedge(v);
+    if (hv!=SM::null_halfedge() && sm.target(hv)==v) return;
+    for (H h : sm.halfedges()) if (!sm.is_removed(h) && sm.target(h)==v){ sm.set_halfedge(v,h); return; }
+}
+
+// === стало: O(valence(a)) ===
+static inline H find_halfedge_local(SM& sm, V a, V b) {
+    if (a == b) return SM::null_halfedge();
+
+    // гарантируем, что у 'a' есть входящий halfedge для локального обхода
+    H hin = sm.halfedge(a);
+    if (hin == SM::null_halfedge()) {
+        set_vertex_incoming_if_any(sm, a);   // твой хелпер
+        hin = sm.halfedge(a);
+        if (hin == SM::null_halfedge()) {
+            // вершина действительно «висячая» — редкий случай: fallback
+            for (H h : sm.halfedges()) {
+                if (sm.is_removed(h)) continue;
+                if (sm.source(h)==a && sm.target(h)==b) return h;
+            }
+            return SM::null_halfedge();
+        }
+    }
+
+    // hin: входящий в a (u->a). Обходим ВСЕ входящие вокруг target=a.
+    H h = hin;
+    do {
+        // противоположный — исходящий из a (a->w)
+        H ho = sm.opposite(h);
+        if (ho != SM::null_halfedge() && sm.target(ho) == b)
+            return ho;
+
+        h = next_around_target(sm, h);   // (u->a) -> (w->a)
+    } while (h != hin && h != SM::null_halfedge());
+
+    return SM::null_halfedge();
+}
+
+// Обновлённый ensure_oriented_halfedge: без глобального O(E)
 static inline H ensure_oriented_halfedge(SM& sm, V a, V b) {
     if (a == b) return SM::null_halfedge();
 
-    if (H h = find_halfedge_sm_only(sm, a, b); h != SM::null_halfedge())
+    if (H h = find_halfedge_local(sm, a, b); h != SM::null_halfedge())
         return h;
 
-    if (H hb = find_halfedge_sm_only(sm, b, a); hb != SM::null_halfedge())
+    if (H hb = find_halfedge_local(sm, b, a); hb != SM::null_halfedge())
         return sm.opposite(hb);
 
-    // ребра нет — создаём 1 пару halfedge'ов
-    H h = sm.add_edge(a, b);              // возвращает половинку с target==b
+    // Рёбра нет — создаём 1 пару halfedge'ов
+    H h = sm.add_edge(a, b);                  // возвращает половинку с target==b
     if (h == SM::null_halfedge()) return SM::null_halfedge();
 
-    // необязательно, но полезно: один раз проставим опорные hv у вершин, если пусто
+    // Однократно проставим "входящий" у вершин, чтобы в будущем локальный обход был возможен
     if (sm.halfedge(b) == SM::null_halfedge()) sm.set_halfedge(b, h);
     H ho = sm.opposite(h);
     if (sm.halfedge(a) == SM::null_halfedge()) sm.set_halfedge(a, ho);
 
-    return h;                              // ориентирован как a->b
+    return h;                                  // ориентирован как a->b
 }
+
 
 // прошить крышку одним N-угольником из упорядоченного бордер-кольца (ta->tb)
 static inline F attach_polygon_cap_from_ring_manual(SM& sm, const std::vector<H>& ring){
@@ -1595,13 +1639,7 @@ static inline F attach_polygon_cap_from_ring_manual(SM& sm, const std::vector<H>
     return f;
 }
 
-static inline void set_vertex_incoming_if_any(SM& sm, V v, H prefer=SM::null_halfedge()){
-    if (v==SM::null_vertex()) return;
-    if (prefer!=SM::null_halfedge() && sm.target(prefer)==v){ sm.set_halfedge(v,prefer); return; }
-    H hv = sm.halfedge(v);
-    if (hv!=SM::null_halfedge() && sm.target(hv)==v) return;
-    for (H h : sm.halfedges()) if (!sm.is_removed(h) && sm.target(h)==v){ sm.set_halfedge(v,h); return; }
-}
+
 
 static void quick_self_test() {
     using P = CGAL::Point_3<CGAL::Epick>;
@@ -1973,8 +2011,7 @@ static inline F extrude_face_from_plan_uid5(
     return fcap;
 }
 
-// Экструзия НЕСКОЛЬКИХ граней: сначала делаем общий «слепок»,
-// затем экструзим по нему каждую грань — порядок меньше влияет.
+
 std::vector<F> CgalMeshBuilder::extrudeFaces_collectBoth(
     SM& sm,
     const std::vector<F>& faces,
