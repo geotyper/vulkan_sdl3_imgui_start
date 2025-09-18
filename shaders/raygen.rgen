@@ -41,7 +41,7 @@ const float TM_CONTRAST    = 1.8;   // Increased from 1.25 for a much stronger e
 const float TM_PIVOT       = 0.5;   // Mid-point for contrast (0.5 is fine for LDR)
 // You can also try the sigmoid contrast for a smoother, S-curve falloff
 // by setting TM_USE_SIGMOID to true.
-const float TM_SIGMOID_K   = 5.00;  // 3..8 typical
+const float TM_SIGMOID_K   = 1.00;  // 3..8 typical
 const bool  TM_USE_SIGMOID = false; // true = sigmoid, false = linear pivot
 
 // ====================================================================

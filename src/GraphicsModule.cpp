@@ -303,7 +303,7 @@ void GraphicsModule::CreateScene() {
     // 1) start with polygonal cube
     SurfaceMesh sm;
     //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-     CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 1, /*cellSize*/ 0.5);
+    // CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 1, /*cellSize*/ 0.5);
     //CgalMeshBuilder::buildPlaneXY(sm, /*N*/1,/*M*/2,  /*cellSize*/ 0.5);
 
     //CgalMeshBuilder::buildPlaneOriented(
@@ -324,13 +324,14 @@ void GraphicsModule::CreateScene() {
     //    );
 
 
-    //auto faces2 = CgalMeshBuilder::buildHexSphereOriented(
-    //    sm,
-    //    /*resolution=*/2,           // try 3..8
-    //    /*radius=*/1.0,
-    //    Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
-    //    /*seamRotate=*/0.0
-    //    );
+    auto faces2 = CgalMeshBuilder::buildHexSphereOriented(
+        sm,
+        /*resolution=*/2,           // try 3..8
+        /*radius=*/1.0,
+        Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
+        /*seamRotate=*/0.0
+        );
+
 
     //auto faces3 = CgalMeshBuilder::buildHexSphereOriented(
     //    sm,
@@ -437,6 +438,16 @@ void GraphicsModule::CreateScene() {
         //// по желанию:
         //sm.collect_garbage();
     }
+
+
+    auto faces3 = CgalMeshBuilder::buildHexSphereOriented(
+        sm,
+        /*resolution=*/2,           // try 3..8
+        /*radius=*/0.7,
+        Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
+        /*seamRotate=*/0.0
+        );
+
 
     //{
     //{
