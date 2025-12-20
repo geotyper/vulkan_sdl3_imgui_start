@@ -130,6 +130,7 @@ void MainLoop::handleEvents(int& step) {
             break;
 
         case SDL_EVENT_MOUSE_MOTION:
+            // Right click: fly mode
             if (m_relativeMouseMode) {
                 const bool* ks = SDL_GetKeyboardState(nullptr);
                 const bool slow = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
@@ -137,6 +138,15 @@ void MainLoop::handleEvents(int& step) {
 
                 m_camera.RotateYawPitchDeg(-ev.motion.xrel * sensDeg,
                                            -ev.motion.yrel * sensDeg);
+                step = 0;
+            }
+            // Left click: orbit mode
+            else if (ev.motion.state & SDL_BUTTON_LMASK) {
+                // If ImGui is capturing, don't orbit (but simple check here handles global)
+                // Better: check !ImGui::GetIO().WantCaptureMouse
+                
+                const float orbitSens = 0.5f; 
+                m_camera.Orbit(ev.motion.xrel * orbitSens, ev.motion.yrel * orbitSens);
                 step = 0;
             }
             break;

@@ -106,6 +106,7 @@ set(HEADERS
     src/CgalMeshBuilder.h
     src/StandardMeshRenderer.h
     src/CgalMeshBuilderTentacles.h
+    src/SceneBuilder.h
 
 
 )
@@ -127,6 +128,7 @@ set(SRC
     src/CgalMeshBuilder.cpp
     src/StandardMeshRenderer.cpp
     src/CgalMeshBuilderTentacles.cpp
+    src/SceneBuilder.cpp
 
 )
 

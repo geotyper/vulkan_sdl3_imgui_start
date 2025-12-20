@@ -17,6 +17,7 @@ public:
     void        RotateExp(const float angleYaw, const float anglePitch);
 
     void RotateYawPitchDeg(float yawDeltaDeg, float pitchDeltaDeg);
+    void Orbit(float deltaYaw, float deltaPitch, const vec3& center = vec3(0.0f));
 
     float       GetNearPlane() const;
     float       GetFarPlane() const;

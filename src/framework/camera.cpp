@@ -162,3 +162,35 @@ void Camera::SyncAnglesWithDirection() {
     mPitchDeg = Rad2Deg(std::asin(std::clamp(d.y, -1.0f, 1.0f))); // pitch
 }
 
+
+void Camera::Orbit(float deltaYaw, float deltaPitch, const vec3& center) {
+    vec3 offset = mPosition - center;
+    float radius = length(offset);
+    if (radius < 0.001f) radius = 1.0f;
+
+    // Convert to spherical coords
+    float yaw = std::atan2(offset.x, offset.z);
+    float pitch = std::asin(std::clamp(offset.y / radius, -1.0f, 1.0f));
+
+    // Apply delta
+    yaw -= Deg2Rad(deltaYaw); // Minus to match mouse dir
+    pitch += Deg2Rad(deltaPitch);
+
+    // Clamp pitch to avoid gimbal lock (vertical up/down)
+    pitch = std::clamp(pitch, -1.5f, 1.5f); // ~ -85 to 85 degrees
+
+    // Reconstruct position
+    vec3 newOffset;
+    newOffset.x = radius * std::cos(pitch) * std::sin(yaw);
+    newOffset.y = radius * std::sin(pitch);
+    newOffset.z = radius * std::cos(pitch) * std::cos(yaw);
+
+    mPosition = center + newOffset;
+    
+    // Always look at center
+    mDirection = normalize(center - mPosition);
+    
+    // Update internal state
+    SyncAnglesWithDirection();
+    MakeTransform();
+}

@@ -88,6 +88,7 @@ public:
                              int nx, int ny, int nz,
                              double cellSize);
     static void splitJunctionVertices(SurfaceMesh &sm);
+    static void buildThickDisc(SurfaceMesh& sm, double radius, double thickness, int slices);
 
     // Экструзия одной грани (добавлен out-результат)
     static SurfaceMesh::Face_index extrudeFace_one(
