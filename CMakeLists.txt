@@ -63,6 +63,19 @@ target_sources(imgui PRIVATE
 )
 # available now as imgui
 
+# Start Box2D
+set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
+#set(BOX2D_USER_SETTINGS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    box2d
+    SOURCE_DIR /home/geotyper/CPP_lib/box2d
+)
+FetchContent_MakeAvailable(box2d)
+set_target_properties(box2d PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
+# End Box2D
+
 
 ##--------------------------------- Fetch vk-bootstrap ---------------------------------#
 #FetchContent_Declare(vkbootstrap
@@ -156,7 +169,7 @@ target_include_directories(${TARGET} PRIVATE external/volk)
 target_include_directories(${TARGET} PRIVATE ${Vulkan_INCLUDE_DIR}/vma)
 target_include_directories(${TARGET} SYSTEM PRIVATE ${Vulkan_INCLUDE_DIRS})
 
-target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui CGAL::CGAL)
+target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui CGAL::CGAL box2d)
 
 ## === Shader Path Macro ===
 #add_compile_definitions(SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
