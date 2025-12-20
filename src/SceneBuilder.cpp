@@ -89,17 +89,10 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
 
     // Instances
     std::vector<rtx::InstanceData> discInstances;
+    std::uniform_int_distribution<int> distColor(0, 4); // 5 colors: 0..4
+
     for(b2BodyId bid : discBodies) {
         b2Vec2 pos = b2Body_GetPosition(bid);
-        float angle = b2Body_GetRotation(bid).c; // wait, rotation is complex in v3? use GetRotation 
-         // b2Rot rotation = b2Body_GetRotation(bid);
-         // float angle = b2Rot_GetAngle(rotation);
-        
-        // Let's just use rotation from transform if needed, but for discs rotation Y might not matter visibly 
-        // unless texture/detail. 
-        // Box2D is 2D (XY), our world is 3D. Let's map Box2D (X,Y) -> 3D (X,Z) to lay flat? 
-        // Or (X, Y) -> 3D (X, Y) standing up?
-        // User asked for "inside a large disc", typically flat on table -> XZ plane.
         
         glm::vec3 pos3d(pos.x, 0.0f, pos.y); 
         
@@ -109,31 +102,28 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         glm::mat4 M = glm::translate(glm::mat4(1.0f), pos3d);
         M = glm::rotate(M, -angleRad, glm::vec3(0,1,0)); // Rotation around Y axis
 
-        discInstances.push_back({M});
+        // Assign random color ID (0-4)
+        // uint32_t colId = static_cast<uint32_t>(distColor(rng));
+        uint32_t colId = 2; // Force Blue for debugging
+
+        discInstances.push_back({M, 0, colId}); 
     }
 
 
     // 2. Large Container Ring (Static Mesh)
     SurfaceMesh containerMesh;
-    // Build a ring by defining a hollow cylinder or similar?
-    // We can use buildThickDisc but with hole? Or buildHollowCuboid?
-    // Let's make a simple "Floor" or "Border" representation.
-    // For now, let's just use a thin ring using tube generator if we had one, 
-    // or just a huge disc below them.
-    // User said "Large disc and inside it 7 smaller". 
-    // Let's generate a large transparent-ish or wireframe disc for visual.
-    // CgalMeshBuilder::buildThickDisc(containerMesh, outerRadius*1.05f, 0.1f, 64); // Slightly larger than physics
-    CgalMeshBuilder::buildThickDisc(containerMesh, outerRadius*1.05f, containerThickness, 64); // Slightly larger than physics
-    // To make it look like a container, maybe walls?
-    // For now, just the floor disc.
+    // ... (Container generation skipped for debug) ...
+    // ...
+    CgalMeshBuilder::buildThickDisc(containerMesh, outerRadius*1.05f, containerThickness, 64);
     CgalMeshBuilder::triangulateAll(containerMesh);
     std::vector<Vertex> containerVertices; std::vector<uint32_t> containerIndices;
     CgalMeshBuilder::toVertexIndexFlat(containerMesh, containerVertices, containerIndices);
     
     // Static instance for container
     std::vector<rtx::InstanceData> containerInstances;
-    glm::mat4 containerM = glm::translate(glm::mat4(1.0f), glm::vec3(0, -containerThickness, 0)); // Exactly below
-    containerInstances.push_back({containerM});
+    // DEBUG: Don't add instance
+    // glm::mat4 containerM = glm::translate(glm::mat4(1.0f), glm::vec3(0, -containerThickness, 0)); // Exactly below
+    // containerInstances.push_back({containerM});
 
     // Cleanup Box2D
     b2DestroyWorld(worldId);
@@ -143,7 +133,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // -------------------------------------------------------------------------
     rtxModule->LoadFromMultipleMeshes({
         { discVertices,      discIndices,      discInstances },      // ID 0: Small Discs
-        { containerVertices, containerIndices, containerInstances }  // ID 1: Container
+        // { containerVertices, containerIndices, containerInstances }  // ID 1: Container REMOVED
     });
 
     if (meshRenderer) {

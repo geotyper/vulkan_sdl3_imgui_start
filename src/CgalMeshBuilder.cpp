@@ -3231,54 +3231,55 @@ void CgalMeshBuilder::buildThickDisc(SurfaceMesh& sm, double radius, double thic
 
     if (slices < 3) slices = 3;
 
-    std::vector<SurfaceMesh::Vertex_index> bottomVerts(slices);
-    std::vector<SurfaceMesh::Vertex_index> topVerts(slices);
+    // We need 4 separate rings of vertices to ensure sharp edges (hard normals)
+    // 1. Top Cap Vertices
+    // 2. Bottom Cap Vertices
+    // 3. Side Top Vertices
+    // 4. Side Bottom Vertices
 
-    double halfH = thickness * 0.5;
+    std::vector<SurfaceMesh::Vertex_index> capTop(slices);
+    std::vector<SurfaceMesh::Vertex_index> capBottom(slices);
+    std::vector<SurfaceMesh::Vertex_index> sideTop(slices);
+    std::vector<SurfaceMesh::Vertex_index> sideBottom(slices);
 
     // 1. Create vertices
     for (int i = 0; i < slices; ++i) {
         double theta = 2.0 * M_PI * double(i) / double(slices);
         double x = radius * std::cos(theta);
-        double z = radius * std::sin(theta); // using Y-up, so disc is in XZ plane usually? Or XY? Let's assume XZ plane, standing upright or lying flat?
-        // User said "circle", usually implies flat on ground or flat facing camera. 
-        // Let's assume flat on XZ plane (Y is up).
+        double z = radius * std::sin(theta); 
         
-        bottomVerts[i] = sm.add_vertex(Point_3(x, 0.0, z));
-        topVerts[i]    = sm.add_vertex(Point_3(x, thickness, z));
+        // Coincident positions, but different vertices
+        Point_3 pTop(x, thickness, z);
+        Point_3 pBot(x, 0.0, z);
+
+        capTop[i]    = sm.add_vertex(pTop);
+        capBottom[i] = sm.add_vertex(pBot);
+        sideTop[i]   = sm.add_vertex(pTop);
+        sideBottom[i]= sm.add_vertex(pBot);
     }
 
-    // 2. Create Top and Bottom faces (N-gons)
-    // Bottom face (winding order usually reversed to face down)
-    std::vector<SurfaceMesh::Vertex_index> faceV;
-    
-    // Bottom: 0 -> 1 -> ... -> N (if looked from bottom, this might need reverse)
-    // Standard CGAL: CCW from outside. 
-    // Bottom normal should point -Y. 
-    // Vertices order in loop is CCW around +Y. 
-    // So for bottom face, we need to iterate backwards: N-1, N-2 ... 0
-    faceV.clear();
-    for (int i = 0; i < slices; ++i) faceV.push_back(bottomVerts[slices - 1 - i]);
-    sm.add_face(faceV);
-
+    // 2. Cap Faces
     // Top: 0 -> 1 -> ... -> N
-    faceV.clear();
-    for (int i = 0; i < slices; ++i) faceV.push_back(topVerts[i]);
+    std::vector<SurfaceMesh::Vertex_index> faceV;
+    for (int i = 0; i < slices; ++i) faceV.push_back(capTop[i]);
     sm.add_face(faceV);
 
-    // 3. Side faces (Quads)
+    // Bottom: N-1 -> ... -> 0 (Reverse winding for facing down)
+    faceV.clear();
+    for (int i = 0; i < slices; ++i) faceV.push_back(capBottom[slices - 1 - i]);
+    sm.add_face(faceV);
+
+    // 3. Side Faces (Quads)
+    // Correct winding for Outward normals: 
+    // SideBottom[next] -> SideBottom[i] -> SideTop[i] -> SideTop[next]
+    // Wait, let's re-verify from previous analysis:
+    // LB(next) -> LB(i) is Clockwise Tangent.
+    // Up is Up.
+    // CW x Up = Outward.
+    // Yes, this is correct.
+    
     for (int i = 0; i < slices; ++i) {
         int next = (i + 1) % slices;
-        // Quad formed by: Bottom[i], Bottom[next], Top[next], Top[i]
-        // Winding for lateral faces: CCW from outside.
-        // Bottom[next] -> Bottom[i] -> Top[i] -> Top[next] ??
-        // Let's check: 
-        // Normal of (B_i, B_next, T_next) should be Out.
-        // B_i=(1,0), B_next=(0,1), T_i=(1,0,h). 
-        // V1 = B_next-B_i = (-1, 1, 0). V2 = T_next-B_next = (0,0,h).
-        // cross = (h, h, 0). Points outward.
-        
-        // Correct winding: Bottom[next], Bottom[i], Top[i], Top[next]
-        sm.add_face(bottomVerts[next], bottomVerts[i], topVerts[i], topVerts[next]);
+        sm.add_face(sideBottom[next], sideBottom[i], sideTop[i], sideTop[next]);
     }
 }

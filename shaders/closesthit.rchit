@@ -38,8 +38,24 @@ float fresnelSchlick(float cosTheta, float F0){
 
 void main()
 {
+    // распаковка packed instanceCustomIndex = (uniqueID<<8)|meshID
     uint packed = uint(gl_InstanceCustomIndexEXT);
     uint meshId = INST_GET_MESH_ID(packed);
+    
+    // Get Color ID from bits 8-15
+    uint colorId = (packed >> 8) & 0xFF;
+            
+    // Simple Palette
+    vec3 colors[5] = vec3[](
+        vec3(0.8, 0.1, 0.1), // Red
+        vec3(0.1, 0.8, 0.1), // Green
+        vec3(0.1, 0.1, 0.9), // Blue
+        vec3(0.9, 0.9, 0.1), // Yellow
+        vec3(0.1, 0.8, 0.9)  // Cyan
+    );
+            
+    vec3 baseColor = (colorId < 5) ? colors[colorId] : vec3(1.0);  
+    
     uint prim   = gl_PrimitiveID;
 
     uvec3 tri = uvec3(
@@ -114,8 +130,8 @@ void main()
     if (!useReflect) {
         // если этот сегмент луч шёл в стекле — поглощаем
         if (prd.inMedium) {
-            // подбери оттенок/силу (стекло без цвета — маленькие sigmaA)
-            vec3 sigmaA = vec3(0.0, 0.0, 0.03);
+            vec3 sigmaA = (vec3(1.0) - baseColor) * 1.5; // Slightly reduced strength
+
             float dist  = gl_HitTEXT;             // длина текущего сегмента
             prd.throughput *= exp(-sigmaA * dist);
         }
@@ -126,8 +142,8 @@ void main()
         prd.throughput *= (eta * eta);
     }
 
-    // окраска стекла (оставь vec3(1) для бесцветного)
-    prd.throughput *= TINT;
+    // окраска стекла (Base Color applied to everything, including reflections)
+    prd.throughput *= baseColor;
 
     // оффсет/продолжение
     prd.rayOrigin  = Pw + newDir * SURF_EPS;

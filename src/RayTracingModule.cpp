@@ -892,8 +892,14 @@ namespace rtx {
             uint32_t uniqueID = static_cast<uint32_t>(i);
             uint32_t meshID   = instanceData.meshId;
 
-            // Pack them together: uniqueID in the high bits, meshID in the low bits.
-            instance.instanceCustomIndex = (uniqueID << 8) | meshID;
+            // Pack them: colorID (8 bits) | meshID (8 bits)
+            // uniqueID is essentially unused now or we can assume it's implicit
+            // Let's use bits 0-7 for meshID, 8-15 for colorID.
+            // (Leaving 16-23 for future or uniqueID if needed, but instanceCustomIndex is only 24 bits)
+            
+            uint32_t colorID = instanceData.colorID & 0xFF;
+            
+            instance.instanceCustomIndex = (colorID << 8) | (meshID & 0xFF);
 
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = HIT_PRIMARY;

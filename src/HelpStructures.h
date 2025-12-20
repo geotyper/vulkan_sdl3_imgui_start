@@ -25,6 +25,7 @@ namespace rtx {
 struct InstanceData {
     glm::mat4 transform;
     uint32_t  meshId;
+    uint32_t  colorID{0}; // New field for material color index
 };
 
 struct MeshLoadData {
