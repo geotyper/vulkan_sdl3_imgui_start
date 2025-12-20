@@ -126,10 +126,10 @@ void ImGuiModule::init(SDL_Window* window,
     info.Queue = m_graphicsQueue;
     info.QueueFamily = queueFamilyIndex;
     info.DescriptorPool = m_descriptorPool;
-    info.RenderPass = m_renderPass;
+    info.PipelineInfoMain.RenderPass = m_renderPass;
     info.MinImageCount = 2;
     info.ImageCount = static_cast<uint32_t>(swapchainImageViews.size());
-    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     info.CheckVkResultFn = [](VkResult err) {
         if (err) std::cerr << "[ImGui/Vulkan] Error: " << err << std::endl;
     };

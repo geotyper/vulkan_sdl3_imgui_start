@@ -302,37 +302,7 @@ void GraphicsModule::CreateScene() {
 
     // 1) start with polygonal cube
     SurfaceMesh sm;
-    //CgalMeshBuilder::buildCube(sm, /*size*/ 1.0);
-    // CgalMeshBuilder::buildHollowCuboid(sm, /*N*/ 3, /*M*/ 3, /*L*/ 1, /*cellSize*/ 0.5);
-    //CgalMeshBuilder::buildPlaneXY(sm, /*N*/1,/*M*/2,  /*cellSize*/ 0.5);
 
-    //CgalMeshBuilder::buildPlaneOriented(
-    //    sm, 15, 15, 0.5,
-    //    Point_3(0,0,0), Vector_3(0,-1,0));
-    //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/1, /*ny*/1);
-
-
-
-    // match the plane-style call:
-    // CgalMeshBuilder::buildPlaneOriented(sm, 15, 15, 0.5, P3(0,0,0), V3(0,-1,0));
-    //auto faces = CgalMeshBuilder::buildHexSphereOriented(
-    //    sm,
-    //    /*resolution=*/1,           // try 3..8
-    //    /*radius=*/1.5,
-    //    Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
-    //    /*seamRotate=*/0.0
-    //    );
-
-
-    //CgalMeshBuilder::buildCubeWithGrid(sm, /*size*/1.0, /*nx*/3, /*ny*/3);
-
-   // auto faces2 = CgalMeshBuilder::buildHexSphereOriented(
-   //     sm,
-   //     /*resolution=*/2,           // try 3..8
-   //     /*radius=*/1.0,
-   //     Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
-   //     /*seamRotate=*/0.0
-   //     );
 
 
     for(int i=0; i<1 ; i++)
@@ -395,137 +365,7 @@ void GraphicsModule::CreateScene() {
 
 
 
-   // {
-   //     using SM = SurfaceMesh;                    // CGAL::Surface_mesh<Point_3>
-   //     using F  = SM::Face_index;
 
-   //     // auto seeds = CgalMeshBuilder::selectFaceByIndex(sm, 7);
-   //     using timing::time_call;
-
-   //     const auto T0 = timing::Clock::now();
-
-   //     auto seeds = CgalMeshBuilder::selectFacesRandom(sm, 0.23, 4242);
-
-   //     auto res  = time_call("extrude 1", [&]{
-   //         return CgalMeshBuilder::extrudeFaces_collectBoth(sm, seeds,  0.15, 0.75);
-   //     });
-   //     auto res2 = time_call("extrude 2", [&]{
-   //         return CgalMeshBuilder::extrudeFaces_collectBoth(sm, res,    0.00, 0.75);
-   //     });
-   //     auto res3 = time_call("extrude 3", [&]{
-   //         return CgalMeshBuilder::extrudeFaces_collectBoth(sm, res2,  -0.10, 0.75);
-   //     });
-
-   //     const auto T1 = timing::Clock::now();
-   //     std::cerr << "total: "
-   //               << std::chrono::duration<double, std::milli>(T1 - T0).count()
-   //               << " ms\n";
-
-
-
-   //     //2) растим по очереди
-   //     CgalMeshBuilderTentacles::GrowParams gp;
-   //     gp.steps             = 15;
-   //     gp.distPerStep       = 0.15;
-   //     gp.amountPerStep     = 0.915;
-   //     gp.twistMinRad       = -0.35; gp.twistMaxRad = +0.45;
-   //     gp.tiltMinRad        = -0.25; gp.tiltMaxRad  = +0.325;
-   //     gp.collectEachStep   = true;
-   //     gp.collectBetweenFaces = true;
-   //     gp.policy            = CgalMeshBuilderTentacles::CollisionPolicy::Ignore; // пока без коллизий
-
-   //     // Заготовка под будущие коллизии (пока возвращаем false)
-   //     auto no_collision_yet = [](const SM& /*sm*/, const std::vector<F>& /*caps*/){
-   //         return false;
-   //     };
-
-   //     std::vector<std::vector<F>> history;
-   //     auto finals = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
-   //        sm, res3, gp, no_collision_yet, &history
-   //        );
-
-
-   //     {
-
-   //         auto finals2 = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
-   //               sm, finals, gp, no_collision_yet, &history);
-
-   //         //// finals — то, что вернул extrudeTentaclesSequential (концевые крышки)
-   //         auto finalBulgedCaps = CgalMeshBuilderTentacles::extrudeBulgeOnCaps(
-   //             sm,
-   //             finals2,
-   //             /*steps=*/12,
-   //             /*distPerStep=*/0.06,
-   //             /*baseAmount=*/0.65,
-   //             /*bulgeAmount=*/0.95,   // пик: ~1.5 (0.65 + 0.85)
-   //             /*twist_rad=*/0.0,
-   //             /*tilt_rad=*/0.0,
-   //             /*collectEachStep=*/true
-   //             );
-   //     }
-   //     //// по желанию:
-   //     //sm.collect_garbage();
-   // }
-
-
-    //auto faces3 = CgalMeshBuilder::buildHexSphereOriented(
-    //    sm,
-    //    /*resolution=*/2,           // try 3..8
-    //    /*radius=*/0.7,
-    //    Point_3(0,0,0), Vector_3(0,1,0),     // “north” points toward -Y
-    //    /*seamRotate=*/0.0
-    //    );
-
-
-    //{
-    //{
-    //    using SM = SurfaceMesh;                    // CGAL::Surface_mesh<Point_3>
-    //    using F  = SM::Face_index;
-
-    //    auto toExtr  = CgalMeshBuilder::selectFacesRandom(sm, 1.0, 4242);
-
-    //    //    double distance = 0.2;        // сдвиг вдоль нормали
-    //    //    double scale    = 0.7;        // масштаб верхнего кольца
-    //    //    double twist    = CGAL::to_double(10.0 * M_PI/180.0); // 10°
-    //    //    double tilt     = CGAL::to_double(15.0 * M_PI/180.0); // 15° вокруг t0
-
-    //    auto res = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, toExtr, 0.15, 0.9, 0, 0);
-    //    auto res2 = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, res,  0.0, 0.75, 0, 0);
-    //    auto res3 = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, res2,  -0.1, 0.75, 0, 0);
-
-
-    //    CgalMeshBuilderTentacles::GrowParams gp;
-    //    gp.steps             = 15;
-    //    gp.distPerStep       = 0.15;
-    //    gp.amountPerStep     = 0.895;
-    //    gp.twistMinRad       = -0.35; gp.twistMaxRad = +0.45;
-    //    gp.tiltMinRad        = -0.25; gp.tiltMaxRad  = +0.325;
-    //    gp.collectEachStep   = true;
-    //    gp.collectBetweenFaces = true;
-    //    gp.policy            = CgalMeshBuilderTentacles::CollisionPolicy::Ignore; // пока без коллизий
-    //    // Заготовка под будущие коллизии (пока возвращаем false)
-    //    auto no_collision_yet = [](const SM& /*sm*/, const std::vector<F>& /*caps*/){
-    //        return false;
-    //    };
-    //    std::vector<std::vector<F>> history;
-    //    auto finals = CgalMeshBuilderTentacles::extrudeTentaclesSequential(
-    //       sm, res3, gp, no_collision_yet, &history
-    //       );
-
-
-    //}
-
-
-    //    for(int i=0; i<12;i++)
-    //    {
-    //        if(i%2 ==0)
-    //            tilt *= -1;
-    //        res2 = CgalMeshBuilder::extrudeFaces_collectBothRotate(sm, res2, 0.25, 0.9, -twist, tilt);
-    //    }
-     //  auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.75);
-      // auto res2 = CgalMeshBuilder::extrudeFaces_collectBoth(sm, res, 0.15, 0.25);
-    //    //CgalMeshBuilder::deleteFaces(sm, res3 , true);
-    //}
 
    // auto res = CgalMeshBuilder::extrudeFaces_collectBoth(sm, toExtr, 0.15, 0.9);
 
@@ -586,70 +426,7 @@ void GraphicsModule::CreateScene() {
     const float specialScale    = 0.10f;
 
     // -------- PASS 1: просто собираем трансформы с базовым масштабом ----------
-    //for (int z = -gridSize/2; z <= gridSize/2; ++z) {
-    //    for (int y = -gridSize; y <= gridSize; ++y) {
-    //        for (int x = -gridSize; x <= gridSize; ++x) {
-    //            glm::vec3 pos = { x * spacing, y * spacing, z * spacing };
-    //            glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
 
-    //            // Центр — большая сфера
-    //            if (x == 0 && y == 0 && z == 0) {
-    //                //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.25f)) });
-    //                //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-    //                //cubeInstances.push_back({ glm::scale(M, glm::vec3(0.75f *baseCubeScale)) });
-    //                //M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-
-    //                //    glm::linearRand() - простой способ получить случайное число в диапазоне.
-    //                float randomAngle = glm::linearRand(0.0f, glm::two_pi<float>());
-
-    //                // 2. Генерируем случайный единичный вектор для оси вращения.
-    //                //    glm::sphericalRand(1.0f) создаёт случайную точку на поверхности
-    //                //    сферы с радиусом 1, что идеально подходит для оси.
-    //                glm::vec3 randomAxis = glm::sphericalRand(1.0f);
-
-    //                // Применяем новое случайное вращение к матрице M.
-    //                M = M * glm::rotate(glm::mat4(1.f), randomAngle, randomAxis);
-
-    //                cubeInstances.push_back({ glm::scale(M, glm::vec3(1.0f *baseCubeScale)) });
-    //                //cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-    //                continue;
-    //            }
-
-    //            if (x==0 && y == 0 && z == 1) {
-    //                //   sphereInstances.push_back({ glm::scale(M, glm::vec3(0.75f)) });
-    //                  continue;
-    //            }
-
-    //            //const bool placeSphere = ((x + y + z) & 1) == 0;
-    //            //if (placeSphere) {
-    //            //    sphereInstances.push_back({ glm::scale(M, glm::vec3(baseSphereScale)) });
-    //            //    cubeInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseCubeScale)) });
-
-    //            //}
-    //            if (x!=0 || y != 0)
-    //            {
-    //                // немного повернём кубики для разнообразия
-    //                float randomAngle = glm::linearRand(0.0f, glm::two_pi<float>());
-
-    //                // 2. Генерируем случайный единичный вектор для оси вращения.
-    //                //    glm::sphericalRand(1.0f) создаёт случайную точку на поверхности
-    //                //    сферы с радиусом 1, что идеально подходит для оси.
-    //                glm::vec3 randomAxis = glm::sphericalRand(1.0f);
-
-    //                // Применяем новое случайное вращение к матрице M.
-    //                M = M * glm::rotate(glm::mat4(1.f), randomAngle, randomAxis);
-    //                cubeInstances.push_back({ glm::scale(M, glm::vec3(baseCubeScale)) });
-    //                //auto M1 = M * glm::rotate(glm::mat4(1.f), glm::radians(15.f * float(x + y + z)),
-    //                //                    glm::vec3(0, 1, 0));
-    //                //cubeInstances.push_back({ glm::scale(M1, glm::vec3(0.5f * baseCubeScale)) });
-
-    //                //sphereInstances.push_back({ glm::scale(M, glm::vec3(0.5f * baseSphereScale)) });
-    //            }
-    //        }
-    //    }
-    //}
     glm::vec3 pos = { 0.0f, 0.0f, 0.0f };
     glm::mat4 M   = glm::translate(glm::mat4(1.f), pos);
     M = M * glm::rotate(glm::mat4(1.f), glm::radians(0.0f), glm::vec3(0, 1, 0));
@@ -766,15 +543,7 @@ void GraphicsModule::cleanupSwapchain() {
     }
     m_swapchainImageViews.clear();
 
-    // 6. ---- УДАЛИТЕ ЭТОТ БЛОК ----
-    // НЕ НУЖНО уничтожать swapchain здесь, если вы используете oldSwapchain.
-    // Драйвер сделает это сам.
-    /*
-    if (m_swapchain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-        m_swapchain = VK_NULL_HANDLE;
-    }
-    */
+
 }
 
 
@@ -1048,6 +817,7 @@ void GraphicsModule::createLogicalDevice() {
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     features12.runtimeDescriptorArray = VK_TRUE;    // Эта возможность была нужна раньше
     features12.bufferDeviceAddress = VK_TRUE;       // <-- А эту мы сюда ПЕРЕНЕСЛИ
+    features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
     features12.pNext = &asFeatures;
 
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;

@@ -161,12 +161,7 @@ namespace rtx {
                         };
                     }
 
-                   // if (!attrib.texcoords.empty() && index.texcoord_index >= 0) {
-                   //     vertex.texCoord = {
-                   //         attrib.texcoords[2 * index.texcoord_index + 0],
-                   //         1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-                   //     };
-                   // }
+
 
                     vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
                     vertices.push_back(vertex);
@@ -352,7 +347,7 @@ namespace rtx {
             1 * m_sbtStride             // Размер - 2 shaders
         };
         VkStridedDeviceAddressRegionKHR callableRegion{ 0, 0, 0 };
-       // VkStridedDeviceAddressRegionKHR callableRegion{};
+
 
         vkCmdTraceRaysKHR(cmd,
                           &rgenRegion,
@@ -389,11 +384,7 @@ namespace rtx {
 
         // 6. Transition target image for presentation
         // 5. Финальный барьер: готовим swapchain-image к показу на экране.
-        //vulkanhelpers::ImageBarrier(cmd, targetImage,
-        //                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        //                            subresourceRange,
-        //                            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-        //                            VK_ACCESS_TRANSFER_WRITE_BIT, 0);
+
     }
 
     // --- RayTracingModule Private Method Implementations ---
@@ -566,11 +557,7 @@ namespace rtx {
         std::vector<VkPipelineShaderStageCreateInfo> stages = {
             s_rgen,
             s_miss,
-           // s_shadowMiss,
-           // s_secondaryMiss,
             s_chit,
-            //sa_chit,
-           // a_chit,
         };
 
 
@@ -603,29 +590,7 @@ namespace rtx {
         groups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
         groups[2].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        //// Group 5: Secondary Miss Shader
-        //groups[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        //groups[3].generalShader = VK_SHADER_UNUSED_KHR;
-        //groups[3].closestHitShader = 3;
-        //groups[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[3].intersectionShader = VK_SHADER_UNUSED_KHR;
 
-        //// Group 3: Triangle Hit Group
-        //groups[4].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[4].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        //groups[4].generalShader = VK_SHADER_UNUSED_KHR;
-        //groups[4].closestHitShader = VK_SHADER_UNUSED_KHR;
-        //groups[4].anyHitShader =     4; //5;
-        //groups[4].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-        // Group 4: Shadow Hit Group (for shadow rays)
-        //groups[5].sType              = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-        //groups[5].type               = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        //groups[5].closestHitShader   = VK_SHADER_UNUSED_KHR; // нам не нужен closest-hit
-        //groups[5].anyHitShader       = 5;  // s_sahit  (= shadow.rahit)
-        //groups[5].intersectionShader = VK_SHADER_UNUSED_KHR;
-        //groups[5].generalShader      = VK_SHADER_UNUSED_KHR;
 
         // Ray Tracing Pipeline
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{ VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR };

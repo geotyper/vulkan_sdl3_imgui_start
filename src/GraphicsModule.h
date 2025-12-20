@@ -144,12 +144,7 @@ private:
 
 };
 
-//// Forward declare to break circular dependencies
-//namespace rtx {
-//class RayTracingModule;
-//}
-//
-//class GraphicsModule {
+
 //public:
 //    GraphicsModule();  // Constructor
 //    ~GraphicsModule(); // DESTRUCTOR DECLARED HERE

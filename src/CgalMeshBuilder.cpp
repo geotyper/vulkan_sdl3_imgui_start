@@ -13,7 +13,7 @@
 
 #include <CGAL/Subdivision_method_3/subdivision_methods_3.h>
 #include <unordered_set>
-#include <CGAL/Polygon_mesh_processing/repair.h>
+
 
 namespace S3 = CGAL::Subdivision_method_3;
 namespace PMP = CGAL::Polygon_mesh_processing;
@@ -21,14 +21,14 @@ using SM = SurfaceMesh;
 
 
 #include <glm/glm.hpp>
-#include <cmath>
+
 #include <unordered_map>
 
 using V  = SM::Vertex_index;
 using H  = SM::Halfedge_index;
 using F  = SM::Face_index;
 using E = SM::Edge_index;
-using P =SM::Point;
+using P = SM::Point;
 
 namespace {
 
@@ -297,7 +297,7 @@ void CgalMeshBuilder::buildCube(SurfaceMesh& sm, double size) {
 
 void CgalMeshBuilder::buildHollowCuboid(SurfaceMesh& sm, int N, int M, int L, double cellSize)
 {
-   // sm.clear();
+
     if (N <= 0 || M <= 0 || L <= 0 || cellSize <= 0.0) {
         return; // Return an empty mesh for invalid dimensions
     }
@@ -389,8 +389,7 @@ void CgalMeshBuilder::buildPlaneXY(SurfaceMesh& sm, int N, int M, double cellSiz
         }
     }
 
-    // на всякий случай (не обязательно — все вершины используются)
-    // remove_isolated_vertices_safe(sm);
+
 }
 
 
@@ -582,7 +581,6 @@ void CgalMeshBuilder::deleteFaces(SurfaceMesh& sm,
     sm.collect_garbage();
 
     if (split_kissing_vertices) {
-    //    PMP::duplicate_non_manifold_vertices(sm); // splits “kissing” corners
        sm.collect_garbage();
     }
 }
@@ -605,12 +603,7 @@ void CgalMeshBuilder::cleanup_after_deletions(SurfaceMesh& sm) {
     PMP::duplicate_non_manifold_vertices(sm); // CGAL >= 5.6
     split_kissing_border_vertices(sm);        // твой fallback
 
-    // 3) Подчистить мусор
-   // PMP::remove_degenerate_faces(sm);
-   // remove_isolated_vertices_safe(sm);
 
-
-   // PMP::remove_degenerate_faces(sm);
     // 4) Компактим индексы (ИНВАЛИДИРУЕТ все старые дескрипторы!)
     sm.collect_garbage();
 }
@@ -686,10 +679,7 @@ static inline F attach_face_from_ring4(SM& sm, H h0, H h1, H h2, H h3){
     }
 
     // 3) Подстраховка: у вершин должен стоять какой-то halfedge
-    //fix_vertex_halfedge_safe(sm, sm.source(ring[0]));
-    //fix_vertex_halfedge_safe(sm, sm.target(ring[0]));
-    //fix_vertex_halfedge_safe(sm, sm.source(ring[2]));
-    //fix_vertex_halfedge_safe(sm, sm.target(ring[2]));
+
     return nf;
 }
 

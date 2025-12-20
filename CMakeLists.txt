@@ -32,6 +32,7 @@ include(FetchContent) # enable Fetch Content
 #--------------------------------- Fetch SDL3 ---------------------------------#
 set(SDL_STATIC ON)
 set(SDL_SHARED OFF)
+set(SDL_X11_XTEST OFF CACHE BOOL "Disable XTest" FORCE)
 FetchContent_Declare(sdl3
                      GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
                      GIT_TAG main
