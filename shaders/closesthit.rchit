@@ -45,16 +45,18 @@ void main()
     // Get Color ID from bits 8-15
     uint colorId = (packed >> 8) & 0xFF;
             
-    // Simple Palette
-    vec3 colors[5] = vec3[](
+    // Simple Palette (7 colors)
+    vec3 colors[7] = vec3[](
         vec3(0.8, 0.1, 0.1), // Red
         vec3(0.1, 0.8, 0.1), // Green
         vec3(0.1, 0.1, 0.9), // Blue
         vec3(0.9, 0.9, 0.1), // Yellow
-        vec3(0.1, 0.8, 0.9)  // Cyan
+        vec3(0.1, 0.8, 0.9), // Cyan
+        vec3(0.9, 0.1, 0.9), // Magenta
+        vec3(0.9, 0.5, 0.1)  // Orange
     );
             
-    vec3 baseColor = (colorId < 5) ? colors[colorId] : vec3(1.0);  
+    vec3 baseColor = (colorId < 7) ? colors[colorId] : vec3(1.0);  
     
     uint prim   = gl_PrimitiveID;
 

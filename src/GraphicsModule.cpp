@@ -129,7 +129,19 @@ void GraphicsModule::initSDL() {
 
 // In GraphicsModule.cpp
 
-void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt, int step) {
+void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int step) {
+    
+    // Check for FOV change
+    if (std::abs(cam.GetFovY() - solverParams.fov) > 0.01f) {
+        cam.SetFovY(solverParams.fov);
+    }
+    // Check for Rebuild
+    if (solverParams.requestRebuild) {
+        vkDeviceWaitIdle(m_device); // Ensure GPU is idle before modifying resources
+        CreateScene();
+        solverParams.requestRebuild = false;
+    }
+
     // 1. Wait for the GPU to finish the frame that is currently "in flight"
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -158,7 +170,7 @@ void GraphicsModule::RenderFrame(const Camera& cam, float currentTime, float dt,
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
-    float currentIntensity = 3.0f + pulse * 0.15f;
+    float currentIntensity = solverParams.lightIntensity + pulse * 0.15f;
     glm::vec3 color = glm::vec3(0.8f, 0.85f, 0.8f);
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
 
@@ -296,7 +308,7 @@ void GraphicsModule::initRayTracingModule() {
 }
 
 void GraphicsModule::CreateScene() {
-    SceneBuilder::BuildScene(m_rtxModule.get(), m_meshRenderer.get());
+    SceneBuilder::BuildScene(m_rtxModule.get(), m_meshRenderer.get(), solverParams.discRadius);
 }
 
 

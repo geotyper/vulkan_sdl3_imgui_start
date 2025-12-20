@@ -18,7 +18,11 @@ struct PushConstants {
 };
 
 struct SolverParameters {
-    bool drawPolyMesh =false;
+    bool drawPolyMesh = false;
+    float discRadius = 0.6f;
+    bool requestRebuild = false;
+    float fov = 35.0f;
+    float lightIntensity = 3.0f;
 };
 
 namespace rtx {

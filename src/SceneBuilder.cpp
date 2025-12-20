@@ -10,7 +10,7 @@
 
 #include <box2d/box2d.h>
 
-void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer) {
+void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer, float discRadius) {
     if (!rtxModule) return;
 
     // -------------------------------------------------------------------------
@@ -19,98 +19,100 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
 
     // Parameters
     const float outerRadius = 4.0f;  // Size of the container
-    const float discRadius  = 0.45f; // Size of small discs
+    // const float discRadius  = 0.6f;  // Increased size -> Now Argument
     const int   numDiscs    = 7;
+    const int   numLayers   = 2;     // Two layers
 
-    // 1. Setup World
-    b2WorldDef worldDef = b2DefaultWorldDef();
-    worldDef.gravity = {0.0f, 0.0f}; // Zero gravity for separation only
-    b2WorldId worldId = b2CreateWorld(&worldDef);
-
-    // 2. Create Static Outer Boundary (Chain Loop)
-    // Approximate a circle with 32 segments
-    const int segments = 32;
-    std::vector<b2Vec2> boundaryPoints(segments);
-    for(int i=0; i<segments; ++i) {
-        float theta = 2.0f * 3.14159f * float(i) / float(segments);
-        boundaryPoints[i] = {outerRadius * cosf(theta), outerRadius * sinf(theta)};
-    }
-    
-    b2BodyDef groundBodyDef = b2DefaultBodyDef();
-    b2BodyId groundId = b2CreateBody(worldId, &groundBodyDef);
-
-    b2ChainDef chainDef = b2DefaultChainDef();
-    chainDef.points = boundaryPoints.data();
-    chainDef.count = segments;
-    chainDef.isLoop = true;
-    
-    b2CreateChain(groundId, &chainDef);
-
-
-    // 3. Create Dynamic Discs
-    b2BodyDef bodyDef = b2DefaultBodyDef();
-    bodyDef.type = b2_dynamicBody;
-    bodyDef.linearDamping = 5.0f; // High damping to stop them from bouncing forever
-
-    b2Circle circleShape = {0};
-    circleShape.radius = discRadius;
-    b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.density = 1.0f;
-    shapeDef.restitution = 0.5f;
-
-    std::vector<b2BodyId> discBodies(numDiscs);
-    std::mt19937 rng(42); // Fixed seed
-    std::uniform_real_distribution<float> distPos(-outerRadius/2.0f, outerRadius/2.0f);
-
-    for(int i=0; i<numDiscs; ++i) {
-        bodyDef.position = { distPos(rng), distPos(rng) };
-        discBodies[i] = b2CreateBody(worldId, &bodyDef);
-        b2CreateCircleShape(discBodies[i], &shapeDef, &circleShape);
-    }
-
-    // 4. Run Simulation
-    // 120 steps should be enough to push them apart
-    for(int i=0; i<120; ++i) {
-        b2World_Step(worldId, 1.0f/60.0f, 4);
-    }
-
-    // -------------------------------------------------------------------------
-    // Visual Mesh Generation
-    // -------------------------------------------------------------------------
-
-    // 1. Small Disc Mesh (Instanced)
-    // Geometry
+    // Visual Mesh Generation (Geometry shared)
     SurfaceMesh discMesh;
     float containerThickness = 0.1f; // Shared thickness
-    CgalMeshBuilder::buildThickDisc(discMesh, discRadius, containerThickness, 24);
+    CgalMeshBuilder::buildThickDisc(discMesh, discRadius, containerThickness, 24); // 24 slices
     CgalMeshBuilder::triangulateAll(discMesh);
     std::vector<Vertex> discVertices; std::vector<uint32_t> discIndices;
     CgalMeshBuilder::toVertexIndexFlat(discMesh, discVertices, discIndices);
 
-    // Instances
     std::vector<rtx::InstanceData> discInstances;
-    std::uniform_int_distribution<int> distColor(0, 4); // 5 colors: 0..4
+    std::random_device rd;
+    std::mt19937 rng(rd()); 
+    
+    // Use different seeds for layers to ensure different distributions?
+    // mt19937 state advances, so just keeping the single rng is fine.
 
-    for(b2BodyId bid : discBodies) {
-        b2Vec2 pos = b2Body_GetPosition(bid);
+    std::uniform_real_distribution<float> distPos(-outerRadius/2.0f, outerRadius/2.0f);
+    std::uniform_int_distribution<int> distColor(0, 6); // 7 colors
+
+    for(int layer=0; layer < numLayers; ++layer) {
+        // --- 1. Setup World ---
+        b2WorldDef worldDef = b2DefaultWorldDef();
+        worldDef.gravity = {0.0f, 0.0f}; 
+        b2WorldId worldId = b2CreateWorld(&worldDef);
+
+        // --- 2. Create Static Outer Boundary ---
+        const int segments = 32;
+        std::vector<b2Vec2> boundaryPoints(segments);
+        for(int i=0; i<segments; ++i) {
+            float theta = 2.0f * 3.14159f * float(i) / float(segments);
+            boundaryPoints[i] = {outerRadius * cosf(theta), outerRadius * sinf(theta)};
+        }
         
-        glm::vec3 pos3d(pos.x, 0.0f, pos.y); 
-        
-        b2Rot rot = b2Body_GetRotation(bid);
-        float angleRad = b2Rot_GetAngle(rot);
+        b2BodyDef groundBodyDef = b2DefaultBodyDef();
+        b2BodyId groundId = b2CreateBody(worldId, &groundBodyDef);
+        b2ChainDef chainDef = b2DefaultChainDef();
+        chainDef.points = boundaryPoints.data();
+        chainDef.count = segments;
+        chainDef.isLoop = true;
+        b2CreateChain(groundId, &chainDef);
 
-        glm::mat4 M = glm::translate(glm::mat4(1.0f), pos3d);
-        M = glm::rotate(M, -angleRad, glm::vec3(0,1,0)); // Rotation around Y axis
+        // --- 3. Create Dynamic Discs ---
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        bodyDef.type = b2_dynamicBody;
+        bodyDef.linearDamping = 5.0f; 
 
-        // Assign random color ID (0-4)
-        // uint32_t colId = static_cast<uint32_t>(distColor(rng));
-        uint32_t colId = 2; // Force Blue for debugging
+        b2Circle circleShape = {0};
+        circleShape.radius = discRadius;
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = 1.0f;
+        shapeDef.restitution = 0.5f;
 
-        discInstances.push_back({M, 0, colId}); 
+        std::vector<b2BodyId> discBodies(numDiscs);
+        for(int i=0; i<numDiscs; ++i) {
+            bodyDef.position = { distPos(rng), distPos(rng) };
+            discBodies[i] = b2CreateBody(worldId, &bodyDef);
+            b2CreateCircleShape(discBodies[i], &shapeDef, &circleShape);
+        }
+
+        // --- 4. Run Simulation ---
+        for(int i=0; i<120; ++i) {
+            b2World_Step(worldId, 1.0f/60.0f, 4);
+        }
+
+        // --- 5. Extract Instances ---
+        float yOffset = layer * containerThickness; // Stack layers
+
+        for(b2BodyId bid : discBodies) {
+            b2Vec2 pos = b2Body_GetPosition(bid);
+            
+            // Map Box2D (X, Y) -> 3D (X, yOffset, Z=Y)
+            // Wait, previous code used: glm::vec3(pos.x, 0.0f, pos.y);
+            // So X -> X, Y -> Z. Up is Y.
+            glm::vec3 pos3d(pos.x, yOffset, pos.y); 
+            
+            b2Rot rot = b2Body_GetRotation(bid);
+            float angleRad = b2Rot_GetAngle(rot);
+
+            glm::mat4 M = glm::translate(glm::mat4(1.0f), pos3d);
+            M = glm::rotate(M, -angleRad, glm::vec3(0,1,0)); 
+
+            // Assign random color ID (0-6)
+            uint32_t colId = static_cast<uint32_t>(distColor(rng));
+            
+            discInstances.push_back({M, 0, colId}); 
+        }
+
+        b2DestroyWorld(worldId);
     }
-
-
-    // 2. Large Container Ring (Static Mesh)
+    
+    // 2. Large Container Ring (SKIP render for now)
     SurfaceMesh containerMesh;
     // ... (Container generation skipped for debug) ...
     // ...
@@ -126,7 +128,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // containerInstances.push_back({containerM});
 
     // Cleanup Box2D
-    b2DestroyWorld(worldId);
+    // b2DestroyWorld(worldId); // Already destroyed in loop
 
     // -------------------------------------------------------------------------
     // Upload to RTX

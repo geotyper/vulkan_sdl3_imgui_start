@@ -284,7 +284,7 @@ namespace rtx {
 
             // Store instances and associate them with the current mesh ID
             for (const auto& instanceData : data.instances) {
-                m_instances.push_back({instanceData.transform, meshId});
+                m_instances.push_back({instanceData.transform, meshId, instanceData.colorID});
                 m_baseInstanceTransforms.push_back(instanceData.transform);
             }
 
@@ -450,7 +450,7 @@ namespace rtx {
         uniformDataBinding.binding         = SWS_UNIFORM_DATA_BINDING; // Use new binding point
         uniformDataBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uniformDataBinding.descriptorCount = 1;
-        uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
 
 
         const uint32_t MAX_MESHES = 2;

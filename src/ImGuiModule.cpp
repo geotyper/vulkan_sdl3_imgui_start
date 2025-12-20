@@ -164,6 +164,12 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::Begin("Solver Menu");
     ImGui::Text("Sphere Options");
     ImGui::Checkbox("render polymesh", &solverParams.drawPolyMesh);
+    ImGui::SliderFloat("Disc Radius", &solverParams.discRadius, 0.1f, 1.5f);
+    ImGui::SliderFloat("FOV", &solverParams.fov, 10.0f, 120.0f);
+    ImGui::SliderFloat("Light Intensity", &solverParams.lightIntensity, 0.0f, 10.0f);
+    if (ImGui::Button("Refresh")) {
+        solverParams.requestRebuild = true;
+    }
 
     ImGui::End();
 
