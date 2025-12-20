@@ -453,7 +453,7 @@ namespace rtx {
         uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
 
 
-        const uint32_t MAX_MESHES = 2;
+        const uint32_t MAX_MESHES = 200;
 
         /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
         VkDescriptorSetLayoutBinding verticesBinding{};

@@ -308,7 +308,7 @@ void GraphicsModule::initRayTracingModule() {
 }
 
 void GraphicsModule::CreateScene() {
-    SceneBuilder::BuildScene(m_rtxModule.get(), m_meshRenderer.get(), solverParams.discRadius);
+    SceneBuilder::BuildScene(m_rtxModule.get(), m_meshRenderer.get(), solverParams);
 }
 
 

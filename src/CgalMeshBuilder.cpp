@@ -3283,3 +3283,53 @@ void CgalMeshBuilder::buildThickDisc(SurfaceMesh& sm, double radius, double thic
         sm.add_face(sideBottom[next], sideBottom[i], sideTop[i], sideTop[next]);
     }
 }
+
+void CgalMeshBuilder::buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed) {
+    sm.clear();
+    
+    if (sides < 3) sides = 3;
+
+    std::mt19937 rng(seed);
+    double step = 2.0 * M_PI / double(sides);
+    // Limit jitter to avoid self-intersection (convex order)
+    std::uniform_real_distribution<double> distJitter(-0.35 * step, 0.35 * step);
+    // Variation 0.66 to 1.5 if sizeVariation is 1.5
+    double minR = 1.0 / (sizeVariation > 0.001 ? sizeVariation : 1.0);
+    std::uniform_real_distribution<double> distRadiusMult(minR, sizeVariation); 
+
+    std::vector<SurfaceMesh::Vertex_index> capTop(sides);
+    std::vector<SurfaceMesh::Vertex_index> capBottom(sides);
+    std::vector<SurfaceMesh::Vertex_index> sideTop(sides);
+    std::vector<SurfaceMesh::Vertex_index> sideBottom(sides);
+
+    for (int i = 0; i < sides; ++i) {
+        double theta = step * ((double)i) + distJitter(rng);
+        double r = radius * distRadiusMult(rng);
+        double x = r * std::cos(theta);
+        double z = r * std::sin(theta);
+        
+        Point_3 pTop(x, thickness, z);
+        Point_3 pBot(x, 0.0, z);
+
+        capTop[i]    = sm.add_vertex(pTop);
+        capBottom[i] = sm.add_vertex(pBot);
+        sideTop[i]   = sm.add_vertex(pTop);
+        sideBottom[i]= sm.add_vertex(pBot);
+    }
+
+    // Top Cap
+    std::vector<SurfaceMesh::Vertex_index> faceV;
+    for (int i = 0; i < sides; ++i) faceV.push_back(capTop[i]);
+    sm.add_face(faceV);
+
+    // Bottom Cap (Reverse)
+    faceV.clear();
+    for (int i = 0; i < sides; ++i) faceV.push_back(capBottom[sides - 1 - i]);
+    sm.add_face(faceV);
+
+    // Side Quads
+    for (int i = 0; i < sides; ++i) {
+        int next = (i + 1) % sides;
+        sm.add_face(sideBottom[next], sideBottom[i], sideTop[i], sideTop[next]);
+    }
+}

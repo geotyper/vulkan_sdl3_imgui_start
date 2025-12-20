@@ -13,5 +13,5 @@ class StandardMeshRenderer;
 class SceneBuilder {
 public:
     // Builds the default scene (spheres, cubes, etc.) and loads it into the RTX module
-    static void BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer, float discRadius = 0.6f);
+    static void BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer, const SolverParameters& params);
 };

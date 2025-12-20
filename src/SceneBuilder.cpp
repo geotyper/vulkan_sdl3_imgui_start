@@ -10,7 +10,7 @@
 
 #include <box2d/box2d.h>
 
-void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer, float discRadius) {
+void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRenderer* meshRenderer, const SolverParameters& params) {
     if (!rtxModule) return;
 
     // -------------------------------------------------------------------------
@@ -18,28 +18,22 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // -------------------------------------------------------------------------
 
     // Parameters
-    const float outerRadius = 4.0f;  // Size of the container
-    // const float discRadius  = 0.6f;  // Increased size -> Now Argument
+    const float outerRadius = 4.0f;
     const int   numDiscs    = 7;
     const int   numLayers   = 2;     // Two layers
+    float containerThickness = 0.1f;
 
-    // Visual Mesh Generation (Geometry shared)
-    SurfaceMesh discMesh;
-    float containerThickness = 0.1f; // Shared thickness
-    CgalMeshBuilder::buildThickDisc(discMesh, discRadius, containerThickness, 24); // 24 slices
-    CgalMeshBuilder::triangulateAll(discMesh);
-    std::vector<Vertex> discVertices; std::vector<uint32_t> discIndices;
-    CgalMeshBuilder::toVertexIndexFlat(discMesh, discVertices, discIndices);
-
-    std::vector<rtx::InstanceData> discInstances;
     std::random_device rd;
     std::mt19937 rng(rd()); 
-    
-    // Use different seeds for layers to ensure different distributions?
-    // mt19937 state advances, so just keeping the single rng is fine.
 
     std::uniform_real_distribution<float> distPos(-outerRadius/2.0f, outerRadius/2.0f);
     std::uniform_int_distribution<int> distColor(0, 6); // 7 colors
+
+    struct SimResult {
+        glm::mat4 transform;
+        uint32_t colorID;
+    };
+    std::vector<SimResult> simulationResults;
 
     for(int layer=0; layer < numLayers; ++layer) {
         // --- 1. Setup World ---
@@ -69,7 +63,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         bodyDef.linearDamping = 5.0f; 
 
         b2Circle circleShape = {0};
-        circleShape.radius = discRadius;
+        circleShape.radius = params.discRadius;
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = 1.0f;
         shapeDef.restitution = 0.5f;
@@ -93,8 +87,6 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
             b2Vec2 pos = b2Body_GetPosition(bid);
             
             // Map Box2D (X, Y) -> 3D (X, yOffset, Z=Y)
-            // Wait, previous code used: glm::vec3(pos.x, 0.0f, pos.y);
-            // So X -> X, Y -> Z. Up is Y.
             glm::vec3 pos3d(pos.x, yOffset, pos.y); 
             
             b2Rot rot = b2Body_GetRotation(bid);
@@ -106,39 +98,57 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
             // Assign random color ID (0-6)
             uint32_t colId = static_cast<uint32_t>(distColor(rng));
             
-            discInstances.push_back({M, 0, colId}); 
+            simulationResults.push_back({M, colId});
         }
 
         b2DestroyWorld(worldId);
     }
-    
-    // 2. Large Container Ring (SKIP render for now)
-    SurfaceMesh containerMesh;
-    // ... (Container generation skipped for debug) ...
-    // ...
-    CgalMeshBuilder::buildThickDisc(containerMesh, outerRadius*1.05f, containerThickness, 64);
-    CgalMeshBuilder::triangulateAll(containerMesh);
-    std::vector<Vertex> containerVertices; std::vector<uint32_t> containerIndices;
-    CgalMeshBuilder::toVertexIndexFlat(containerMesh, containerVertices, containerIndices);
-    
-    // Static instance for container
-    std::vector<rtx::InstanceData> containerInstances;
-    // DEBUG: Don't add instance
-    // glm::mat4 containerM = glm::translate(glm::mat4(1.0f), glm::vec3(0, -containerThickness, 0)); // Exactly below
-    // containerInstances.push_back({containerM});
 
-    // Cleanup Box2D
-    // b2DestroyWorld(worldId); // Already destroyed in loop
+    std::vector<rtx::MeshLoadData> allMeshes;
 
-    // -------------------------------------------------------------------------
-    // Upload to RTX
-    // -------------------------------------------------------------------------
-    rtxModule->LoadFromMultipleMeshes({
-        { discVertices,      discIndices,      discInstances },      // ID 0: Small Discs
-        // { containerVertices, containerIndices, containerInstances }  // ID 1: Container REMOVED
-    });
+    if (params.shapeType == 0) {
+        // --- DISC MODE ---
+        SurfaceMesh discMesh;
+        CgalMeshBuilder::buildThickDisc(discMesh, params.discRadius, containerThickness, 24);
+        CgalMeshBuilder::triangulateAll(discMesh);
+        std::vector<Vertex> discVertices; std::vector<uint32_t> discIndices;
+        CgalMeshBuilder::toVertexIndexFlat(discMesh, discVertices, discIndices);
 
-    if (meshRenderer) {
-        // Debug lines if needed
+        std::vector<rtx::InstanceData> instances;
+        instances.reserve(simulationResults.size());
+        for (const auto& res : simulationResults) {
+            instances.push_back({res.transform, 0, res.colorID}); // meshId 0 will be assigned by loader relative to this batch, but actually loader assigns global ID?
+            // Actually LoadFromMultipleMeshes assigns meshID based on loop index.
+            // Wait, rtx::InstanceData definition has meshID? yes.
+            // The loader normally overrides it or we set it?
+            // In RayTracingModule::LoadFromMultipleMeshes:
+            // for (int i=0; i<data.size(); i++) { ... uint32_t meshId = m_scene->meshes.size() - 1; ... m_instances.push_back({..., meshId, ...}) }
+            // So the loader sets the meshId. We can pass 0 here.
+        }
+        
+        allMeshes.push_back({discVertices, discIndices, instances});
+
+    } else {
+        // --- POLY MODE ---
+        std::uniform_int_distribution<int> distSides(5, 7);
+
+        for (const auto& res : simulationResults) {
+             SurfaceMesh polyMesh;
+             int sides = distSides(rng);
+             // Variation 1.5
+             CgalMeshBuilder::buildThickPolygon(polyMesh, params.discRadius, 1.5, containerThickness, sides, rng());
+             CgalMeshBuilder::triangulateAll(polyMesh);
+             
+             std::vector<Vertex> v; std::vector<uint32_t> i;
+             CgalMeshBuilder::toVertexIndexFlat(polyMesh, v, i);
+             
+             // Create 1 instance for this unique mesh
+             std::vector<rtx::InstanceData> oneInst;
+             oneInst.push_back({res.transform, 0, res.colorID});
+             
+             allMeshes.push_back({v, i, oneInst});
+        }
     }
+
+    rtxModule->LoadFromMultipleMeshes(allMeshes);
 }

@@ -23,6 +23,7 @@ struct SolverParameters {
     bool requestRebuild = false;
     float fov = 35.0f;
     float lightIntensity = 3.0f;
+    int shapeType = 0; // 0 = Disc, 1 = Poly
 };
 
 namespace rtx {
