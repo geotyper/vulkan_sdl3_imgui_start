@@ -297,7 +297,7 @@ void CgalMeshBuilder::buildCube(SurfaceMesh& sm, double size) {
 
 void CgalMeshBuilder::buildHollowCuboid(SurfaceMesh& sm, int N, int M, int L, double cellSize)
 {
-    sm.clear();
+   // sm.clear();
     if (N <= 0 || M <= 0 || L <= 0 || cellSize <= 0.0) {
         return; // Return an empty mesh for invalid dimensions
     }
@@ -2442,7 +2442,7 @@ void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
 
 void CgalMeshBuilder::buildCubeWithGrid(SurfaceMesh& sm, double size, int nx, int ny)
 {
-    sm.clear();
+   // sm.clear();
     nx = std::max(1, nx);
     ny = std::max(1, ny);
 
