@@ -19,7 +19,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
 
     // Parameters
     const float outerRadius = 4.0f;
-    const int   numDiscs    = 7;
+    const int   numDiscs    = params.numDiscs;
     const int   numLayers   = 2;     // Two layers
     float containerThickness = 0.1f;
 

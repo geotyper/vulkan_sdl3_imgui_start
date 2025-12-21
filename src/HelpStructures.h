@@ -24,6 +24,7 @@ struct SolverParameters {
     float fov = 35.0f;
     float lightIntensity = 3.0f;
     int shapeType = 0; // 0 = Disc, 1 = Poly
+    int numDiscs = 7;
 };
 
 namespace rtx {

@@ -167,6 +167,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::SliderFloat("Disc Radius", &solverParams.discRadius, 0.1f, 1.5f);
     ImGui::SliderFloat("FOV", &solverParams.fov, 10.0f, 120.0f);
     ImGui::SliderFloat("Light Intensity", &solverParams.lightIntensity, 0.0f, 10.0f);
+    ImGui::SliderInt("Num Figures", &solverParams.numDiscs, 3, 25);
     
     const char* items[] = { "Disc", "Random Poly" };
     ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
