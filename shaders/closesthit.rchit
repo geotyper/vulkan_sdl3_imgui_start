@@ -28,7 +28,7 @@ readonly buffer IdxBuf { uint   i[]; }  indices[];
 
 const float IOR_GLASS = 1.25;
 const vec3  TINT      = vec3(1.0);
-const float SURF_EPS  = 0.03;
+const float SURF_EPS  = 0.0001;
 
 uint  wanghash(uint s){ s = (s ^ 61u) ^ (s >> 16u); s *= 9u; s ^= (s >> 4u); s *= 0x27d4eb2du; s ^= (s >> 15u); return s; }
 float rnd(inout uint seed){ seed = wanghash(seed + 1u); return float(seed) * (1.0/4294967296.0); }
