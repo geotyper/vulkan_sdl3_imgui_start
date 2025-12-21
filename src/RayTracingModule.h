@@ -117,6 +117,7 @@ public:
     void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
     void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID);
     void AnimateInstances(float time, bool orbitAroundWorldZ);
+    void UpdateInstances(const std::vector<InstanceData>& newInstances);
 
     void InitPerInstanceSpin(uint32_t seed = 1337);
     void Build3x3x3(float spacing);

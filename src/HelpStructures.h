@@ -30,6 +30,7 @@ struct SolverParameters {
     bool makePyramid = false;
     int paletteID = 0;
     float mirrorHeight = 10.0f; // 0 = Default, 1 = Neon, 2 = Warm
+    bool animate = false;
 };
 
 namespace rtx {

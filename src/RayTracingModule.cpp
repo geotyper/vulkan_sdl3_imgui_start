@@ -1165,4 +1165,11 @@ namespace rtx {
     }
 
 
+    void RayTracingModule::UpdateInstances(const std::vector<InstanceData>& newInstances) {
+        vkDeviceWaitIdle(device());
+        m_tlas.Destroy(m_context, device());
+        m_instances = newInstances;
+        BuildTLAS();
+        UpdateDescriptorSets();
+    }
 } // namespace rtx
