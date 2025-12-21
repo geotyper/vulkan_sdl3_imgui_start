@@ -136,7 +136,8 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
              SurfaceMesh polyMesh;
              int sides = distSides(rng);
              // Variation 1.5
-             CgalMeshBuilder::buildThickPolygon(polyMesh, params.discRadius, 1.5, containerThickness, sides, rng());
+             // Pyramid height = 0.3
+             CgalMeshBuilder::buildThickPolygon(polyMesh, params.discRadius, 1.5, containerThickness, sides, rng(), params.makePyramid, 0.3);
              CgalMeshBuilder::triangulateAll(polyMesh);
              
              std::vector<Vertex> v; std::vector<uint32_t> i;

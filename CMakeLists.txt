@@ -193,10 +193,10 @@ target_link_libraries(${TARGET} PRIVATE SDL3::SDL3 volk::volk imgui CGAL::CGAL b
 ## === Create a Custom Target to Trigger Compilation ===
 #add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 
-add_compile_definitions(SHADER_PATH_GLSL="${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/")
+add_compile_definitions(SHADER_PATH_GLSL="shaders/")
 
 # === Shader Path Definition ===
-target_compile_definitions(DroneVisualizer PRIVATE SHADER_PATH="${CMAKE_CURRENT_BINARY_DIR}/shaders/")
+target_compile_definitions(DroneVisualizer PRIVATE SHADER_PATH="shaders/")
 
 # === Shader Compilation Logic ===
 file(GLOB SHADER_FILES "shaders/*.rgen" "shaders/*.rchit" "shaders/*.rahit" "shaders/*.rmiss" "shaders/*.vert" "shaders/*.frag")
@@ -207,16 +207,19 @@ if(NOT GLSLANG_VALIDATOR_EXECUTABLE)
     message(FATAL_ERROR "glslangValidator not found. Please ensure it is in your system PATH.")
 endif()
 
+# Ensure the output directory exists
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+
 foreach(SHADER_FILE ${SHADER_FILES})
     get_filename_component(FILE_NAME ${SHADER_FILE} NAME)
-    set(SPIRV_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Debug/shaders/${FILE_NAME}.spv")
+    set(SPIRV_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shaders/${FILE_NAME}.spv")
 
     # --- THIS IS THE CORRECTED SHADER COMPILE COMMAND ---
     # Added --target-env vulkan1.2 to match our application's API version
     add_custom_command(
         OUTPUT ${SPIRV_OUTPUT}
         COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.3 -V ${SHADER_FILE} -o ${SPIRV_OUTPUT}
-        DEPENDS ${SHADER_FILE}
+        DEPENDS ${SHADER_FILE} src/shared_with_shaders.h
         COMMENT "Compiling shader: ${FILE_NAME}"
     )
     list(APPEND SPIRV_SHADERS ${SPIRV_OUTPUT})
@@ -226,11 +229,11 @@ add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
 add_dependencies(DroneVisualizer CompileShaders)
 
 # === Copy Shaders to Executable Directory ===
-#add_custom_command(
-#    TARGET DroneVisualizer POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory
-#            "${CMAKE_CURRENT_BINARY_DIR}/shaders_temp"
-#            "$<TARGET_FILE_DIR:DroneVisualizer>/shaders"
-#    COMMENT "Copying shaders to executable directory..."
-#)
+add_custom_command(
+    TARGET DroneVisualizer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+            "$<TARGET_FILE_DIR:DroneVisualizer>/shaders"
+    COMMENT "Copying shaders to executable directory..."
+)
 

@@ -172,7 +172,7 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int s
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
     float currentIntensity = solverParams.lightIntensity + pulse * 0.15f;
     glm::vec3 color = glm::vec3(0.8f, 0.85f, 0.8f);
-    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step);
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, solverParams.paletteID);
 
     // --- RECORDING AND SUBMISSION ---
 

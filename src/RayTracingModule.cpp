@@ -92,24 +92,32 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID) {
         UniformData ubo;
         ubo.uTime = time;
-        ubo.lightColor = lightColor;
-        ubo.lightIntensity = lightIntensity;
+        ubo._pad00=0; ubo._pad01=0; ubo._pad02=0;
 
-        ubo.volSigmaS=0.12;
-        ubo.volSigmaE=0.07;
-        ubo.volG=0.92;
-        ubo.volTMax=80.0;
-        ubo.lightPos =glm::vec3(0,0,0);
+        // Pack Intensity into W
+        ubo.lightColor = glm::vec4(lightColor, lightIntensity);
+        
+        // Pack volG into W
+        float volG = 0.92f;
+        glm::vec3 lPos = glm::vec3(0,0,0);
+        ubo.lightPos = glm::vec4(lPos, volG);
+
+        ubo.volSigmaS = 0.12f;
+        ubo.volSigmaE = 0.07f;
+        ubo.volTMax = 80.0f;
+        ubo.volMaxDist = 30.0f;
+
         ubo.volSteps = 16;
         ubo.volVisStride = 4;
-        ubo.volMaxDist =30.0f;
-        ubo.frameCounter =step;
-        ubo.exposure =1.0f;
+        ubo.frameCounter = step;
+        ubo.exposure = 1.0f;
+        
+        ubo.paletteID = paletteID;
+        ubo._pad1=0; ubo._pad2=0; ubo._pad3=0;
 
-        // The rest of the function remains the same
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
     }
 
@@ -190,13 +198,13 @@ namespace rtx {
         VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
         m_storageImage.Create(
             m_context,
-            VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, extent3D,
+            VK_IMAGE_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, extent3D,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
             );
         VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, range);
+        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, range);
 
         // CORRECTED: Call the single, unified update function.
         UpdateDescriptorSets();

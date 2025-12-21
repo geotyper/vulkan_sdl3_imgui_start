@@ -3284,7 +3284,7 @@ void CgalMeshBuilder::buildThickDisc(SurfaceMesh& sm, double radius, double thic
     }
 }
 
-void CgalMeshBuilder::buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed) {
+void CgalMeshBuilder::buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed, bool makePyramid, double pyramidHeight) {
     sm.clear();
     
     if (sides < 3) sides = 3;
@@ -3318,12 +3318,26 @@ void CgalMeshBuilder::buildThickPolygon(SurfaceMesh& sm, double radius, double s
     }
 
     // Top Cap
-    std::vector<SurfaceMesh::Vertex_index> faceV;
-    for (int i = 0; i < sides; ++i) faceV.push_back(capTop[i]);
-    sm.add_face(faceV);
+    if (!makePyramid) {
+        // Flat Top
+        std::vector<SurfaceMesh::Vertex_index> faceV;
+        for (int i = 0; i < sides; ++i) faceV.push_back(capTop[i]);
+        sm.add_face(faceV);
+    } else {
+        // Pyramid Top
+        // Add central peak
+        Point_3 peak(0.0, thickness + pyramidHeight, 0.0);
+        SurfaceMesh::Vertex_index vPeak = sm.add_vertex(peak);
+        
+        // Fan
+        for (int i = 0; i < sides; ++i) {
+            int next = (i + 1) % sides;
+            sm.add_face(capTop[i], capTop[next], vPeak);
+        }
+    }
 
     // Bottom Cap (Reverse)
-    faceV.clear();
+    std::vector<SurfaceMesh::Vertex_index> faceV;
     for (int i = 0; i < sides; ++i) faceV.push_back(capBottom[sides - 1 - i]);
     sm.add_face(faceV);
 

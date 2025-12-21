@@ -168,12 +168,19 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::SliderFloat("FOV", &solverParams.fov, 10.0f, 120.0f);
     ImGui::SliderFloat("Light Intensity", &solverParams.lightIntensity, 0.0f, 10.0f);
     ImGui::SliderInt("Num Figures", &solverParams.numDiscs, 3, 35);
-    ImGui::SliderInt("Layers", &solverParams.numLayers, 1, 5);
+    ImGui::SliderInt("Layers", &solverParams.numLayers, 1, 3);
     
     const char* items[] = { "Disc", "Random Poly" };
     ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
     
+    if(solverParams.shapeType == 1) { // Only show for Poly
+        ImGui::Checkbox("Pyramid Top", &solverParams.makePyramid);
+    }
+    
     ImGui::Checkbox("Kaleidoscope Mode", &solverParams.useKaleidoscope);
+
+    const char* palettes[] = { "Default", "Neon", "Warm" };
+    ImGui::Combo("Palette", &solverParams.paletteID, palettes, IM_ARRAYSIZE(palettes));
 
     if (ImGui::Button("Refresh")) {
         solverParams.requestRebuild = true;

@@ -27,6 +27,8 @@ struct SolverParameters {
     int numDiscs = 7;
     int numLayers = 3;
     bool useKaleidoscope = false;
+    bool makePyramid = false;
+    int paletteID = 0; // 0 = Default, 1 = Neon, 2 = Warm
 };
 
 namespace rtx {

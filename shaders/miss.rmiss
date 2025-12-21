@@ -6,7 +6,7 @@
 
 layout(location = SWS_LOC_PRIMARY_RAY) rayPayloadInEXT RadiancePayload prd;
 
-layout(set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING) uniform UniformData_ { UniformData sceneUB; };
+layout(std140, set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING) uniform UniformData_ { UniformData sceneUB; };
 
 void main() {
     vec3 d = normalize(gl_WorldRayDirectionEXT);
@@ -15,7 +15,8 @@ void main() {
     float t = clamp(0.5 * (d.y + 1.0), 0.0, 1.0);
     vec3 skyColor = mix(skyBot, skyTop, t);
     
-    // Apply intensity
-    prd.throughput *= skyColor * sceneUB.lightIntensity;
+    // Apply intensity (packed in w)
+    prd.throughput *= skyColor * sceneUB.lightColor.w;
+    
     prd.done = true;
 }

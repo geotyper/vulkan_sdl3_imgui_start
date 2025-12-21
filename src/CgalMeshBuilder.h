@@ -89,7 +89,7 @@ public:
                              double cellSize);
     static void splitJunctionVertices(SurfaceMesh &sm);
     static void buildThickDisc(SurfaceMesh& sm, double radius, double thickness, int slices);
-    static void buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed);
+    static void buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed, bool makePyramid = false, double pyramidHeight = 0.0);
 
     // Экструзия одной грани (добавлен out-результат)
     static SurfaceMesh::Face_index extrudeFace_one(

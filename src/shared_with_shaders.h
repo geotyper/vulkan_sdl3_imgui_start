@@ -70,20 +70,25 @@ struct RadiancePayload {
 
 struct UniformData {
     float uTime;
-    float _padding1, _padding2, _padding3;
-    vec3 lightColor;
-    float lightIntensity;
-    vec3 lightPos;
-    float volG;
+    float _pad00;
+    float _pad01;
+    float _pad02;
+
+    vec4 lightColor;       // w = lightIntensity
+    vec4 lightPos;         // w = volG
+
     float volSigmaE;
     float volSigmaS;
     float volTMax;
     float volMaxDist;
+
     int volSteps;
     int volVisStride;
     int frameCounter;
     float exposure;
 
+    int paletteID;
+    int _pad1, _pad2, _pad3;
 };
 
 // shaders helper functions
