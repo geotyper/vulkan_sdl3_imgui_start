@@ -178,6 +178,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     }
     
     ImGui::Checkbox("Kaleidoscope Mode", &solverParams.useKaleidoscope);
+    ImGui::SliderFloat("Mirror Height", &solverParams.mirrorHeight, 1.0f, 25.0f);
 
     const char* palettes[] = { "Default", "Neon", "Warm" };
     ImGui::Combo("Palette", &solverParams.paletteID, palettes, IM_ARRAYSIZE(palettes));

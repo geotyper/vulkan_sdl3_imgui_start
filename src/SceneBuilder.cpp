@@ -156,7 +156,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         SurfaceMesh mirrorMesh;
         // Build 3 separate overlapping quads to prevent light leaks at corners
         float r = 3.5f; 
-        float h = 10.0f;
+        float h = params.mirrorHeight;
         float overlap = 0.5f; // Extend each mirror by 0.5 units at each end
 
         for(int i=0; i<3; ++i) {

@@ -28,7 +28,8 @@ struct SolverParameters {
     int numLayers = 3;
     bool useKaleidoscope = false;
     bool makePyramid = false;
-    int paletteID = 0; // 0 = Default, 1 = Neon, 2 = Warm
+    int paletteID = 0;
+    float mirrorHeight = 10.0f; // 0 = Default, 1 = Neon, 2 = Warm
 };
 
 namespace rtx {
