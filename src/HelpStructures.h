@@ -25,6 +25,7 @@ struct SolverParameters {
     float lightIntensity = 3.0f;
     int shapeType = 0; // 0 = Disc, 1 = Poly
     int numDiscs = 7;
+    int numLayers = 3;
     bool useKaleidoscope = false;
 };
 

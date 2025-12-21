@@ -109,8 +109,8 @@ void main()
                        ^ pixel.y * 689287499u
                        ^ uint(U.uni.frameCounter) * 104729u);
 
-    const uint MAX_BOUNCES = 16u;
-    const uint MIN_BOUNCES = 2u;
+    const uint MAX_BOUNCES = 32u;
+    const uint MIN_BOUNCES = 3u;
 
     for (uint bounce = 0u; bounce < MAX_BOUNCES; ++bounce)
     {
