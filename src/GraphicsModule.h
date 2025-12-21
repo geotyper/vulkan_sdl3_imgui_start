@@ -12,6 +12,7 @@
 
 class Camera;
 namespace rtx { class RayTracingModule; }
+class SceneBuilder;
 
 class GraphicsModule {
 public:
@@ -141,6 +142,7 @@ private:
     int instanceId = 0;
 
     std::unique_ptr<StandardMeshRenderer> m_meshRenderer;
+    std::unique_ptr<SceneBuilder> m_sceneBuilder;
 
 };
 

@@ -173,6 +173,11 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     const char* items[] = { "Disc", "Random Poly" };
     ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
     
+    // Animation Toggle
+    if (ImGui::Checkbox("Animate (Hexagon Mode)", &solverParams.animate)) {
+        solverParams.requestRebuild = true;
+    }
+    
     if(solverParams.shapeType == 1) { // Only show for Poly
         ImGui::Checkbox("Pyramid Top", &solverParams.makePyramid);
     }
@@ -185,6 +190,24 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
 
     if (ImGui::Button("Refresh")) {
         solverParams.requestRebuild = true;
+    }
+    
+    ImGui::Separator();
+    ImGui::Text("Animation Controls");
+    
+    // Play/Pause Button
+    if (solverParams.paused) {
+        if (ImGui::Button("Resume Physics")) solverParams.paused = false;
+    } else {
+        if (ImGui::Button("Pause Physics")) solverParams.paused = true;
+    }
+    
+    ImGui::SameLine();
+    
+    // Restart Button (Refresh Render Only)
+    // "Updates only render without replacing figures" -> Reset Physics
+    if (ImGui::Button("Refresh Render Only")) {
+        solverParams.requestRestart = true;
     }
 
     ImGui::End();

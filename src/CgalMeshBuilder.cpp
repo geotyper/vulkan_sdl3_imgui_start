@@ -2086,6 +2086,71 @@ inline void canonical_tangent_basis(const Vector_3& n_unit, Vector_3& t0, Vector
 }
 
 
+void CgalMeshBuilder::buildThickPolygonFromPoints(SurfaceMesh& sm, const std::vector<glm::vec2>& points, double thickness, bool makePyramid, double pyramidHeight) {
+    if (points.size() < 3) return;
+
+    // 1. Create Base Polygon Face
+    // Note: CGAL defaults CCW for outer boundary. 
+    // We assume input points are CCW.
+    std::vector<SurfaceMesh::Vertex_index> bottomVerts;
+    std::vector<SurfaceMesh::Vertex_index> topVerts;
+
+    // Center for pyramid
+    P3 center(0,0,0);
+    if (makePyramid) {
+        for(auto& p : points) center = center + Vector_3(p.x, 0, p.y);
+        center = P3(center.x()/points.size(), thickness + pyramidHeight, center.z()/points.size());
+    }
+
+    // Add vertices for bottom
+    for (const auto& p : points) {
+        bottomVerts.push_back(sm.add_vertex(P3(p.x, 0, p.y)));
+    }
+    
+    // Add bottom face (reversed for Downward normal?) 
+    // Usually we want normals OUT. Bottom face normal should be (0,-1,0). 
+    // If points are CCW viewed from top, they are CW viewed from bottom.
+    // So we add them in reverse order for bottom face.
+    std::vector<SurfaceMesh::Vertex_index> bottomFaceVerts = bottomVerts;
+    std::reverse(bottomFaceVerts.begin(), bottomFaceVerts.end());
+    sm.add_face(bottomFaceVerts);
+
+    // 2. Create Top Polygon Vertices
+    for (const auto& p : points) {
+        topVerts.push_back(sm.add_vertex(P3(p.x, thickness, p.y)));
+    }
+    
+    // 3. Create Top Face (or Pyramid)
+    if (makePyramid) {
+         // Create a central vertex
+         auto vCenter = sm.add_vertex(center);
+         
+         // Create triangle fans for the top
+         size_t n = topVerts.size();
+         for (size_t i = 0; i < n; ++i) {
+             sm.add_face(topVerts[i], topVerts[(i + 1) % n], vCenter);
+         }
+    } else {
+         // Flat Top
+         sm.add_face(topVerts);
+    }
+    
+    // 4. Create Side Walls
+    size_t n = points.size();
+    for(size_t i=0; i<n; ++i) {
+         // Quad: Bottom[i], Bottom[i+1], Top[i+1], Top[i]
+         // Ensure CCW winding
+         // Bottom verts are at y=0. Top at y=Thick.
+         // Wall normal should point OUT.
+         // Verts: B[i+1], B[i], T[i], T[i+1]
+         
+         // Check: B[i+1]->B[i] is CW on bottom rim. B[i]->B[i+1] is CCW on bottom rim.
+         // We want standard quad strip.
+         
+         sm.add_face(bottomVerts[(i+1)%n], bottomVerts[i], topVerts[i], topVerts[(i+1)%n]);
+    }
+}
+
 static inline F extrude_face_from_plan_uidRotate(
     SM& sm,
     const FacePlan& plan,
@@ -3345,5 +3410,63 @@ void CgalMeshBuilder::buildThickPolygon(SurfaceMesh& sm, double radius, double s
     for (int i = 0; i < sides; ++i) {
         int next = (i + 1) % sides;
         sm.add_face(sideBottom[next], sideBottom[i], sideTop[i], sideTop[next]);
+    }
+}
+
+void CgalMeshBuilder::buildHollowHexagon(SurfaceMesh& sm, double radius, double thickness, double height, int sides) {
+    sm.clear(); // Ensure clean mesh
+    if (sides < 3) return;
+
+    std::vector<SurfaceMesh::Vertex_index> bottomInner, bottomOuter;
+    std::vector<SurfaceMesh::Vertex_index> topInner, topOuter;
+
+    // Generate Vertices (CCW)
+    for(int i=0; i<sides; ++i) {
+        double theta = 2.0 * M_PI * i / sides;
+        // Rotate 90 deg? Physics usually wraps starting at 0.
+        // Let's assume standard starts at 0 (Right).
+        
+        float c = std::cos(theta);
+        float s = std::sin(theta);
+        
+        double ri = radius; 
+        double ro = radius + thickness;
+
+        // Inner Ring
+        bottomInner.push_back(sm.add_vertex(Point_3(ri * c, 0, ri * s)));
+        topInner.push_back(sm.add_vertex(Point_3(ri * c, height, ri * s)));
+        
+        // Outer Ring
+        bottomOuter.push_back(sm.add_vertex(Point_3(ro * c, 0, ro * s)));
+        topOuter.push_back(sm.add_vertex(Point_3(ro * c, height, ro * s)));
+    }
+    
+    // Create Quads
+    for(int i=0; i<sides; ++i) {
+        int next = (i+1)%sides;
+        
+        // Inner Wall 
+        // We want to see it from Look_At(0,0,0). So normals should point IN.
+        // Standard CCW face defines Normal via Right Hand Rule.
+        // BI[next] -> BI[i] is CW. Up is Y+.
+        // (BI[i]-BI[next]) x Y+ = Tangent x Up = Out (Away from center).
+        // Wait. Tangent is CCW.
+        // We want normal pointing Center (-Radial).
+        // Let's rely on Double Sided rendering if possible, but let's make it standard "Solid" walls.
+        // A solid tube has normals pointing OUT of the tube material.
+        // Inner Cylinder: Normals point Center-ward? No, if it's a hole, normals point into the hole?
+        // Yes.
+        
+        // Inner Wall: BI[next], BI[i], TI[i], TI[next] -> Normal Inwards
+        sm.add_face(bottomInner[next], bottomInner[i], topInner[i], topInner[next]);
+        
+        // Outer Wall: BO[i], BO[next], TO[next], TO[i] -> Normal Outwards
+        sm.add_face(bottomOuter[i], bottomOuter[next], topOuter[next], topOuter[i]);
+        
+        // Top Rim: TI[i], TI[next], TO[next], TO[i] -> Up
+        sm.add_face(topInner[i], topInner[next], topOuter[next], topOuter[i]);
+        
+        // Bottom Rim: BI[next], BI[i], BO[i], BO[next] -> Down
+        sm.add_face(bottomInner[next], bottomInner[i], bottomOuter[i], bottomOuter[next]);
     }
 }

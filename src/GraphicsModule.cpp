@@ -165,8 +165,9 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int s
 
     // 4. Update scene state based on the new time
     m_rtxModule->UpdateCamera(cam);
-   // m_rtxModule->AnimateInstances(currentTime, /*orbitAroundWorldZ=*/true); // Update instance transforms and rebuild TLAS
-   // m_rtxModule->AnimateRubik(dt);
+    if(m_sceneBuilder) {
+        m_sceneBuilder->UpdatePhysics(dt, m_rtxModule.get(), solverParams);
+    }
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
@@ -303,12 +304,16 @@ void GraphicsModule::initRayTracingModule() {
     ci.graphicsQueue = m_graphicsQueue;
     ci.shaderDir = "shaders/";
     m_rtxModule->Initialize(context, ci);
+    
+    m_sceneBuilder = std::make_unique<SceneBuilder>();
 
     CreateScene();
 }
 
 void GraphicsModule::CreateScene() {
-    SceneBuilder::BuildScene(m_rtxModule.get(), m_meshRenderer.get(), solverParams);
+    if (m_sceneBuilder) {
+        m_sceneBuilder->BuildScene(m_rtxModule.get(), m_meshRenderer.get(), solverParams);
+    }
 }
 
 
