@@ -33,6 +33,13 @@ struct SolverParameters {
     bool animate = false;
     bool paused = false;
     bool requestRestart = false;
+
+    // Recording / Manual Animation Mode
+    bool recording = false;
+    float frameDelay = 0.5f; // Seconds to wait between captures
+    float timeSinceLastCapture = 0.0f;
+    int captureIndex = 0;
+    bool triggerStep = false; // Internal: Execute one physics step
 };
 
 namespace rtx {

@@ -210,6 +210,26 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
         solverParams.requestRestart = true;
     }
 
+    ImGui::Separator();
+    ImGui::Text("Frame Recording");
+    ImGui::SliderFloat("Delay (s)", &solverParams.frameDelay, 0.1f, 3.0f);
+    
+    if (solverParams.recording) {
+        if (ImGui::Button("Stop Recording")) {
+            solverParams.recording = false;
+        }
+        ImGui::SameLine();
+        ImGui::Text("Frame: %d", solverParams.captureIndex);
+    } else {
+        if (ImGui::Button("Start Recording")) {
+            solverParams.recording = true;
+            solverParams.paused = true; // Use Manual Stepping
+            solverParams.timeSinceLastCapture = 0.0f;
+            solverParams.captureIndex = 0;
+            // Create directory? (Will handle in Capture)
+        }
+    }
+
     ImGui::End();
 
     ImGui::Render();

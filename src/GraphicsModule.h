@@ -22,7 +22,8 @@ public:
     // Public API
     void Initialize(const std::string appName);
     void Shutdown();
-    void RenderFrame(Camera& cam, float currentTime, float dt, int step);
+    void RenderFrame(Camera& cam, float currentTime, float dt, int& step);
+    void CaptureScreen(int index);
     void SignalResize();
     bool ShouldClose() const;
     void PollEvents();

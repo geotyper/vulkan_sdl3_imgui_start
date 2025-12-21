@@ -124,7 +124,14 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     for(int i=0; i<segments; ++i) {
         float theta = angleStep * (i + 0.5f); // Midpoint angle
         
-        float dist = outerRadius + wallThickness * 0.5f;
+        // Correct distance to match Visual Hexagon Flat Side
+        // Visual mesh corners are at 'outerRadius'.
+        // Flat side is at dist = outerRadius * cos(30 deg).
+        float flatDist = outerRadius * cosf(3.14159f / segments);
+        
+        // Push physics box out by half thickness so inner face aligns with flatDist
+        float dist = flatDist + wallThickness * 0.5f;
+        
         b2Vec2 center = { dist * cosf(theta), dist * sinf(theta) };
         
         float angle = theta + 3.14159f / 2.0f;
@@ -140,6 +147,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // --- 3. Create Independent Bodies for EACH Layer ---
     b2BodyDef bodyDef = b2DefaultBodyDef();
     bodyDef.type = b2_dynamicBody;
+    bodyDef.isBullet = false; // User requested OFF
     if (params.animate) {
         bodyDef.linearDamping = 8.0f;
         bodyDef.angularDamping = 2.0f;
@@ -398,18 +406,24 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
         const_cast<SceneBuilder*>(this)->RestartSimulation(); 
     }
 
-    // Handle Pause
-    if (!params.paused) {
+    // Handle Pause or Manual Step
+    if (!params.paused || params.triggerStep) {
         // 1. Step Physics
-        m_accumTime += dt;
+        if (params.triggerStep) {
+            // Manual Single Step
+            b2World_Step(m_worldId, 1.0f / 60.0f, 12);
+        } else {
+            // Continuous Run
+            m_accumTime += dt;
         const float stepSize = 1.0f / 60.0f;
         while (m_accumTime >= stepSize) {
-            b2World_Step(m_worldId, stepSize, 8); // Increased iterations for stability
+            b2World_Step(m_worldId, stepSize, 12); // Increased iterations for stability
             m_accumTime -= stepSize;
             
             // 2. Animate Boundary (Rotate Hexagon)
             // Kinematic boundary rotates automatically due to angularVelocity
         }
+    }
     }
 
     // 3. Update Instances

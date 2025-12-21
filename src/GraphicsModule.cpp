@@ -16,9 +16,13 @@
 #include "CgalMeshBuilderTentacles.h"
 #include "SceneBuilder.h"
 
-#include <glm/gtc/random.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+#include <sys/stat.h> // for mkdir
+#include <iomanip>
+#include <sstream>
 
 namespace timing {
 using Clock = std::chrono::steady_clock;
@@ -129,17 +133,64 @@ void GraphicsModule::initSDL() {
 
 // In GraphicsModule.cpp
 
-void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int step) {
+// GraphicsModule.cpp
+void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& step) {
     
     // Check for FOV change
     if (std::abs(cam.GetFovY() - solverParams.fov) > 0.01f) {
         cam.SetFovY(solverParams.fov);
+        step = 0; // Reset accumulation on FOV change
     }
     // Check for Rebuild
     if (solverParams.requestRebuild) {
         vkDeviceWaitIdle(m_device); // Ensure GPU is idle before modifying resources
         CreateScene();
         solverParams.requestRebuild = false;
+        step = 0;
+    }
+
+    // Update Physics
+    if (m_sceneBuilder) {
+        m_sceneBuilder->UpdatePhysics(dt, m_rtxModule.get(), solverParams);
+        
+        // Clear manual step flag if it was set
+        if (solverParams.triggerStep) {
+            solverParams.triggerStep = false;
+        }
+
+        // If animation is active and not paused, scene is dynamic -> Reset accumulation
+        if (solverParams.animate && !solverParams.paused) {
+            step = 0;
+        }
+        // Also if we requested Restart
+        if (solverParams.requestRestart) {
+             step = 0;
+             solverParams.requestRestart = false; // consume flag
+        }
+
+        // --- Recording Logic ---
+        if (solverParams.recording) {
+             solverParams.timeSinceLastCapture += dt;
+             // Don't reset step! We want accumulation.
+             
+             if (solverParams.timeSinceLastCapture >= solverParams.frameDelay) {
+                   // Time to capture!
+                   // 1. Capture current image
+                   CaptureScreen(solverParams.captureIndex);
+                   
+                   // 2. Advance Frame Index
+                   solverParams.captureIndex++;
+                   
+                   // 3. Trigger ONE physics step for next frame
+                   solverParams.triggerStep = true; 
+                   
+                   // 4. Reset Timer
+                   solverParams.timeSinceLastCapture = 0.0f;
+                   
+                   // 5. Reset Accumulation for next frame logic
+                   step = 0; 
+             }
+        }
     }
 
     // 1. Wait for the GPU to finish the frame that is currently "in flight"
@@ -165,9 +216,6 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int s
 
     // 4. Update scene state based on the new time
     m_rtxModule->UpdateCamera(cam);
-    if(m_sceneBuilder) {
-        m_sceneBuilder->UpdatePhysics(dt, m_rtxModule.get(), solverParams);
-    }
 
     // 5. Update uniform data for shaders
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
@@ -755,7 +803,7 @@ void GraphicsModule::createSwapchain(VkSwapchainKHR oldSwapchain) {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = m_swapchainExtent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -1044,4 +1092,102 @@ void GraphicsModule::initRasterRenderers() {
     m_meshRenderer->Initialize(m_device, m_physicalDevice, m_renderPass, m_graphicsQueueFamilyIndex);
 }
 
+void GraphicsModule::CaptureScreen(int index) {
+    if (!m_rtxModule) return;
+    
+    // Construct local context
+    vulkanhelpers::VulkanContext ctx;
+    ctx.device = m_device;
+    ctx.physicalDevice = m_physicalDevice;
+    ctx.commandPool = m_commandPool;
+    ctx.transferQueue = m_graphicsQueue;
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &ctx.physicalDeviceMemoryProperties);
 
+    // Use the High-Quality Storage Image from Ray Tracing Module
+    VkImage source = m_rtxModule->m_storageImage.GetImage();
+    VkExtent2D extent = m_rtxModule->m_storageImageExtent;
+    
+    vkDeviceWaitIdle(m_device);
+     
+     // 1. Create Staging Buffer
+     VkDeviceSize imageSize = extent.width * extent.height * 4;
+     vulkanhelpers::Buffer stagingBuffer;
+     VK_CHECK(stagingBuffer.Create(ctx, imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT), "Capture Buffer");
+
+     // 2. Command Buffer for Copy
+    VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    VK_CHECK(vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer), "Alloc Cmd");
+
+    VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Begin Cmd");
+
+    // Transition Storage Image (likely GENERAL) to TRANSFER_SRC
+    vulkanhelpers::ImageBarrier(commandBuffer, source, 
+        VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 
+        { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+    // Copy
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = { extent.width, extent.height, 1 };
+
+    vkCmdCopyImageToBuffer(commandBuffer, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer.GetBuffer(), 1, &region);
+
+    // Transition back to GENERAL
+    vulkanhelpers::ImageBarrier(commandBuffer, source, 
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, 
+        { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+
+    VK_CHECK(vkEndCommandBuffer(commandBuffer), "End Cmd");
+
+    VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VK_CHECK(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "Submit Copy");
+    vkQueueWaitIdle(m_graphicsQueue);
+
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+
+    void* dataPtr = stagingBuffer.Map(ctx);
+    
+    std::ostringstream oss;
+    oss << "captures/image_" << std::setfill('0') << std::setw(4) << index << ".png";
+    std::string filename = oss.str();
+    
+    struct stat st = {0};
+    if (stat("captures", &st) == -1) mkdir("captures", 0700);
+    
+    std::vector<uint8_t> pixels((uint8_t*)dataPtr, (uint8_t*)dataPtr + imageSize);
+    
+    // Format is B8G8R8A8 (from OnResize). STB needs RGBA.
+    // Swizzle R and B.
+    for(size_t i=0; i<pixels.size(); i+=4) {
+        std::swap(pixels[i], pixels[i+2]);
+        pixels[i+3] = 255; // Opaque
+    }
+    
+    stbi_write_png(filename.c_str(), extent.width, extent.height, 4, pixels.data(), extent.width * 4);
+    
+    stagingBuffer.Unmap(ctx);
+    stagingBuffer.Destroy(ctx);    
+}
