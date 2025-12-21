@@ -40,6 +40,7 @@ struct SolverParameters {
     float timeSinceLastCapture = 0.0f;
     int captureIndex = 0;
     bool triggerStep = false; // Internal: Execute one physics step
+    int subdivisionIterations = 0;
 };
 
 namespace rtx {

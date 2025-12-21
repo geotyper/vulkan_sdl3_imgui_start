@@ -2138,16 +2138,11 @@ void CgalMeshBuilder::buildThickPolygonFromPoints(SurfaceMesh& sm, const std::ve
     // 4. Create Side Walls
     size_t n = points.size();
     for(size_t i=0; i<n; ++i) {
-         // Quad: Bottom[i], Bottom[i+1], Top[i+1], Top[i]
-         // Ensure CCW winding
-         // Bottom verts are at y=0. Top at y=Thick.
-         // Wall normal should point OUT.
-         // Verts: B[i+1], B[i], T[i], T[i+1]
-         
-         // Check: B[i+1]->B[i] is CW on bottom rim. B[i]->B[i+1] is CCW on bottom rim.
-         // We want standard quad strip.
-         
-         sm.add_face(bottomVerts[(i+1)%n], bottomVerts[i], topVerts[i], topVerts[(i+1)%n]);
+         size_t next = (i + 1) % n;
+         // Manifold Winding:
+         // Bottom edge in wall: B[i] -> B[next] (Opposite to bottom face B[next]->B[i])
+         // Top edge in wall: T[next] -> T[i] (Opposite to top face T[i]->T[next])
+         sm.add_face(bottomVerts[i], bottomVerts[next], topVerts[next], topVerts[i]);
     }
 }
 
@@ -3296,16 +3291,9 @@ void CgalMeshBuilder::buildThickDisc(SurfaceMesh& sm, double radius, double thic
 
     if (slices < 3) slices = 3;
 
-    // We need 4 separate rings of vertices to ensure sharp edges (hard normals)
-    // 1. Top Cap Vertices
-    // 2. Bottom Cap Vertices
-    // 3. Side Top Vertices
-    // 4. Side Bottom Vertices
-
-    std::vector<SurfaceMesh::Vertex_index> capTop(slices);
-    std::vector<SurfaceMesh::Vertex_index> capBottom(slices);
-    std::vector<SurfaceMesh::Vertex_index> sideTop(slices);
-    std::vector<SurfaceMesh::Vertex_index> sideBottom(slices);
+    // Use exactly 2 rings of vertices for a manifold mesh
+    std::vector<SurfaceMesh::Vertex_index> vertsTop(slices);
+    std::vector<SurfaceMesh::Vertex_index> vertsBottom(slices);
 
     // 1. Create vertices
     for (int i = 0; i < slices; ++i) {
@@ -3313,39 +3301,25 @@ void CgalMeshBuilder::buildThickDisc(SurfaceMesh& sm, double radius, double thic
         double x = radius * std::cos(theta);
         double z = radius * std::sin(theta); 
         
-        // Coincident positions, but different vertices
-        Point_3 pTop(x, thickness, z);
-        Point_3 pBot(x, 0.0, z);
-
-        capTop[i]    = sm.add_vertex(pTop);
-        capBottom[i] = sm.add_vertex(pBot);
-        sideTop[i]   = sm.add_vertex(pTop);
-        sideBottom[i]= sm.add_vertex(pBot);
+        vertsTop[i]    = sm.add_vertex(Point_3(x, thickness, z));
+        vertsBottom[i] = sm.add_vertex(Point_3(x, 0.0, z));
     }
 
-    // 2. Cap Faces
-    // Top: 0 -> 1 -> ... -> N
-    std::vector<SurfaceMesh::Vertex_index> faceV;
-    for (int i = 0; i < slices; ++i) faceV.push_back(capTop[i]);
-    sm.add_face(faceV);
+    // 2. Top Cap Face (CCW, Normal +Y)
+    sm.add_face(vertsTop);
 
-    // Bottom: N-1 -> ... -> 0 (Reverse winding for facing down)
-    faceV.clear();
-    for (int i = 0; i < slices; ++i) faceV.push_back(capBottom[slices - 1 - i]);
-    sm.add_face(faceV);
+    // 3. Bottom Cap Face (CW, Normal -Y)
+    std::vector<SurfaceMesh::Vertex_index> faceBottom = vertsBottom;
+    std::reverse(faceBottom.begin(), faceBottom.end());
+    sm.add_face(faceBottom);
 
-    // 3. Side Faces (Quads)
-    // Correct winding for Outward normals: 
-    // SideBottom[next] -> SideBottom[i] -> SideTop[i] -> SideTop[next]
-    // Wait, let's re-verify from previous analysis:
-    // LB(next) -> LB(i) is Clockwise Tangent.
-    // Up is Up.
-    // CW x Up = Outward.
-    // Yes, this is correct.
-    
+    // 4. Side Walls
     for (int i = 0; i < slices; ++i) {
         int next = (i + 1) % slices;
-        sm.add_face(sideBottom[next], sideBottom[i], sideTop[i], sideTop[next]);
+        // Winding order: B[i] -> B[next] -> T[next] -> T[i]
+        // B[i]->B[next] opposes B[next]->B[i] in bottom face
+        // T[next]->T[i] opposes T[i]->T[next] in top face
+        sm.add_face(vertsBottom[i], vertsBottom[next], vertsTop[next], vertsTop[i]);
     }
 }
 

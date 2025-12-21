@@ -185,7 +185,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::Checkbox("Kaleidoscope Mode", &solverParams.useKaleidoscope);
     ImGui::SliderFloat("Mirror Height", &solverParams.mirrorHeight, 1.0f, 25.0f);
 
-    const char* palettes[] = { "Default", "Neon", "Warm" };
+    const char* palettes[] = { "Default", "Neon", "Warm", "Oceanic", "Candy" };
     ImGui::Combo("Palette", &solverParams.paletteID, palettes, IM_ARRAYSIZE(palettes));
 
     if (ImGui::Button("Refresh")) {
@@ -228,6 +228,12 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
             solverParams.captureIndex = 0;
             // Create directory? (Will handle in Capture)
         }
+    }
+    
+    ImGui::Separator();
+    ImGui::Text("Mesh Processing");
+    if (ImGui::SliderInt("Catmull-Clark", &solverParams.subdivisionIterations, 0, 3)) {
+        solverParams.requestRebuild = true;
     }
 
     ImGui::End();

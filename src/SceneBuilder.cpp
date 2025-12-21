@@ -257,6 +257,11 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  SurfaceMesh polyMesh;
                  // Use the new helper function
                  CgalMeshBuilder::buildThickPolygonFromPoints(polyMesh, glmPoints, containerThickness * 1.5, makePyramid, 0.3);
+                 
+                 if (params.subdivisionIterations > 0) {
+                     CgalMeshBuilder::applyCatmullClark(polyMesh, params.subdivisionIterations, true);
+                 }
+
                  CgalMeshBuilder::triangulateAll(polyMesh);
                  
                  std::vector<Vertex> v; std::vector<uint32_t> ind;
@@ -284,6 +289,11 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     if (params.shapeType == 0) {
         SurfaceMesh discMesh;
         CgalMeshBuilder::buildThickDisc(discMesh, params.discRadius, containerThickness, 24);
+
+        if (params.subdivisionIterations > 0) {
+            CgalMeshBuilder::applyCatmullClark(discMesh, params.subdivisionIterations, true);
+        }
+
         CgalMeshBuilder::triangulateAll(discMesh);
         std::vector<Vertex> v; std::vector<uint32_t> ind;
         CgalMeshBuilder::toVertexIndexFlat(discMesh, v, ind);

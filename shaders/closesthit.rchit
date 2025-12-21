@@ -76,6 +76,30 @@ void main()
                 vec3(1.0, 0.3, 0.0)  // Deep Orange
             );
             baseColor = p[colorId];
+        } else if (U.uni.paletteID == 3) {
+            // Oceanic Glass (High Brightness Cool Tones)
+            vec3 p[7] = vec3[](
+                vec3(0.0, 0.6, 1.0), // Azure
+                vec3(0.1, 1.0, 0.8), // Turquoise
+                vec3(0.0, 0.8, 0.9), // Deep Cyan
+                vec3(0.2, 0.4, 1.0), // Royal Blue
+                vec3(0.1, 0.9, 0.5), // Emerald
+                vec3(0.7, 0.6, 1.0), // Light Violet
+                vec3(0.9, 0.9, 1.0)  // White Ice
+            );
+            baseColor = p[colorId];
+        } else if (U.uni.paletteID == 4) {
+            // Candy Glass (Vibrant & Light)
+            vec3 p[7] = vec3[](
+                vec3(1.0, 0.4, 0.7), // Radiant Pink
+                vec3(0.8, 0.2, 1.0), // Electric Purple
+                vec3(1.0, 0.6, 0.2), // Bright Orange
+                vec3(0.4, 1.0, 0.3), // Spring Green
+                vec3(1.0, 1.0, 0.2), // Yellow Flash
+                vec3(0.3, 0.8, 1.0), // Sky High
+                vec3(1.0, 0.95, 0.9) // Soft White
+            );
+            baseColor = p[colorId];
         } else {
             // Default
             vec3 p[7] = vec3[](
