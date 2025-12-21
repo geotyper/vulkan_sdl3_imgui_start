@@ -111,6 +111,20 @@ void main()
     bool frontFace = dot(Ns, V) < 0.0;
     vec3 N         = frontFace ? Ns : -Ns;
 
+    // Mirror Material (ID 99)
+    if (colorId == 99) {
+       // Perfect reflection
+       vec3 R = reflect(V, N);
+       prd.rayOrigin = Pw + R * SURF_EPS;
+       prd.rayDir = R;
+       prd.throughput *= vec3(0.95); // Slightly imperfect mirror to avoid infinite energy? Or 1.0. Let's do 0.98.
+       // Actually 1.0 is fine if tone mapper handles it, but let's be realistic.
+       prd.throughput *= vec3(1.0); 
+       prd.done = false;
+       return;
+    }
+
+    // --- Glass Logic (Existing) ---
     // отношение показателей преломления
     float eta = frontFace ? (1.0 / IOR_GLASS) : IOR_GLASS;
 

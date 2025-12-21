@@ -150,5 +150,63 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         }
     }
 
+    // --- Kaleidoscope Mirrors ---
+    if (params.useKaleidoscope) {
+        SurfaceMesh mirrorMesh;
+        // Build an equilateral triangular prism facing INWARD
+        // Radius of inscribed circle approx 3.0 (covering the scene)
+        // Height 10.0
+        float r = 3.5f; 
+        float h = 10.0f;
+        
+        // 3 vertices for base triangle
+        std::vector<SurfaceMesh::Vertex_index> bot(3);
+        std::vector<SurfaceMesh::Vertex_index> top(3);
+        
+        for(int i=0; i<3; ++i) {
+            float ang = 2.0f * M_PI * i / 3.0f;
+            // Align one flat side to front? 
+            // -30 deg offset makes a flat bottom? Experiment.
+            ang += M_PI / 6.0f; 
+
+            float x = r * cos(ang);
+            float z = r * sin(ang);
+            
+            bot[i] = mirrorMesh.add_vertex(CgalMeshBuilder::P3(x, 0.2f, z)); // Slightly above floor
+            top[i] = mirrorMesh.add_vertex(CgalMeshBuilder::P3(x, 0.2f+h, z));
+        }
+
+        // Add faces (Quads)
+        // Winding order must be CW for INWARD facing normals if built from outside?
+        // Let's verify standard CCW is Outward.
+        // We want Inward. So we want normals pointing towards (0,0,0).
+        // If we look from center, vertices go Right to Left?
+        // Let's just create them and if it's black/invisible, we flip normals/winding.
+        // Or make it double sided?
+        // For logic: Bot0 -> Bot1 -> Top1 -> Top0.
+        // Normal via Right-Hand Rule: (Bot1-Bot0) x (Top0-Bot0).
+        // (Tangent) x (Up).
+        // Tangent is CCW around circle. Up is +Y.
+        // CCW x Up = Outward (Radial).
+        // So we want CW winding to get Inward (towards center).
+        // So: Bot1 -> Bot0 -> Top0 -> Top1.
+        
+        for(int i=0; i<3; ++i) {
+            int next = (i+1)%3;
+            // Inward facing:
+            mirrorMesh.add_face(bot[next], bot[i], top[i], top[next]);
+        }
+
+        CgalMeshBuilder::triangulateAll(mirrorMesh);
+        std::vector<Vertex> mv; std::vector<uint32_t> mi;
+        CgalMeshBuilder::toVertexIndexFlat(mirrorMesh, mv, mi);
+        
+        // Add as a separate mesh instance with ColorID 99 (Mirror)
+        std::vector<rtx::InstanceData> mInst;
+        mInst.push_back({glm::mat4(1.0f), 0, 99}); // MeshID 0 (relative), ColorID 99
+        
+        allMeshes.push_back({mv, mi, mInst});
+    }
+
     rtxModule->LoadFromMultipleMeshes(allMeshes);
 }

@@ -171,6 +171,8 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     
     const char* items[] = { "Disc", "Random Poly" };
     ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
+    
+    ImGui::Checkbox("Kaleidoscope Mode", &solverParams.useKaleidoscope);
 
     if (ImGui::Button("Refresh")) {
         solverParams.requestRebuild = true;
