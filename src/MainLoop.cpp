@@ -24,7 +24,7 @@ void MainLoop::Initialize(const std::string& title, uint32_t width, uint32_t hei
     }
 
     m_camera.SetViewport({0, 0, (int)width, (int)height});
-    m_camera.LookAt({0.0f, 1.0f, 3.5f}, {0.0f, 0.5f, 0.0f});
+    m_camera.LookAt({0.0f, 9.0f, 0.1f}, {0.0f, 0.0f, 0.0f});
 
 }
 
@@ -169,8 +169,10 @@ void MainLoop::update(float deltaTime, int& step) {
     if (ks[SDL_SCANCODE_S]) moveForward -= cameraSpeed;
     if (ks[SDL_SCANCODE_A]) moveSide    -= cameraSpeed;
     if (ks[SDL_SCANCODE_D]) moveSide    += cameraSpeed;
-    if (ks[SDL_SCANCODE_UP])   moveVertical += cameraSpeed;
-    if (ks[SDL_SCANCODE_DOWN]) moveVertical -= cameraSpeed;
+    
+    // MoveVertical using R/F and Up/Down
+    if (ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_R])   moveVertical += cameraSpeed;
+    if (ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_F]) moveVertical -= cameraSpeed;
 
     if (ks[SDL_SCANCODE_Q]) yawRotation -= rotationSpeed;
     if (ks[SDL_SCANCODE_E]) yawRotation += rotationSpeed;

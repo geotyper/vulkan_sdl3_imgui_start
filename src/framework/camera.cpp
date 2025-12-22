@@ -44,15 +44,24 @@ void Camera::LookAt(const vec3& pos, const vec3& target) {
 }
 
 void Camera::Move(const float side, const float direction, const float vertical) {
-    vec3 cameraSide = normalize(cross(mDirection, sCameraUp));
+    // Calculate a robust side vector for horizontal movement
+    vec3 forward = mDirection;
+    vec3 horizontalForward = normalize(vec3(forward.x, 0.0f, forward.z));
+    
+    // If the camera is looking perfectly up or down, the projection onto XZ is zero.
+    // Fallback to the direction vector or a default if looking exactly vertical.
+    if (length(horizontalForward) < 0.001f) {
+        // Looking straight down: Forward becomes -Z or some consistent direction
+        horizontalForward = vec3(0.0f, 0.0f, -1.0f);
+    }
 
-    // Calculate and apply horizontal movement (sideways)
+    vec3 cameraSide = normalize(cross(horizontalForward, sCameraUp));
+
+    // Horizontal movement in the ground plane (XZ)
     mPosition += cameraSide * side;
+    mPosition += horizontalForward * direction;
 
-    // Calculate and apply forward/backward movement
-    mPosition += mDirection * direction;
-
-    // Apply vertical movement along the camera's up vector
+    // Vertical movement is ALWAYS along global Up (Y)
     mPosition += sCameraUp * vertical;
 
     this->MakeTransform();
