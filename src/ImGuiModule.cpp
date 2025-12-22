@@ -207,6 +207,11 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     }
     
     ImGui::Separator();
+    ImGui::Text("Ray Tracing Quality");
+    ImGui::SliderInt("Samples per Frame", &solverParams.samplesPerFrame, 1, 16);
+    ImGui::SliderInt("Max Bounces", &solverParams.maxBounces, 1, 64);
+    
+    ImGui::Separator();
     ImGui::Text("Animation Controls");
     
     // Play/Pause Button

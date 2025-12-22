@@ -92,7 +92,7 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces) {
         UniformData ubo;
         ubo.uTime = time;
         ubo._pad00=0; ubo._pad01=0; ubo._pad02=0;
@@ -116,7 +116,9 @@ namespace rtx {
         ubo.exposure = 1.0f;
         
         ubo.paletteID = paletteID;
-        ubo._pad1=0; ubo._pad2=0; ubo._pad3=0;
+        ubo.samplesPerFrame = samplesPerFrame;
+        ubo.maxBounces = maxBounces;
+        ubo._pad1 = 0;
 
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
     }

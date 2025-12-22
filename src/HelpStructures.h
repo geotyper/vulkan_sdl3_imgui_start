@@ -43,6 +43,9 @@ struct SolverParameters {
     int subdivisionIterations = 0;
     int boundarySides = 6;
     float rotationSpeed = 0.5f;
+
+    int samplesPerFrame = 1;
+    int maxBounces = 32;
 };
 
 namespace rtx {

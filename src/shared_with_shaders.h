@@ -88,7 +88,9 @@ struct UniformData {
     float exposure;
 
     int paletteID;
-    int _pad1, _pad2, _pad3;
+    int samplesPerFrame;
+    int maxBounces;
+    int _pad1;
 };
 
 // shaders helper functions

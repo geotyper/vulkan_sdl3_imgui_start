@@ -101,49 +101,75 @@ void main()
     vec3 dir       = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);
 
     // --- init path ---
-    vec3 finalColor = vec3(0.0); // This will hold the new linear HDR sample
-    vec3 throughput = vec3(1.0);
+    vec3 accumulatedSamples = vec3(0.0);
+    int numSamples = max(1, U.uni.samplesPerFrame);
 
     // стабильный seed по пикселю и кадру
     uint seed = wanghash(pixel.x * 928371u
                        ^ pixel.y * 689287499u
                        ^ uint(U.uni.frameCounter) * 104729u);
 
-    const uint MAX_BOUNCES = 32u;
-    const uint MIN_BOUNCES = 3u;
-
-    for (uint bounce = 0u; bounce < MAX_BOUNCES; ++bounce)
+    for (int smp = 0; smp < numSamples; ++smp)
     {
-        prd.throughput = throughput;
-        prd.done       = false;
-        prd.depth      = bounce;
-        prd.rayOrigin  = origin;
-        prd.rayDir     = dir;
-        prd.seed       = seed;
-
-        traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF,
-                    HIT_PRIMARY, /*hitStride*/1, MISS_PRIMARY,
-                    origin, 0.001, dir, 1e19,
-                    SWS_LOC_PRIMARY_RAY);
-
-        if (prd.done) {
-            finalColor += prd.throughput;
-            break;
+        // 1. Subpixel Jitter for Anti-Aliasing
+        vec2 jitter = vec2(0.0);
+        if (numSamples > 1 || U.uni.frameCounter > 0) {
+            seed = wanghash(seed + 1u);
+            float rx = float(seed) * (1.0 / 4294967296.0);
+            seed = wanghash(seed + 1u);
+            float ry = float(seed) * (1.0 / 4294967296.0);
+            jitter = (vec2(rx, ry) - 0.5); // [-0.5, 0.5]
         }
 
-        origin     = prd.rayOrigin;
-        dir        = prd.rayDir;
-        throughput = prd.throughput;
-        seed = wanghash(seed + 1u);
+        vec2 uv  = (vec2(pixel) + 0.5 + jitter) / vec2(size);
+        vec2 ndc = uv * 2.0 - 1.0;
 
-        if (bounce >= MIN_BOUNCES) {
-            float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.1, 0.99);
-            if (float(wanghash(seed+=1u)) * (1.0/4294967296.0) > p) {
+        vec3 origin    = (cam.invView * vec4(0,0,0,1)).xyz;
+        vec3 dir_ndc   = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
+        vec3 dir       = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);
+
+        vec3 sampleColor = vec3(0.0);
+        vec3 throughput = vec3(1.0);
+
+        uint maxBounces = uint(max(1, U.uni.maxBounces));
+        const uint MIN_BOUNCES = 3u;
+
+        for (uint bounce = 0u; bounce < maxBounces; ++bounce)
+        {
+            prd.throughput = throughput;
+            prd.done       = false;
+            prd.depth      = bounce;
+            prd.rayOrigin  = origin;
+            prd.rayDir     = dir;
+            prd.seed       = seed;
+
+            traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF,
+                        HIT_PRIMARY, /*hitStride*/1, MISS_PRIMARY,
+                        origin, 0.001, dir, 1e19,
+                        SWS_LOC_PRIMARY_RAY);
+
+            if (prd.done) {
+                sampleColor += prd.throughput;
                 break;
             }
-            throughput /= p;
+
+            origin     = prd.rayOrigin;
+            dir        = prd.rayDir;
+            throughput = prd.throughput;
+            seed = wanghash(seed + 1u);
+
+            if (bounce >= MIN_BOUNCES) {
+                float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.1, 0.99);
+                if (float(wanghash(seed+=1u)) * (1.0/4294967296.0) > p) {
+                    break;
+                }
+                throughput /= p;
+            }
         }
+        accumulatedSamples += sampleColor;
     }
+
+    vec3 finalColor = accumulatedSamples / float(numSamples);
 
     // ====================================================================
     // ===           LOGIC CHANGES ARE HERE                           ===

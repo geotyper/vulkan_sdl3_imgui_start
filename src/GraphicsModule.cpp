@@ -141,6 +141,14 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
         cam.SetFovY(solverParams.fov);
         step = 0; // Reset accumulation on FOV change
     }
+    // Check for RT Quality change
+    static int lastSamples = 1;
+    static int lastBounces = 32;
+    if (solverParams.samplesPerFrame != lastSamples || solverParams.maxBounces != lastBounces) {
+        step = 0;
+        lastSamples = solverParams.samplesPerFrame;
+        lastBounces = solverParams.maxBounces;
+    }
     // Check for Rebuild
     if (solverParams.requestRebuild) {
         vkDeviceWaitIdle(m_device); // Ensure GPU is idle before modifying resources
@@ -221,7 +229,7 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
     float currentIntensity = solverParams.lightIntensity + pulse * 0.15f;
     glm::vec3 color = glm::vec3(0.8f, 0.85f, 0.8f);
-    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, solverParams.paletteID);
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, solverParams.paletteID, solverParams.samplesPerFrame, solverParams.maxBounces);
 
     // --- RECORDING AND SUBMISSION ---
 
