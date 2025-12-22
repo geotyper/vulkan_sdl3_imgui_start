@@ -177,6 +177,20 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     if (ImGui::Checkbox("Animate (Hexagon Mode)", &solverParams.animate)) {
         solverParams.requestRebuild = true;
     }
+
+    if (ImGui::SliderFloat("Rotation Speed", &solverParams.rotationSpeed, 0.0f, 2.0f)) {
+        // No rebuild needed for speed
+    }
+
+    const char* boundaryShapes[] = { "Square", "Pentagon", "Hexagon" };
+    int boundaryIdx = solverParams.boundarySides - 4;
+    // Safety check for index
+    if (boundaryIdx < 0 || boundaryIdx > 2) boundaryIdx = 2; // Default to Hexagon
+
+    if (ImGui::Combo("Boundary Shape", &boundaryIdx, boundaryShapes, IM_ARRAYSIZE(boundaryShapes))) {
+        solverParams.boundarySides = boundaryIdx + 4;
+        solverParams.requestRebuild = true;
+    }
     
     if(solverParams.shapeType == 1) { // Only show for Poly
         ImGui::Checkbox("Pyramid Top", &solverParams.makePyramid);

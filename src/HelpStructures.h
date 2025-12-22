@@ -41,6 +41,8 @@ struct SolverParameters {
     int captureIndex = 0;
     bool triggerStep = false; // Internal: Execute one physics step
     int subdivisionIterations = 0;
+    int boundarySides = 6;
+    float rotationSpeed = 0.5f;
 };
 
 namespace rtx {

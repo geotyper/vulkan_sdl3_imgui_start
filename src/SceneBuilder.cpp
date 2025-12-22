@@ -40,7 +40,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // -------------------------------------------------------------------------
 
     // Parameters
-    const float outerRadius = 4.0f;
+    const float baseInradius = 4.0f;
+    const float outerRadius = baseInradius / cosf(3.14159f / (float)params.boundarySides);
+
     const int   numDiscs    = params.numDiscs;
     const int   numLayers   = params.numLayers;
     float containerThickness = 0.1f;
@@ -91,15 +93,14 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     if (params.animate) {
         groundBodyDef.type = b2_kinematicBody;
         groundBodyDef.gravityScale = 0.0f; // Ensure it doesn't fall
-        groundBodyDef.angularVelocity = 0.5f; 
+        groundBodyDef.angularVelocity = params.rotationSpeed; 
     } else {
         groundBodyDef.type = b2_staticBody;
     }
     m_boundaryBody = b2CreateBody(m_worldId, &groundBodyDef);
 
     std::vector<b2Vec2> boundaryPoints;
-    // Always Hexagon for Consistency (User Requirement)
-    int segments = 6; 
+    int segments = params.boundarySides; 
     for(int i=0; i<segments; ++i) {
         float theta = 2.0f * 3.14159f * float(i) / float(segments);
         boundaryPoints.push_back({outerRadius * cosf(theta), outerRadius * sinf(theta)});
@@ -319,8 +320,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         // Height covers all layers + safety
         double height = numLayers * containerThickness * 3.0; // Taller to prevent spill
         double thickness = 0.5; // Thick wall
-        // Always Hexagon
-        int segments = 6;
+        int segments = params.boundarySides;
         
         CgalMeshBuilder::buildHollowHexagon(boundaryMesh, outerRadius, thickness, height, segments);
         CgalMeshBuilder::triangulateAll(boundaryMesh);
@@ -430,8 +430,11 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
             b2World_Step(m_worldId, stepSize, 12); // Increased iterations for stability
             m_accumTime -= stepSize;
             
-            // 2. Animate Boundary (Rotate Hexagon)
+            // 2. Animate Boundary (Rotate Shape)
             // Kinematic boundary rotates automatically due to angularVelocity
+            if (b2Body_IsValid(m_boundaryBody)) {
+                b2Body_SetAngularVelocity(m_boundaryBody, params.rotationSpeed);
+            }
         }
     }
     }
