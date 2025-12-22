@@ -40,12 +40,13 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // -------------------------------------------------------------------------
 
     // Parameters
-    const float baseInradius = 4.0f;
+    const float baseInradius = 4.0f * params.boundaryScale;
     const float outerRadius = baseInradius / cosf(3.14159f / (float)params.boundarySides);
 
     const int   numDiscs    = params.numDiscs;
     const int   numLayers   = params.numLayers;
-    float containerThickness = 0.1f;
+    float containerThickness = params.shapeHeight;
+    float layerSpacing = params.layerSpacing;
 
     std::random_device rd;
     std::mt19937 rng(rd()); 
@@ -209,6 +210,55 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  // Body matches visual (Circle/Cylinder)
                  b2CreateCircleShape(bid, &shapeDef, &circleShape);
                  
+            } else if (params.shapeType == 2) {
+                // Tetris Mode: 4 blocks per piece
+                std::vector<glm::vec2> tetrisOffsets;
+                int pieceType = std::uniform_int_distribution<int>(0, 6)(rng);
+                
+                // Classic Tetris Piece Offsets
+                if (pieceType == 0) { // I
+                    tetrisOffsets = {{0,0}, {1,0}, {2,0}, {3,0}};
+                } else if (pieceType == 1) { // J
+                    tetrisOffsets = {{0,0}, {1,0}, {2,0}, {0,1}};
+                } else if (pieceType == 2) { // L
+                    tetrisOffsets = {{0,0}, {1,0}, {2,0}, {2,1}};
+                } else if (pieceType == 3) { // O
+                    tetrisOffsets = {{0,0}, {1,0}, {0,1}, {1,1}};
+                } else if (pieceType == 4) { // S
+                    tetrisOffsets = {{0,0}, {1,0}, {1,1}, {2,1}};
+                } else if (pieceType == 5) { // T
+                    tetrisOffsets = {{0,0}, {1,0}, {2,0}, {1,1}};
+                } else { // Z
+                    tetrisOffsets = {{0,1}, {1,1}, {1,0}, {2,0}};
+                }
+
+                // 1. Create Physics (Multiple Boxes)
+                float blockSize = params.discRadius * 1.5f;
+                b2ShapeDef tetrisShapeDef = shapeDef;
+                tetrisShapeDef.friction = 0.5f; // More grip for tetris
+                
+                for (auto off : tetrisOffsets) {
+                    b2Polygon box = b2MakeOffsetBox(blockSize * 0.5f, blockSize * 0.5f, 
+                                                    {off.x * blockSize, off.y * blockSize}, 0.0f);
+                    b2CreatePolygonShape(bid, &tetrisShapeDef, &box);
+                }
+
+                // 2. Generate Visual Mesh
+                SurfaceMesh tetrisMesh;
+                CgalMeshBuilder::buildMultipleBoxes(tetrisMesh, tetrisOffsets, blockSize, containerThickness);
+                CgalMeshBuilder::triangulateAll(tetrisMesh);
+                
+                std::vector<Vertex> v; std::vector<uint32_t> ind;
+                CgalMeshBuilder::toVertexIndexFlat(tetrisMesh, v, ind);
+                
+                std::vector<rtx::InstanceData> dummyInst; 
+                b2Vec2 pos = bodyDef.position; 
+                float yOffset = layer * layerSpacing;
+                glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
+                dummyInst.push_back({M, 0, cId});
+                allMeshes.push_back({v, ind, dummyInst});
+                
+                assignedMeshID = meshCounter++;
             } else {            
                  // Poly Mode: Unique Mesh AND Unique Physics Shape
                  int sides = distSides(rng);
@@ -253,7 +303,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
 
                  SurfaceMesh polyMesh;
                  // Use the new helper function
-                 CgalMeshBuilder::buildThickPolygonFromPoints(polyMesh, glmPoints, containerThickness * 1.5, makePyramid, 0.3);
+                 CgalMeshBuilder::buildThickPolygonFromPoints(polyMesh, glmPoints, containerThickness, makePyramid, 0.3);
                  
                  if (params.subdivisionIterations > 0) {
                      CgalMeshBuilder::applyCatmullClark(polyMesh, params.subdivisionIterations, true);
@@ -268,7 +318,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  std::vector<rtx::InstanceData> dummyInst; 
                  // Initial transform instance
                  b2Vec2 pos = bodyDef.position; 
-                 float yOffset = layer * containerThickness;
+                 float yOffset = layer * layerSpacing;
                  glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
                  
                  dummyInst.push_back({M, 0, cId});

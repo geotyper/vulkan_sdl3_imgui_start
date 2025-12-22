@@ -3444,3 +3444,32 @@ void CgalMeshBuilder::buildHollowHexagon(SurfaceMesh& sm, double radius, double 
         sm.add_face(bottomInner[next], bottomInner[i], bottomOuter[i], bottomOuter[next]);
     }
 }
+
+void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm::vec2>& offsets, double size, double thickness) {
+    sm.clear();
+    double h = size * 0.5;
+    double ht = thickness * 0.5;
+
+    for (const auto& off : offsets) {
+        double ox = off.x * size;
+        double oz = off.y * size;
+
+        // Create 8 vertices for this voxel
+        V v0 = sm.add_vertex(P(ox - h, -ht, oz - h));
+        V v1 = sm.add_vertex(P(ox + h, -ht, oz - h));
+        V v2 = sm.add_vertex(P(ox + h, -ht, oz + h));
+        V v3 = sm.add_vertex(P(ox - h, -ht, oz + h));
+        V v4 = sm.add_vertex(P(ox - h,  ht, oz - h));
+        V v5 = sm.add_vertex(P(ox + h,  ht, oz - h));
+        V v6 = sm.add_vertex(P(ox + h,  ht, oz + h));
+        V v7 = sm.add_vertex(P(ox - h,  ht, oz + h));
+
+        // Add 6 faces
+        sm.add_face(v0, v1, v5, v4); // Front
+        sm.add_face(v2, v3, v7, v6); // Back
+        sm.add_face(v0, v3, v2, v1); // Bottom
+        sm.add_face(v4, v5, v6, v7); // Top
+        sm.add_face(v0, v4, v7, v3); // Left
+        sm.add_face(v1, v2, v6, v5); // Right
+    }
+}

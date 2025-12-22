@@ -170,7 +170,7 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::SliderInt("Num Figures", &solverParams.numDiscs, 3, 35);
     ImGui::SliderInt("Layers", &solverParams.numLayers, 1, 3);
     
-    const char* items[] = { "Disc", "Random Poly" };
+    const char* items[] = { "Disc", "Random Poly", "Tetris" };
     ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
     
     // Animation Toggle
@@ -189,6 +189,18 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
 
     if (ImGui::Combo("Boundary Shape", &boundaryIdx, boundaryShapes, IM_ARRAYSIZE(boundaryShapes))) {
         solverParams.boundarySides = boundaryIdx + 4;
+        solverParams.requestRebuild = true;
+    }
+
+    if (ImGui::SliderFloat("Boundary Scale", &solverParams.boundaryScale, 0.5f, 2.5f)) {
+        solverParams.requestRebuild = true;
+    }
+
+    if (ImGui::SliderFloat("Shape Height", &solverParams.shapeHeight, 0.05f, 1.0f)) {
+        solverParams.requestRebuild = true;
+    }
+
+    if (ImGui::SliderFloat("Layer Spacing", &solverParams.layerSpacing, 0.1f, 2.0f)) {
         solverParams.requestRebuild = true;
     }
     

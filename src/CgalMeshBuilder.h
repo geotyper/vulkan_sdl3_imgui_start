@@ -92,6 +92,7 @@ public:
     static void buildThickPolygon(SurfaceMesh& sm, double radius, double sizeVariation, double thickness, int sides, uint32_t seed, bool makePyramid = false, double pyramidHeight = 0.0);
     static void buildThickPolygonFromPoints(SurfaceMesh& sm, const std::vector<glm::vec2>& points, double thickness, bool makePyramid = false, double pyramidHeight = 0.0);
     static void buildHollowHexagon(SurfaceMesh& sm, double radius, double thickness, double height, int sides);
+    static void buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm::vec2>& offsets, double size, double thickness);
 
     // Экструзия одной грани (добавлен out-результат)
     static SurfaceMesh::Face_index extrudeFace_one(

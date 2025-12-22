@@ -49,6 +49,10 @@ struct SolverParameters {
 
     float colorSaturation = 1.0f;
     float absorptionFactor = 1.5f;
+
+    float boundaryScale = 1.0f;
+    float shapeHeight = 0.3f;
+    float layerSpacing = 0.5f;
 };
 
 namespace rtx {
