@@ -96,6 +96,12 @@ struct UniformData {
     float iorParameter;
     float lensDistortion;
     float refractionBias;
+    float chromaticAberration;
+    float _pad0;
+    float _pad1;
+    float _pad2;           // Ensure 16-byte alignment for vec4s
+    vec4  backColorTop;
+    vec4  backColorBot;
 };
 
 // shaders helper functions

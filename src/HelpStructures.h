@@ -60,6 +60,9 @@ struct SolverParameters {
     float iorParameter = 1.25f;
     float lensDistortion = 0.0f;
     float refractionBias = 0.0f;
+    float chromaticAberration = 0.0f;
+    glm::vec3 backColorTop = glm::vec3(0.6f, 0.75f, 1.0f);
+    glm::vec3 backColorBot = glm::vec3(1.0f, 0.9f, 0.85f);
 };
 
 namespace rtx {

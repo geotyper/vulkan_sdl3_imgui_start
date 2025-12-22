@@ -129,6 +129,12 @@ void main()
             ndc *= (1.0 + U.uni.lensDistortion * r2);
         }
 
+        // --- Artistic Chromatic Shift (Fake) ---
+        if (U.uni.chromaticAberration > 0.0001) {
+            float shift = U.uni.chromaticAberration * (fract(sin(float(U.uni.frameCounter) * 12.9898 + float(jitter.x)*78.233) * 43758.5453) - 0.5);
+            ndc += vec2(shift, 0.0);
+        }
+
         vec3 origin    = (cam.invView * vec4(0,0,0,1)).xyz;
         vec3 dir_ndc   = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
         vec3 dir       = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);

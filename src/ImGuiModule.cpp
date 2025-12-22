@@ -241,6 +241,18 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     if (ImGui::SliderFloat("Refraction Depth Bias", &solverParams.refractionBias, -1.0f, 1.0f)) {
         solverParams.requestRestart = true;
     }
+    if (ImGui::SliderFloat("Chromatic Aberration", &solverParams.chromaticAberration, 0.0f, 0.1f)) {
+        solverParams.requestRestart = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Background Colors");
+    if (ImGui::ColorEdit3("Sky Top", &solverParams.backColorTop.x)) {
+        solverParams.requestRestart = true;
+    }
+    if (ImGui::ColorEdit3("Sky Bottom", &solverParams.backColorBot.x)) {
+        solverParams.requestRestart = true;
+    }
     
     ImGui::Separator();
     ImGui::Text("Ray Tracing Quality");
