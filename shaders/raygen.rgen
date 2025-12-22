@@ -8,11 +8,9 @@
 layout(set = SWS_SCENE_AS_SET, binding = SWS_SCENE_AS_BINDING)
 uniform accelerationStructureEXT topLevelAS;
 
-// IMPORTANT: The original code used an 'rgba8' buffer for accumulation.
-// This clamps colors and prevents correct blending of HDR lighting.
-// For a correct path tracer, this should be a float format like 'rgba16f'.
-// The logic below is the best possible compromise for an 'rgba8' buffer.
-layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba8)
+// --- HDR Accumulation Image ---
+// Using rgba32f for high-precision light accumulation.
+layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba32f)
 uniform image2D accumImage;
 
 layout(set = SWS_SCENE_AS_SET, binding = SWS_CAMERA_BINDING)
@@ -175,21 +173,33 @@ void main()
     // ===           LOGIC CHANGES ARE HERE                           ===
     // ====================================================================
 
-    // 1. Load the previously rendered (and already tone-mapped) color
-    vec3 prev_mapped_color = imageLoad(accumImage, ivec2(pixel)).rgb;
+    // 1. Load the raw accumulated HDR color
+    vec4 oldData = imageLoad(accumImage, ivec2(pixel));
+    vec3 prev_hdr_color = oldData.rgb;
 
-    // 2. Take the new linear HDR sample and apply the full tonemapping pipeline to it
-    vec3 new_mapped_color = apply_full_tonemap(finalColor);
+    // 2. Accumulate the new linear HDR sample
+    vec3 new_hdr_sample = finalColor;
     
     // 3. Determine the blend factor for the running average
     float blend_factor = (U.uni.frameCounter == 0) 
         ? 1.0 
         : 1.0 / float(U.uni.frameCounter + 1);
 
-    // 4. Blend the PREVIOUS mapped color with the NEW mapped color.
-    // This correctly accumulates the final image you see on screen.
-    vec3 final_output_color = mix(prev_mapped_color, new_mapped_color, blend_factor);
+    // 4. Blend raw HDR values
+    vec3 accumulated_hdr = mix(prev_hdr_color, new_hdr_sample, blend_factor);
 
-    // 5. Store the final, blended, display-ready color
-    imageStore(accumImage, ivec2(pixel), vec4(final_output_color, 1.0));
+    // 5. Apply tonemapping to the accumulated result for display
+    vec3 mapped_output = apply_full_tonemap(accumulated_hdr);
+
+    // 6. Store RAW HDR back for future accumulation, 
+    // BUT we are writing to an image that is also used for display.
+    // If we want HDR accumulation, we MUST store the raw HDR.
+    // The current Vulkan setup copies this image to the swapchain.
+    imageStore(accumImage, ivec2(pixel), vec4(accumulated_hdr, 1.0));
+
+    // NOTE: Because we are now storing raw HDR in an RGBA32F image, 
+    // the final copy to the UNORM swapchain will perform a simple 0-1 clamp.
+    // To see the full effect of HDR, a post-process tonemapping pass is needed.
+    // However, even with clamping at the copy stage, the ACCUMULATION is now 
+    // 32-bit precise, which will solve the "stalling" and precision noise.
 }

@@ -205,13 +205,13 @@ namespace rtx {
         VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
         m_storageImage.Create(
             m_context,
-            VK_IMAGE_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, extent3D,
+            VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, extent3D,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
             );
         VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_B8G8R8A8_UNORM, range);
+        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, range);
 
         // CORRECTED: Call the single, unified update function.
         UpdateDescriptorSets();
@@ -388,14 +388,20 @@ namespace rtx {
                                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                     0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
-        // 5. Copy from storage image to target (swapchain) image
-        VkImageCopy copyRegion{};
-        copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        copyRegion.extent = { extent.width, extent.height, 1 };
+        // 5. Blit from storage image to target (swapchain) image
+        // Blit is used instead of Copy because it handles format conversion (RGBA32F -> UNORM)
+        VkImageBlit blitRegion{};
+        blitRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        blitRegion.srcOffsets[0] = { 0, 0, 0 };
+        blitRegion.srcOffsets[1] = { (int32_t)extent.width, (int32_t)extent.height, 1 };
+        blitRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        blitRegion.dstOffsets[0] = { 0, 0, 0 };
+        blitRegion.dstOffsets[1] = { (int32_t)extent.width, (int32_t)extent.height, 1 };
 
-        vkCmdCopyImage(cmd, m_storageImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        vkCmdBlitImage(cmd, 
+                       m_storageImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                       1, &blitRegion, VK_FILTER_NEAREST);
 
         // 6. Transition target image for presentation
         // 5. Финальный барьер: готовим swapchain-image к показу на экране.

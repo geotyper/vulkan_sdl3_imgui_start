@@ -11,6 +11,7 @@
 #include <algorithm>
 #include "GeomCreate.h"
 #include <fstream>
+#include <cmath>
 
 #include "CgalMeshBuilder.h"
 #include "CgalMeshBuilderTentacles.h"
@@ -1130,7 +1131,8 @@ void GraphicsModule::CaptureScreen(int index) {
     vkDeviceWaitIdle(m_device);
      
      // 1. Create Staging Buffer
-     VkDeviceSize imageSize = extent.width * extent.height * 4;
+     // RGBA32F is 16 bytes per pixel
+     VkDeviceSize imageSize = extent.width * extent.height * 16;
      vulkanhelpers::Buffer stagingBuffer;
      VK_CHECK(stagingBuffer.Create(ctx, imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT), "Capture Buffer");
@@ -1188,7 +1190,7 @@ void GraphicsModule::CaptureScreen(int index) {
 
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 
-    void* dataPtr = stagingBuffer.Map(ctx);
+    float* floatData = (float*)stagingBuffer.Map(ctx);
     
     std::ostringstream oss;
     oss << "captures/image_" << std::setfill('0') << std::setw(4) << index << ".png";
@@ -1197,13 +1199,37 @@ void GraphicsModule::CaptureScreen(int index) {
     struct stat st = {0};
     if (stat("captures", &st) == -1) mkdir("captures", 0700);
     
-    std::vector<uint8_t> pixels((uint8_t*)dataPtr, (uint8_t*)dataPtr + imageSize);
-    
-    // Format is B8G8R8A8 (from OnResize). STB needs RGBA.
-    // Swizzle R and B.
-    for(size_t i=0; i<pixels.size(); i+=4) {
-        std::swap(pixels[i], pixels[i+2]);
-        pixels[i+3] = 255; // Opaque
+    std::vector<uint8_t> pixels;
+    pixels.reserve(extent.width * extent.height * 4);
+
+    auto aces = [](float x) {
+        const float a=2.51f, b=0.03f, c=2.43f, d=0.59f, e=0.14f;
+        return std::max(0.0f, std::min(1.0f, (x*(a*x+b)) / (x*(c*x+d)+e)));
+    };
+
+    for(size_t i=0; i < (size_t)extent.width * extent.height * 4; i+=4) {
+        // Source is RGBA32F (float) - indices are by float, not byte
+        float r = floatData[i + 0];
+        float g = floatData[i + 1];
+        float b = floatData[i + 2];
+
+        // 1. Exposure (approximate what's in shader: -0.75 EV)
+        float exposure = 0.6f; 
+        r *= exposure; g *= exposure; b *= exposure;
+
+        // 2. ACES Tonemap
+        r = aces(r); g = aces(g); b = aces(b);
+
+        // 3. Gamma 2.2
+        r = powf(r, 1.0f/2.2f);
+        g = powf(g, 1.0f/2.2f);
+        b = powf(b, 1.0f/2.2f);
+
+        // 4. To UINT8
+        pixels.push_back((uint8_t)(r * 255.0f));
+        pixels.push_back((uint8_t)(g * 255.0f));
+        pixels.push_back((uint8_t)(b * 255.0f));
+        pixels.push_back(255); // A
     }
     
     stbi_write_png(filename.c_str(), extent.width, extent.height, 4, pixels.data(), extent.width * 4);
