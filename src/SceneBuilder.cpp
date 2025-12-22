@@ -147,8 +147,8 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     bodyDef.type = b2_dynamicBody;
     bodyDef.isBullet = false; // User requested OFF
     if (params.animate) {
-        bodyDef.linearDamping = 8.0f;
-        bodyDef.angularDamping = 2.0f;
+        bodyDef.linearDamping = 1.0f;
+        bodyDef.angularDamping = 1.0f;
     } else {
         bodyDef.linearDamping = 5.0f;
     }
@@ -231,6 +231,12 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                 } else { // Z
                     tetrisOffsets = {{0,1}, {1,1}, {1,0}, {2,0}};
                 }
+
+                // Center the piece: calculate average offset
+                glm::vec2 avgOffset(0,0);
+                for(auto o : tetrisOffsets) avgOffset += o;
+                avgOffset /= (float)tetrisOffsets.size();
+                for(auto& o : tetrisOffsets) o -= avgOffset;
 
                 // 1. Create Physics (Multiple Boxes)
                 float blockSize = params.discRadius * 1.5f;
@@ -490,7 +496,6 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
     newInstances.reserve(m_bodyInfos.size() + 1);
 
     // Discs
-    float containerThickness = 0.1f;
     for (const auto& info : m_bodyInfos) {
         if (!b2Body_IsValid(info.bodyId)) continue;
         
@@ -500,7 +505,7 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
         b2Vec2 pos = b2Body_GetPosition(info.bodyId);
         b2Rot rot = b2Body_GetRotation(info.bodyId);
         float angle = b2Rot_GetAngle(rot);
-        float yOffset = info.layer * containerThickness;
+        float yOffset = info.layer * params.layerSpacing;
 
         glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
         M = glm::rotate(M, -angle, glm::vec3(0,1,0));
