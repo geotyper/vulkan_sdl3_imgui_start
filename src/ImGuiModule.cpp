@@ -203,6 +203,18 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     if (ImGui::SliderFloat("Layer Spacing", &solverParams.layerSpacing, 0.1f, 2.0f)) {
         solverParams.requestRebuild = true;
     }
+
+    if (solverParams.shapeType == 2) {
+        if (ImGui::Checkbox("Solid Tetris Pieces", &solverParams.solidTetris)) {
+            solverParams.requestRebuild = true;
+        }
+        if (ImGui::Checkbox("Random Initial Rotation", &solverParams.randomRotation)) {
+            solverParams.requestRebuild = true;
+        }
+        if (ImGui::SliderFloat("Layer Stagger", &solverParams.layerStagger, 0.0f, 1.0f)) {
+            solverParams.requestRebuild = true;
+        }
+    }
     
     if(solverParams.shapeType == 1) { // Only show for Poly
         ImGui::Checkbox("Pyramid Top", &solverParams.makePyramid);
@@ -216,6 +228,18 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
 
     if (ImGui::Button("Refresh")) {
         solverParams.requestRebuild = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Optics & Depth Effects");
+    if (ImGui::SliderFloat("Index of Refraction", &solverParams.iorParameter, 1.0f, 2.5f)) {
+        solverParams.requestRestart = true;
+    }
+    if (ImGui::SliderFloat("Lens Distortion", &solverParams.lensDistortion, -1.0f, 1.0f)) {
+        solverParams.requestRestart = true;
+    }
+    if (ImGui::SliderFloat("Refraction Depth Bias", &solverParams.refractionBias, -1.0f, 1.0f)) {
+        solverParams.requestRestart = true;
     }
     
     ImGui::Separator();

@@ -51,7 +51,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     std::random_device rd;
     std::mt19937 rng(rd()); 
 
-    std::uniform_real_distribution<float> distPos(-outerRadius/2.0f, outerRadius/2.0f);
+    std::uniform_real_distribution<float> distPos(-outerRadius * 0.35f, outerRadius * 0.35f);
     std::uniform_int_distribution<int> distColor(0, 6); // 7 colors
 
     struct SimResult {
@@ -184,6 +184,24 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         for(int i=0; i<numDiscs; ++i) {
             // Random Independent Position
             bodyDef.position = { distPos(rng), distPos(rng) };
+            
+            // Apply layer stagger (shift)
+            if (params.shapeType == 2) {
+                float staggerRange = outerRadius * 0.5f * params.layerStagger;
+                std::uniform_real_distribution<float> distStagger(-staggerRange, staggerRange);
+                bodyDef.position.x += distStagger(rng);
+                bodyDef.position.y += distStagger(rng);
+                
+                if (params.randomRotation) {
+                    std::uniform_real_distribution<float> distRot(0.0f, 6.28318f);
+                    bodyDef.rotation = b2MakeRot(distRot(rng));
+                } else {
+                    bodyDef.rotation = b2Rot_identity;
+                }
+            } else {
+                bodyDef.rotation = b2Rot_identity; 
+            }
+
             b2BodyId bid = b2CreateBody(m_worldId, &bodyDef);
             // Shape creation moved inside loop based on type
             
@@ -251,7 +269,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
 
                 // 2. Generate Visual Mesh
                 SurfaceMesh tetrisMesh;
-                CgalMeshBuilder::buildMultipleBoxes(tetrisMesh, tetrisOffsets, blockSize, containerThickness);
+                CgalMeshBuilder::buildMultipleBoxes(tetrisMesh, tetrisOffsets, blockSize, containerThickness, params.solidTetris);
                 CgalMeshBuilder::triangulateAll(tetrisMesh);
                 
                 std::vector<Vertex> v; std::vector<uint32_t> ind;

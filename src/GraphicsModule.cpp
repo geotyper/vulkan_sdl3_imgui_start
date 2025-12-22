@@ -147,17 +147,26 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     static int lastBounces = 32;
     static float lastSatur   = 1.0f;
     static float lastAbsorb  = 1.5f;
+    static float lastIor     = 1.25f;
+    static float lastLens    = 0.0f;
+    static float lastBias    = 0.0f;
 
     if (solverParams.samplesPerFrame != lastSamples || 
         solverParams.maxBounces != lastBounces ||
         std::abs(solverParams.colorSaturation - lastSatur) > 0.001f ||
-        std::abs(solverParams.absorptionFactor - lastAbsorb) > 0.001f) 
+        std::abs(solverParams.absorptionFactor - lastAbsorb) > 0.001f ||
+        std::abs(solverParams.iorParameter - lastIor) > 0.001f ||
+        std::abs(solverParams.lensDistortion - lastLens) > 0.001f ||
+        std::abs(solverParams.refractionBias - lastBias) > 0.001f) 
     {
         step = 0;
         lastSamples = solverParams.samplesPerFrame;
         lastBounces = solverParams.maxBounces;
         lastSatur   = solverParams.colorSaturation;
         lastAbsorb  = solverParams.absorptionFactor;
+        lastIor     = solverParams.iorParameter;
+        lastLens    = solverParams.lensDistortion;
+        lastBias    = solverParams.refractionBias;
     }
     // Check for Rebuild
     if (solverParams.requestRebuild) {
@@ -242,7 +251,8 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, 
                                 solverParams.paletteID, solverParams.samplesPerFrame, 
                                 solverParams.maxBounces, solverParams.colorSaturation, 
-                                solverParams.absorptionFactor);
+                                solverParams.absorptionFactor,
+                                solverParams.iorParameter, solverParams.lensDistortion, solverParams.refractionBias);
 
     // --- RECORDING AND SUBMISSION ---
 

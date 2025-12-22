@@ -53,6 +53,13 @@ struct SolverParameters {
     float boundaryScale = 1.0f;
     float shapeHeight = 0.3f;
     float layerSpacing = 0.5f;
+    bool solidTetris = true;
+    bool randomRotation = true;
+    float layerStagger = 0.0f;
+
+    float iorParameter = 1.25f;
+    float lensDistortion = 0.0f;
+    float refractionBias = 0.0f;
 };
 
 namespace rtx {

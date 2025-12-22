@@ -187,16 +187,29 @@ void main()
 
     // --- Glass Logic (Existing) ---
     // отношение показателей преломления
-    float eta = frontFace ? (1.0 / IOR_GLASS) : IOR_GLASS;
+    float ior = U.uni.iorParameter;
+    float eta = frontFace ? (1.0 / ior) : ior;
 
     // Френель
-    float F0   = pow((IOR_GLASS - 1.0) / (IOR_GLASS + 1.0), 2.0);
+    float F0   = pow((ior - 1.0) / (ior + 1.0), 2.0);
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
 
     // направления
     vec3 R = reflect(V, N);
     vec3 T = refract(V, N, eta);   // при TIR вернёт 0
+
+    // --- Refraction Bias ---
+    // Mix refracted ray with incoming direction to "sink" or "flatten" the depth
+    if (dot(T,T) > 0.0 && abs(U.uni.refractionBias) > 0.0001) {
+        if (U.uni.refractionBias > 0.0) {
+             // Sink deeper (push T further from N)
+             T = normalize(mix(T, reflect(V, -N), U.uni.refractionBias * 0.5)); 
+        } else {
+             // Flatten (push T towards incoming V)
+             T = normalize(mix(T, V, -U.uni.refractionBias));
+        }
+    }
 
     bool tir        = (dot(T,T) == 0.0);
     bool useReflect = tir || (rnd(prd.seed) < Fr);

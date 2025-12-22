@@ -93,7 +93,9 @@ struct UniformData {
     float colorSaturation;
 
     float absorptionFactor;
-    int _pad1, _pad2, _pad3;
+    float iorParameter;
+    float lensDistortion;
+    float refractionBias;
 };
 
 // shaders helper functions

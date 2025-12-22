@@ -122,6 +122,13 @@ void main()
         vec2 uv  = (vec2(pixel) + 0.5 + jitter) / vec2(size);
         vec2 ndc = uv * 2.0 - 1.0;
 
+        // --- Lens Distortion ---
+        // Simple radial distortion: ndc' = ndc * (1 + k * r^2)
+        if (abs(U.uni.lensDistortion) > 0.0001) {
+            float r2 = dot(ndc, ndc);
+            ndc *= (1.0 + U.uni.lensDistortion * r2);
+        }
+
         vec3 origin    = (cam.invView * vec4(0,0,0,1)).xyz;
         vec3 dir_ndc   = (cam.invProj * vec4(ndc, 1.0, 1.0)).xyz;
         vec3 dir       = normalize((cam.invView * vec4(dir_ndc, 0.0)).xyz);

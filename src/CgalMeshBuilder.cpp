@@ -3445,10 +3445,20 @@ void CgalMeshBuilder::buildHollowHexagon(SurfaceMesh& sm, double radius, double 
     }
 }
 
-void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm::vec2>& offsets, double size, double thickness) {
+void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm::vec2>& offsets, double size, double thickness, bool removeInternalFaces) {
     sm.clear();
     double h = size * 0.5;
     double ht = thickness * 0.5;
+
+    auto hasNeighbor = [&](const glm::vec2& pos, float dx, float dy) {
+        if (!removeInternalFaces) return false;
+        for (const auto& off : offsets) {
+            if (std::abs(off.x - (pos.x + dx)) < 0.1f && std::abs(off.y - (pos.y + dy)) < 0.1f) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     for (const auto& off : offsets) {
         double ox = off.x * size;
@@ -3464,12 +3474,18 @@ void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm:
         V v6 = sm.add_vertex(P(ox + h,  ht, oz + h));
         V v7 = sm.add_vertex(P(ox - h,  ht, oz + h));
 
-        // Add 6 faces
-        sm.add_face(v0, v1, v5, v4); // Front
-        sm.add_face(v2, v3, v7, v6); // Back
-        sm.add_face(v0, v3, v2, v1); // Bottom
-        sm.add_face(v4, v5, v6, v7); // Top
-        sm.add_face(v0, v4, v7, v3); // Left
-        sm.add_face(v1, v2, v6, v5); // Right
+        // Add 6 faces selectively
+        if (!hasNeighbor(off, 0, -1)) sm.add_face(v0, v1, v5, v4); // Front (-Z)
+        if (!hasNeighbor(off, 0,  1)) sm.add_face(v2, v3, v7, v6); // Back (+Z)
+        
+        // Bottom and Top are ALWAYS added unless we have layers? 
+        // But the user said "internal partitions", which usually means the vertical walls between segments.
+        // If we also had layers, we would check for neighbor above/below. 
+        // Currently layers are independent worlds or offsets, so Top/Bottom are always visible.
+        sm.add_face(v0, v3, v2, v1); // Bottom (-Y)
+        sm.add_face(v4, v5, v6, v7); // Top (+Y)
+
+        if (!hasNeighbor(off, -1, 0)) sm.add_face(v0, v4, v7, v3); // Left (-X)
+        if (!hasNeighbor(off,  1, 0)) sm.add_face(v1, v2, v6, v5); // Right (+X)
     }
 }
