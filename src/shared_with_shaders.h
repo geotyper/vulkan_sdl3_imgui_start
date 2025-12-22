@@ -99,7 +99,8 @@ struct UniformData {
     float chromaticAberration;
     float _pad0;
     float _pad1;
-    float _pad2;           // Ensure 16-byte alignment for vec4s
+    float _pad2;
+    vec4  pointLightColor; // w = unused
     vec4  backColorTop;
     vec4  backColorBot;
 };

@@ -151,6 +151,8 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     static float lastLens    = 0.0f;
     static float lastBias    = 0.0f;
     static float lastChrom   = 0.0f;
+    static float lastPointInt = 10.0f;
+    static glm::vec3 lastPointColor = glm::vec3(1.0f);
     static glm::vec3 lastBackTop = glm::vec3(0.6f, 0.75f, 1.0f);
     static glm::vec3 lastBackBot = glm::vec3(1.0f, 0.9f, 0.85f);
 
@@ -162,10 +164,14 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
         std::abs(solverParams.lensDistortion - lastLens) > 0.001f ||
         std::abs(solverParams.refractionBias - lastBias) > 0.001f ||
         std::abs(solverParams.chromaticAberration - lastChrom) > 0.001f ||
+        std::abs(solverParams.pointLightIntensity - lastPointInt) > 0.001f ||
+        glm::distance(solverParams.pointLightColor, lastPointColor) > 0.001f ||
         glm::distance(solverParams.backColorTop, lastBackTop) > 0.001f ||
-        glm::distance(solverParams.backColorBot, lastBackBot) > 0.001f) 
+        glm::distance(solverParams.backColorBot, lastBackBot) > 0.001f ||
+        solverParams.requestRestart) 
     {
         step = 0;
+        solverParams.requestRestart = false;
         lastSamples = solverParams.samplesPerFrame;
         lastBounces = solverParams.maxBounces;
         lastSatur   = solverParams.colorSaturation;
@@ -174,6 +180,8 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
         lastLens    = solverParams.lensDistortion;
         lastBias    = solverParams.refractionBias;
         lastChrom   = solverParams.chromaticAberration;
+        lastPointInt = solverParams.pointLightIntensity;
+        lastPointColor = solverParams.pointLightColor;
         lastBackTop = solverParams.backColorTop;
         lastBackBot = solverParams.backColorBot;
     }
@@ -263,7 +271,8 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
                                 solverParams.absorptionFactor,
                                 solverParams.iorParameter, solverParams.lensDistortion, solverParams.refractionBias,
                                 solverParams.chromaticAberration,
-                                solverParams.backColorTop, solverParams.backColorBot);
+                                solverParams.backColorTop, solverParams.backColorBot,
+                                solverParams.pointLightIntensity, solverParams.pointLightColor, cam.GetPosition());
 
     // --- RECORDING AND SUBMISSION ---
 

@@ -211,29 +211,48 @@ void main()
         }
     }
 
+    // --- Beer absorption: segment traveled BEFORE this hit ---
+    if (prd.inMedium) {
+        vec3 sigmaA = (vec3(1.0) - baseColor) * U.uni.absorptionFactor;
+        float distSegment = gl_HitTEXT;
+        prd.throughput *= exp(-sigmaA * distSegment);
+    }
+
+    // --- Reflection/Refraction Logic ---
     bool tir        = (dot(T,T) == 0.0);
     bool useReflect = tir || (rnd(prd.seed) < Fr);
 
     vec3 newDir = useReflect ? R : T;
 
-    // --- Beer absorption: сегмент, пройденный ПЕРЕД текущим хитом ---
     if (!useReflect) {
-        // если этот сегмент луч шёл в стекле — поглощаем
-        if (prd.inMedium) {
-            vec3 sigmaA = (vec3(1.0) - baseColor) * U.uni.absorptionFactor;
-
-            float dist  = gl_HitTEXT;             // длина текущего сегмента
-            prd.throughput *= exp(-sigmaA * dist);
-        }
-        // меняем среду: вошли <-> вышли
+        // Toggle medium status on refraction
         prd.inMedium = !prd.inMedium;
-
-        // вес BTDF
+        // BTDF normalization
         prd.throughput *= (eta * eta);
     }
 
-    // окраска стекла (Base Color applied to everything, including reflections)
+    // Apply base color tint to the whole path
     prd.throughput *= baseColor;
+
+    // --- Point Light Calculation (Camera Flashlight) ---
+    vec3 lightPos = U.uni.lightPos.xyz;
+    float intensity = U.uni.lightPos.w;
+    vec3 lp_to_p = lightPos - Pw;
+    float dist = length(lp_to_p);
+    vec3 L = normalize(lp_to_p);
+    float atten = intensity / (dist * dist + 1.0);
+    
+    // Diffuse + Specular (Blinn-Phong)
+    float diff = max(dot(N, L), 0.0);
+    vec3 H = normalize(L - V);
+    float spec = pow(max(dot(N, H), 0.0), 64.0);
+    
+    vec3 lightColor = pow(U.uni.pointLightColor.rgb, vec3(2.2));
+    vec3 directLighting = (baseColor * diff + vec3(0.5) * spec) * lightColor * atten;
+    
+    // Add direct lighting to the payload color
+    // This color will be added to the sample in raygen.rgen at each bounce
+    prd.color += directLighting * prd.throughput;
 
     // оффсет/продолжение
     prd.rayOrigin  = Pw + newDir * SURF_EPS;

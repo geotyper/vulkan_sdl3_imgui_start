@@ -92,18 +92,16 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, const glm::vec3& backTop, const glm::vec3& backBot) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos) {
         UniformData ubo;
         ubo.uTime = time;
         ubo._pad00=0; ubo._pad01=0; ubo._pad02=0;
 
-        // Pack Intensity into W
+        // ubo.lightColor.w = global light intensity (used in miss shader for sky)
         ubo.lightColor = glm::vec4(lightColor, lightIntensity);
         
-        // Pack volG into W
-        float volG = 0.92f;
-        glm::vec3 lPos = glm::vec3(0,0,0);
-        ubo.lightPos = glm::vec4(lPos, volG);
+        // Point Light: xyz = position, w = intensity
+        ubo.lightPos = glm::vec4(lightPos, pointIntensity);
 
         ubo.volSigmaS = 0.12f;
         ubo.volSigmaE = 0.07f;
@@ -129,6 +127,7 @@ namespace rtx {
         ubo._pad1 = 0.0f;
         ubo._pad2 = 0.0f;
         
+        ubo.pointLightColor = glm::vec4(pointColor, 1.0f);
         ubo.backColorTop = glm::vec4(backTop, 1.0f);
         ubo.backColorBot = glm::vec4(backBot, 1.0f);
 

@@ -129,10 +129,29 @@ void main()
             ndc *= (1.0 + U.uni.lensDistortion * r2);
         }
 
-        // --- Artistic Chromatic Shift (Fake) ---
+        // --- Artistic Chromatic Shift (Radial/Stable) ---
         if (U.uni.chromaticAberration > 0.0001) {
-            float shift = U.uni.chromaticAberration * (fract(sin(float(U.uni.frameCounter) * 12.9898 + float(jitter.x)*78.233) * 43758.5453) - 0.5);
-            ndc += vec2(shift, 0.0);
+            vec2 toCenter = ndc; // Assumes ndc starts at origin (0,0) for center
+            float dist = length(toCenter);
+            // We use a small radial shift per channel. 
+            // Channels: Red expands, Blue contracts slightly.
+            // This is "stable" as it depends only on pixel position.
+            // ndc stays as the 'Green' channel.
+            vec2 ndcR = ndc * (1.0 + U.uni.chromaticAberration * dist);
+            vec2 ndcB = ndc * (1.0 - U.uni.chromaticAberration * dist);
+            
+            // For now, we sample 3 rays or just jitter the current one?
+            // To be TRULY stable without multi-ray performance hit, 
+            // we'd need multiple traceRayEXT calls here or in a loop.
+            // Given the current architecture, let's use the jitter 
+            // BUT make it deterministic per sample index to avoid temporal shimmering.
+            // OR better: we can split the throughput per-channel if we want fake CA.
+            // But real CA needs different directions.
+            
+            // Let's use deterministic direction shift based on sample index
+            float angle = (float(smp) / float(numSamples)) * 6.28318;
+            vec2 caShift = vec2(cos(angle), sin(angle)) * U.uni.chromaticAberration * dist;
+            ndc += caShift; 
         }
 
         vec3 origin    = (cam.invView * vec4(0,0,0,1)).xyz;
@@ -144,6 +163,8 @@ void main()
 
         uint maxBounces = uint(max(1, U.uni.maxBounces));
         const uint MIN_BOUNCES = 3u;
+
+        prd.color = vec3(0.0);
 
         for (uint bounce = 0u; bounce < maxBounces; ++bounce)
         {
@@ -158,6 +179,9 @@ void main()
                         HIT_PRIMARY, /*hitStride*/1, MISS_PRIMARY,
                         origin, 0.001, dir, 1e19,
                         SWS_LOC_PRIMARY_RAY);
+
+            sampleColor += prd.color;
+            prd.color = vec3(0.0); // Reset for next bounce
 
             if (prd.done) {
                 sampleColor += prd.throughput;

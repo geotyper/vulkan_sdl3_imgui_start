@@ -246,6 +246,15 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     }
 
     ImGui::Separator();
+    ImGui::Text("Camera Flashlight");
+    if (ImGui::SliderFloat("Point Intensity", &solverParams.pointLightIntensity, 0.0f, 100.0f)) {
+        solverParams.requestRestart = true;
+    }
+    if (ImGui::ColorEdit3("Point Color", &solverParams.pointLightColor.x)) {
+        solverParams.requestRestart = true;
+    }
+
+    ImGui::Separator();
     ImGui::Text("Background Colors");
     if (ImGui::ColorEdit3("Sky Top", &solverParams.backColorTop.x)) {
         solverParams.requestRestart = true;
