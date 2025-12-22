@@ -90,7 +90,10 @@ struct UniformData {
     int paletteID;
     int samplesPerFrame;
     int maxBounces;
-    int _pad1;
+    float colorSaturation;
+
+    float absorptionFactor;
+    int _pad1, _pad2, _pad3;
 };
 
 // shaders helper functions

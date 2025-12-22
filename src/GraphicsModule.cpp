@@ -144,10 +144,19 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     // Check for RT Quality change
     static int lastSamples = 1;
     static int lastBounces = 32;
-    if (solverParams.samplesPerFrame != lastSamples || solverParams.maxBounces != lastBounces) {
+    static float lastSatur   = 1.0f;
+    static float lastAbsorb  = 1.5f;
+
+    if (solverParams.samplesPerFrame != lastSamples || 
+        solverParams.maxBounces != lastBounces ||
+        std::abs(solverParams.colorSaturation - lastSatur) > 0.001f ||
+        std::abs(solverParams.absorptionFactor - lastAbsorb) > 0.001f) 
+    {
         step = 0;
         lastSamples = solverParams.samplesPerFrame;
         lastBounces = solverParams.maxBounces;
+        lastSatur   = solverParams.colorSaturation;
+        lastAbsorb  = solverParams.absorptionFactor;
     }
     // Check for Rebuild
     if (solverParams.requestRebuild) {
@@ -229,7 +238,10 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     float pulse = (sin(currentTime * 2.0f) * 0.5f + 0.5f);
     float currentIntensity = solverParams.lightIntensity + pulse * 0.15f;
     glm::vec3 color = glm::vec3(0.8f, 0.85f, 0.8f);
-    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, solverParams.paletteID, solverParams.samplesPerFrame, solverParams.maxBounces);
+    m_rtxModule->UpdateUniforms(currentTime, color, currentIntensity, step, 
+                                solverParams.paletteID, solverParams.samplesPerFrame, 
+                                solverParams.maxBounces, solverParams.colorSaturation, 
+                                solverParams.absorptionFactor);
 
     // --- RECORDING AND SUBMISSION ---
 

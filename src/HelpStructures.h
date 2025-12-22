@@ -46,6 +46,9 @@ struct SolverParameters {
 
     int samplesPerFrame = 1;
     int maxBounces = 32;
+
+    float colorSaturation = 1.0f;
+    float absorptionFactor = 1.5f;
 };
 
 namespace rtx {

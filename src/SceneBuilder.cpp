@@ -115,20 +115,15 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     wallShapeDef.filter.categoryBits = 0x1;
     wallShapeDef.filter.maskBits = 0xFFFFFFFF;
 
-    float wallThickness = 0.5f;
+    float wallThickness = 1.0f;
     // use existing 'segments' int or cast
     float angleStep = 2.0f * 3.14159f / (float)segments;
     
-    // float distToCenter = outerRadius * cos(pi/6) = outerRadius * 0.866
-    float sideLen = 2.0f * outerRadius * 0.5f; // sin(30) = 0.5. So sideLen = R. Correct.
-
     for(int i=0; i<segments; ++i) {
         float theta = angleStep * (i + 0.5f); // Midpoint angle
         
         // Correct distance to match Visual Hexagon Flat Side
-        // Visual mesh corners are at 'outerRadius'.
-        // Flat side is at dist = outerRadius * cos(30 deg).
-        float flatDist = outerRadius * cosf(3.14159f / segments);
+        float flatDist = outerRadius * cosf(3.14159f / (float)segments);
         
         // Push physics box out by half thickness so inner face aligns with flatDist
         float dist = flatDist + wallThickness * 0.5f;
@@ -137,7 +132,8 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         
         float angle = theta + 3.14159f / 2.0f;
         
-        float hx = (outerRadius * 0.6f); // Overlap generous
+        // Exact half-length of a side: outerRadius * sin(pi/n)
+        float hx = outerRadius * sinf(3.14159f / (float)segments) + 0.2f; // Overlap for corner closure
         float hy = wallThickness * 0.5f;
         
         // Use angle directly (Box2D 3.0 API variant)

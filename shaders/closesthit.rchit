@@ -115,6 +115,11 @@ void main()
         }
     }  
     
+    // Apply Saturation Control
+    vec3 grayscale = vec3(dot(baseColor, vec3(0.2126, 0.7152, 0.0722)));
+    baseColor = mix(grayscale, baseColor, U.uni.colorSaturation);
+    baseColor = clamp(baseColor, 0.0, 1.0);
+    
     uint prim   = gl_PrimitiveID;
 
     uvec3 tri = uvec3(
@@ -202,7 +207,7 @@ void main()
     if (!useReflect) {
         // если этот сегмент луч шёл в стекле — поглощаем
         if (prd.inMedium) {
-            vec3 sigmaA = (vec3(1.0) - baseColor) * 1.5; // Slightly reduced strength
+            vec3 sigmaA = (vec3(1.0) - baseColor) * U.uni.absorptionFactor;
 
             float dist  = gl_HitTEXT;             // длина текущего сегмента
             prd.throughput *= exp(-sigmaA * dist);

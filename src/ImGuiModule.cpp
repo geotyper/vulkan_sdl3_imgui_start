@@ -212,6 +212,11 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     ImGui::SliderInt("Max Bounces", &solverParams.maxBounces, 1, 64);
     
     ImGui::Separator();
+    ImGui::Text("Color Options");
+    ImGui::SliderFloat("Color Saturation", &solverParams.colorSaturation, 0.0f, 2.0f);
+    ImGui::SliderFloat("Base Color Absorption", &solverParams.absorptionFactor, 0.1f, 5.0f, "%.1f");
+    
+    ImGui::Separator();
     ImGui::Text("Animation Controls");
     
     // Play/Pause Button
