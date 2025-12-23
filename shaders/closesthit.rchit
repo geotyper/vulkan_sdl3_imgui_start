@@ -205,9 +205,8 @@ void main()
     float ior = U.uni.iorParameter;
     
     // --- Dispersion Implementation ---
-    // Shift IOR based on random seed for this sample to simulate spectral separation
     if (U.uni.dispersion > 0.0001) {
-        float spectralShift = rnd(prd.seed) * 2.0 - 1.0; // [-1, 1]
+        float spectralShift = rnd(prd.seed) * 2.0 - 1.0; 
         ior += spectralShift * U.uni.dispersion;
     }
     
@@ -218,29 +217,28 @@ void main()
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
     
-    // --- Internal Reflectance Control ---
-    // If inside, we can scale the importance of reflections vs transmissions
     if (!frontFace) {
         Fr *= U.uni.internalReflectance;
     }
 
+    // --- Refraction & Reflection Logic ---
+    float r2_refl = U.uni.reflectionRoughness * U.uni.reflectionRoughness;
+    float r2_refr = U.uni.refractionRoughness  * U.uni.refractionRoughness;
+    
     // направления
     vec3 R = reflect(V, N);
+    vec3 T = refract(V, N, eta);   // при TIR вернёт 0
     
-    // Apply Reflection Roughness
-    if (U.uni.reflectionRoughness > 0.0001) {
-        vec3 target = cosSampleHemisphere(R, prd.seed);
-        R = normalize(mix(R, target, U.uni.reflectionRoughness));
+    // Apply Reflection Jitter
+    if (r2_refl > 0.0001) {
+        vec3 target = cosSampleHemisphere(R, prd.seed); // Jitter around reflection vector
+        R = normalize(mix(R, target, r2_refl));
     }
     
-    vec3 T = refract(V, N, eta);   // при TIR вернёт 0
-
-    // Apply Refraction Roughness
-    if (dot(T,T) > 0.0 && U.uni.refractionRoughness > 0.0001) {
-        vec3 target = cosSampleHemisphere(T, prd.seed); // This might be wrong, should jitter around T or N?
-        // Better: jitter around T direction
-        vec3 jitter = cosSampleHemisphere(T, prd.seed);
-        T = normalize(mix(T, jitter, U.uni.refractionRoughness));
+    // Apply Refraction Jitter (Frost)
+    if (dot(T,T) > 0.0 && r2_refr > 0.0001) {
+        vec3 target = cosSampleHemisphere(T, prd.seed); // Jitter around refraction vector
+        T = normalize(mix(T, target, r2_refr));
     }
 
     // --- Refraction Bias ---

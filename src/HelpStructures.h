@@ -19,12 +19,12 @@ struct PushConstants {
 
 struct SolverParameters {
     bool drawPolyMesh = false;
-    float discRadius = 0.6f;
+    float layerDiscRadius[5] = {0.6f, 0.6f, 0.6f, 0.6f, 0.6f};
     bool requestRebuild = false;
     float fov = 35.0f;
     float lightIntensity = 3.0f;
     int shapeType = 0; // 0 = Disc, 1 = Poly
-    int numDiscs = 7;
+    int layerNumDiscs[5] = {7, 7, 7, 7, 7};
     int numLayers = 3;
     bool useKaleidoscope = false;
     bool makePyramid = false;

@@ -43,7 +43,6 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     const float baseInradius = 4.0f * params.boundaryScale;
     const float outerRadius = baseInradius / cosf(3.14159f / (float)params.boundarySides);
 
-    const int   numDiscs    = params.numDiscs;
     const int   numLayers   = params.numLayers;
     float containerThickness = params.shapeHeight;
     float layerSpacing = params.layerSpacing;
@@ -159,7 +158,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     shapeDef.friction = 0.0f;
 
     b2Circle circleShape = {0};
-    circleShape.radius = params.discRadius;
+    // radius will be set inside the layer loop
 
     m_discBodies.clear(); // Clear old list (although CleanupPhysics likely did)
     m_bodyInfos.clear();
@@ -181,7 +180,10 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         shapeDef.filter.categoryBits = layerCategory;
         shapeDef.filter.maskBits = layerCategory | boundaryCategory; // Self + Boundary
 
-        for(int i=0; i<numDiscs; ++i) {
+        int numDiscsInLayer = params.layerNumDiscs[layer];
+        float layerRadius = params.layerDiscRadius[layer];
+
+        for(int i=0; i < numDiscsInLayer; ++i) {
             // Random Independent Position
             bodyDef.position = { distPos(rng), distPos(rng) };
             
@@ -226,6 +228,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  assignedMeshID = 0;
                  // We will generate Mesh 0 just ONCE at the end or begin.
                  // Body matches visual (Circle/Cylinder)
+                 circleShape.radius = layerRadius;
                  b2CreateCircleShape(bid, &shapeDef, &circleShape);
                  
             } else if (params.shapeType == 2) {
@@ -257,7 +260,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                 for(auto& o : tetrisOffsets) o -= avgOffset;
 
                 // 1. Create Physics (Multiple Boxes)
-                float blockSize = params.discRadius * 1.5f;
+                float blockSize = layerRadius * 1.5f;
                 b2ShapeDef tetrisShapeDef = shapeDef;
                 tetrisShapeDef.friction = 0.5f; // More grip for tetris
                 
@@ -299,7 +302,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  
                  for(int k=0; k<sides; ++k) {
                      float t = startAngle + 2.0f * 3.14159f * k / sides;
-                     float r = params.discRadius * distVar(polyRng);
+                     float r = layerRadius * distVar(polyRng);
                      
                      // Box2D Points
                      b2Points.push_back({r * cosf(t), r * sinf(t)});
@@ -317,7 +320,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                      b2CreatePolygonShape(bid, &shapeDef, &polyShape);
                  } else {
                      // Fallback
-                     b2Circle circle; circle.center = {0,0}; circle.radius = params.discRadius;
+                     b2Circle circle; circle.center = {0,0}; circle.radius = layerRadius;
                      b2CreateCircleShape(bid, &shapeDef, &circle);
                  }
 
@@ -359,7 +362,8 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
     // --- Shared Disc Mesh Generation (if Mode 0) ---
     if (params.shapeType == 0) {
         SurfaceMesh discMesh;
-        CgalMeshBuilder::buildThickDisc(discMesh, params.discRadius, containerThickness, 24);
+        // Build unit disc (radius 1.0) and scale instances for constant thickness
+        CgalMeshBuilder::buildThickDisc(discMesh, 1.0, containerThickness, 24);
 
         if (params.subdivisionIterations > 0) {
             CgalMeshBuilder::applyCatmullClark(discMesh, params.subdivisionIterations, true);
@@ -374,7 +378,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         for(const auto& info : m_bodyInfos) {
              b2Vec2 pos = b2Body_GetPosition(info.bodyId);
              float yOffset = info.layer * containerThickness;
+             float r = params.layerDiscRadius[info.layer];
              glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
+             M = glm::scale(M, glm::vec3(r, 1.0f, r));
              instances.push_back({M, 0, info.colorID});
         }
         allMeshes.insert(allMeshes.begin(), {v, ind, instances}); // Insert at 0
@@ -536,6 +542,11 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
         glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
         M = glm::rotate(M, -angle, glm::vec3(0,1,0));
         
+        if (params.shapeType == 0) {
+             float r = params.layerDiscRadius[info.layer];
+             M = glm::scale(M, glm::vec3(r, 1.0f, r));
+        }
+
         newInstances.push_back({M, info.meshID, info.colorID});
     }
 
