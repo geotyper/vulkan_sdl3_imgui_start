@@ -1154,15 +1154,15 @@ void GraphicsModule::CaptureScreen(int index) {
     ctx.transferQueue = m_graphicsQueue;
     vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &ctx.physicalDeviceMemoryProperties);
 
-    // Use the High-Quality Storage Image from Ray Tracing Module
-    VkImage source = m_rtxModule->m_storageImage.GetImage();
+    // Use the Tonemapped Display Image from Ray Tracing Module
+    VkImage source = m_rtxModule->m_displayImage.GetImage();
     VkExtent2D extent = m_rtxModule->m_storageImageExtent;
     
     vkDeviceWaitIdle(m_device);
      
      // 1. Create Staging Buffer
-     // RGBA32F is 16 bytes per pixel
-     VkDeviceSize imageSize = extent.width * extent.height * 16;
+     // RGBA8 is 4 bytes per pixel
+     VkDeviceSize imageSize = extent.width * extent.height * 4;
      vulkanhelpers::Buffer stagingBuffer;
      VK_CHECK(stagingBuffer.Create(ctx, imageSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT), "Capture Buffer");
@@ -1181,7 +1181,7 @@ void GraphicsModule::CaptureScreen(int index) {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Begin Cmd");
 
-    // Transition Storage Image (likely GENERAL) to TRANSFER_SRC
+    // Transition Display Image (GENERAL) to TRANSFER_SRC
     vulkanhelpers::ImageBarrier(commandBuffer, source, 
         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 
         { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
@@ -1220,7 +1220,7 @@ void GraphicsModule::CaptureScreen(int index) {
 
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 
-    float* floatData = (float*)stagingBuffer.Map(ctx);
+    uint8_t* pixelData = (uint8_t*)stagingBuffer.Map(ctx);
     
     std::ostringstream oss;
     oss << "captures/image_" << std::setfill('0') << std::setw(4) << index << ".png";
@@ -1229,40 +1229,8 @@ void GraphicsModule::CaptureScreen(int index) {
     struct stat st = {0};
     if (stat("captures", &st) == -1) mkdir("captures", 0700);
     
-    std::vector<uint8_t> pixels;
-    pixels.reserve(extent.width * extent.height * 4);
-
-    auto aces = [](float x) {
-        const float a=2.51f, b=0.03f, c=2.43f, d=0.59f, e=0.14f;
-        return std::max(0.0f, std::min(1.0f, (x*(a*x+b)) / (x*(c*x+d)+e)));
-    };
-
-    for(size_t i=0; i < (size_t)extent.width * extent.height * 4; i+=4) {
-        // Source is RGBA32F (float) - indices are by float, not byte
-        float r = floatData[i + 0];
-        float g = floatData[i + 1];
-        float b = floatData[i + 2];
-
-        // 1. Exposure (approximate what's in shader: -0.75 EV)
-        float exposure = 0.6f; 
-        r *= exposure; g *= exposure; b *= exposure;
-
-        // 2. ACES Tonemap
-        r = aces(r); g = aces(g); b = aces(b);
-
-        // 3. Gamma 2.2
-        r = powf(r, 1.0f/2.2f);
-        g = powf(g, 1.0f/2.2f);
-        b = powf(b, 1.0f/2.2f);
-
-        // 4. To UINT8
-        pixels.push_back((uint8_t)(r * 255.0f));
-        pixels.push_back((uint8_t)(g * 255.0f));
-        pixels.push_back((uint8_t)(b * 255.0f));
-        pixels.push_back(255); // A
-    }
-    
-    stbi_write_png(filename.c_str(), extent.width, extent.height, 4, pixels.data(), extent.width * 4);
+    // Write directly to PNG
+    stbi_write_png(filename.c_str(), extent.width, extent.height, 4, pixelData, extent.width * 4);
     
     stagingBuffer.Unmap(ctx);
     stagingBuffer.Destroy(ctx);    

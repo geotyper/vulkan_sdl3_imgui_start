@@ -13,6 +13,9 @@ uniform accelerationStructureEXT topLevelAS;
 layout(set = SWS_SCENE_AS_SET, binding = SWS_RESULT_IMAGE_BINDING, rgba32f)
 uniform image2D accumImage;
 
+layout(set = SWS_SCENE_AS_SET, binding = SWS_DISPLAY_IMAGE_BINDING, rgba8)
+uniform image2D displayImage;
+
 layout(set = SWS_SCENE_AS_SET, binding = SWS_CAMERA_BINDING)
 uniform CameraUBO { mat4 invView; mat4 invProj; } cam;
 
@@ -229,10 +232,10 @@ void main()
     vec3 mapped_output = apply_full_tonemap(accumulated_hdr);
 
     // 6. Store RAW HDR back for future accumulation, 
-    // BUT we are writing to an image that is also used for display.
-    // If we want HDR accumulation, we MUST store the raw HDR.
-    // The current Vulkan setup copies this image to the swapchain.
     imageStore(accumImage, ivec2(pixel), vec4(accumulated_hdr, 1.0));
+    
+    // 7. Store tonemapped LDR for display and capture
+    imageStore(displayImage, ivec2(pixel), vec4(mapped_output, 1.0));
 
     // NOTE: Because we are now storing raw HDR in an RGBA32F image, 
     // the final copy to the UNORM swapchain will perform a simple 0-1 clamp.

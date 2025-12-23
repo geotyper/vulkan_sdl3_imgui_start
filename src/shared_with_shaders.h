@@ -39,6 +39,7 @@
 
 #define SWS_INSTANCE_DATA_BINDING         5
 #define SWS_UNIFORM_DATA_BINDING          6
+#define SWS_DISPLAY_IMAGE_BINDING         7
 
 // payload-локации (без изменений)
 #define SWS_LOC_PRIMARY_RAY               0

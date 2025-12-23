@@ -130,6 +130,9 @@ void MainLoop::handleEvents(int& step) {
             break;
 
         case SDL_EVENT_MOUSE_MOTION:
+            // Check if ImGui wants to capture mouse
+            if (ImGui::GetIO().WantCaptureMouse) break;
+
             // Right click: fly mode
             if (m_relativeMouseMode) {
                 const bool* ks = SDL_GetKeyboardState(nullptr);
@@ -142,9 +145,6 @@ void MainLoop::handleEvents(int& step) {
             }
             // Left click: orbit mode
             else if (ev.motion.state & SDL_BUTTON_LMASK) {
-                // If ImGui is capturing, don't orbit (but simple check here handles global)
-                // Better: check !ImGui::GetIO().WantCaptureMouse
-                
                 const float orbitSens = 0.5f; 
                 m_camera.Orbit(ev.motion.xrel * orbitSens, ev.motion.yrel * orbitSens);
                 step = 0;
@@ -155,6 +155,9 @@ void MainLoop::handleEvents(int& step) {
 }
 
 void MainLoop::update(float deltaTime, int& step) {
+    // If ImGui wants keyboard input, skip camera movement
+    if (ImGui::GetIO().WantCaptureKeyboard) return;
+
     const bool* ks = SDL_GetKeyboardState(nullptr);
     const bool slow = ks[SDL_SCANCODE_LSHIFT] || ks[SDL_SCANCODE_RSHIFT];
     const float slowFactor = slow ? (1.0f / 5.0f) : 1.0f;

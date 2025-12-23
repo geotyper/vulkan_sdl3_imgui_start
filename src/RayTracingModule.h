@@ -171,6 +171,7 @@ private:
 
 public:
     vulkanhelpers::Image m_storageImage;
+    vulkanhelpers::Image m_displayImage; // New: for tonemapped LDR output
     VkExtent2D m_storageImageExtent{};
 
     std::vector<glm::mat4> m_instanceTransforms;

@@ -206,9 +206,12 @@ namespace rtx {
         if (m_storageImage.GetImage()) {
             vkDeviceWaitIdle(device());
             m_storageImage.Destroy(m_context);
+            m_displayImage.Destroy(m_context);
         }
         m_storageImageExtent = newExtent;
         VkExtent3D extent3D = { newExtent.width, newExtent.height, 1 };
+        
+        // 1. High-precision accumulation image (RGBA32F)
         m_storageImage.Create(
             m_context,
             VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, extent3D,
@@ -216,8 +219,17 @@ namespace rtx {
             VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
             );
-        VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, range);
+        m_storageImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+
+        // 2. Final display image (RGBA8 UNORM - tonemapped/gamma corrected)
+        m_displayImage.Create(
+            m_context,
+            VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, extent3D,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+            );
+        m_displayImage.CreateImageView(m_context, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 
         // CORRECTED: Call the single, unified update function.
         UpdateDescriptorSets();
@@ -378,11 +390,14 @@ namespace rtx {
                           extent.width, extent.height,
                           1);
 
-        // 4. Transition storage image for transfer and target image for receiving
-        // 3. Барьеры перед копированием:
-        //    - Ждем, пока трассировка закончит писать в storage-image, и готовим его к чтению (копированию ИЗ него).
-        //    - Готовим swapchain-image к записи (копированию В него).
+        // 4. Transition images for transfer
         vulkanhelpers::ImageBarrier(cmd, m_storageImage.GetImage(),
+                                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, 
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+        vulkanhelpers::ImageBarrier(cmd, m_displayImage.GetImage(),
                                     VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                     subresourceRange,
                                     VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -394,8 +409,7 @@ namespace rtx {
                                     VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                     0, VK_ACCESS_TRANSFER_WRITE_BIT);
 
-        // 5. Blit from storage image to target (swapchain) image
-        // Blit is used instead of Copy because it handles format conversion (RGBA32F -> UNORM)
+        // 5. Blit from display image (LDR, tonemapped) to target (swapchain) image
         VkImageBlit blitRegion{};
         blitRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
         blitRegion.srcOffsets[0] = { 0, 0, 0 };
@@ -405,9 +419,16 @@ namespace rtx {
         blitRegion.dstOffsets[1] = { (int32_t)extent.width, (int32_t)extent.height, 1 };
 
         vkCmdBlitImage(cmd, 
-                       m_storageImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       m_displayImage.GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        targetImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
                        1, &blitRegion, VK_FILTER_NEAREST);
+                       
+        // Transition display image back to GENERAL
+        vulkanhelpers::ImageBarrier(cmd, m_displayImage.GetImage(),
+                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                                    subresourceRange,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                                    VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 
         // 6. Transition target image for presentation
         // 5. Финальный барьер: готовим swapchain-image к показу на экране.
@@ -471,15 +492,6 @@ namespace rtx {
         cameraBinding.descriptorCount = 1;
         cameraBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-
-        /* UniformData UBO (time, etc.) - for raygen and hit shaders */
-        VkDescriptorSetLayoutBinding uniformDataBinding{};
-        uniformDataBinding.binding         = SWS_UNIFORM_DATA_BINDING; // Use new binding point
-        uniformDataBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uniformDataBinding.descriptorCount = 1;
-        uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
-
-
         const uint32_t MAX_MESHES = 200;
 
         /* 3 ─ Vertex-buffer (as SSBO) – только для CHIT ------------------------ */
@@ -490,16 +502,30 @@ namespace rtx {
         verticesBinding.stageFlags      = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         /* 4 ─ Index-buffer (as SSBO) – только для CHIT ------------------------- */
-
         VkDescriptorSetLayoutBinding indicesBinding{};
         indicesBinding.binding          = SWS_INDICES_BINDING;
         indicesBinding.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         indicesBinding.descriptorCount  = MAX_MESHES;
         indicesBinding.stageFlags       = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+
+        /* 5 - UniformData UBO ---------------------------------------------------- */
+        VkDescriptorSetLayoutBinding uniformDataBinding{};
+        uniformDataBinding.binding         = SWS_UNIFORM_DATA_BINDING;
+        uniformDataBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniformDataBinding.descriptorCount = 1;
+        uniformDataBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
+
+        /* 6 - Display Image (tonemapped output) ---------------------------------- */
+        VkDescriptorSetLayoutBinding displayImageBinding{};
+        displayImageBinding.binding         = SWS_DISPLAY_IMAGE_BINDING;
+        displayImageBinding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        displayImageBinding.descriptorCount = 1;
+        displayImageBinding.stageFlags      = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
         const std::array bindings{
             tlasBinding, imageBinding, cameraBinding,
-            verticesBinding, indicesBinding, uniformDataBinding
+            verticesBinding, indicesBinding, uniformDataBinding, displayImageBinding
         };
 
         VkDescriptorSetLayoutCreateInfo info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
@@ -514,9 +540,9 @@ namespace rtx {
     void RayTracingModule::CreateDescriptorPool() {
         std::vector<VkDescriptorPoolSize> poolSizes = {
             { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,    1 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,                 1 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,                 2 }, // Increased to 2 (accum + display)
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                2 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                2* SWS_NUM_GEOMETRY_BUFFERS }  //2?
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                2* SWS_NUM_GEOMETRY_BUFFERS }
         };
         VkDescriptorPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
@@ -717,8 +743,22 @@ namespace rtx {
         uniformDataBufferInfo.offset = 0;
         uniformDataBufferInfo.range  = VK_WHOLE_SIZE;
 
+        // Display Image (Binding 7)
+        VkDescriptorImageInfo displayImageInfo{};
+        displayImageInfo.imageView = m_displayImage.GetImageView();
+        displayImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
         // --- Create a list of write operations ---
         std::vector<VkWriteDescriptorSet> writes;
+
+
+        VkWriteDescriptorSet displayImageWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        displayImageWrite.dstSet          = m_descriptorSet;
+        displayImageWrite.dstBinding      = SWS_DISPLAY_IMAGE_BINDING;
+        displayImageWrite.descriptorCount = 1;
+        displayImageWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        displayImageWrite.pImageInfo      = &displayImageInfo;
+        writes.push_back(displayImageWrite);
 
         // Write for TLAS
         VkWriteDescriptorSet tlasWrite{};
