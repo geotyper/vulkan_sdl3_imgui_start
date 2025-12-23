@@ -56,6 +56,7 @@ struct SolverParameters {
     bool solidTetris = true;
     bool randomRotation = true;
     float layerStagger = 0.0f;
+    bool showBoundary = true;
 
     float iorParameter = 1.25f;
     float lensDistortion = 0.0f;

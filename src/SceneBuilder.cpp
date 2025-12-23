@@ -402,7 +402,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         // Initial transform
         glm::mat4 M = glm::mat4(1.0f); 
         // Color ID 7 (White/Black)
-        dummyInst.push_back({M, 0, 7}); 
+        if (params.showBoundary) {
+            dummyInst.push_back({M, 0, 7}); 
+        }
         
         allMeshes.push_back({v, ind, dummyInst});
         
@@ -513,10 +515,16 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
     std::vector<rtx::InstanceData> newInstances;
     newInstances.reserve(m_bodyInfos.size() + 1);
 
-    // Discs
+    // Discs and Boundary
     for (const auto& info : m_bodyInfos) {
         if (!b2Body_IsValid(info.bodyId)) continue;
         
+        // --- NEW: Toggle Visibility for Boundary ---
+        bool isBoundary = (info.bodyId.index1 == m_boundaryBody.index1 && info.bodyId.world0 == m_boundaryBody.world0);
+        if (isBoundary && !params.showBoundary) {
+             continue; // Skip rendering boundary parts
+        }
+
         // Safety Check
         if (info.meshID >= m_loadedMeshCount) continue;
         

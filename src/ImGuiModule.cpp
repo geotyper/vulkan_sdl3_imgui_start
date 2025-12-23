@@ -195,6 +195,9 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     if (ImGui::SliderFloat("Boundary Scale", &solverParams.boundaryScale, 0.5f, 2.5f)) {
         solverParams.requestRebuild = true;
     }
+    if (ImGui::Checkbox("Show Boundary", &solverParams.showBoundary)) {
+        solverParams.requestRebuild = true;
+    }
 
     if (ImGui::SliderFloat("Shape Height", &solverParams.shapeHeight, 0.05f, 1.0f)) {
         solverParams.requestRebuild = true;
