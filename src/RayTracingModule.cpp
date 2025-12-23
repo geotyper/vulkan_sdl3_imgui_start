@@ -92,7 +92,7 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, float refrRough, float reflRough, float disp, float intRefl, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos) {
         UniformData ubo;
         ubo.uTime = time;
         ubo._pad00=0; ubo._pad01=0; ubo._pad02=0;
@@ -123,6 +123,10 @@ namespace rtx {
         ubo.lensDistortion = lens;
         ubo.refractionBias = bias;
         ubo.chromaticAberration = chromatic;
+        ubo.refractionRoughness = refrRough;
+        ubo.reflectionRoughness = reflRough;
+        ubo.dispersion = disp;
+        ubo.internalReflectance = intRefl;
         ubo._pad0 = 0.0f;
         ubo._pad1 = 0.0f;
         ubo._pad2 = 0.0f;

@@ -233,19 +233,32 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
         solverParams.requestRebuild = true;
     }
 
-    ImGui::Separator();
-    ImGui::Text("Optics & Depth Effects");
-    if (ImGui::SliderFloat("Index of Refraction", &solverParams.iorParameter, 1.0f, 2.5f)) {
-        solverParams.requestRestart = true;
-    }
-    if (ImGui::SliderFloat("Lens Distortion", &solverParams.lensDistortion, -1.0f, 1.0f)) {
-        solverParams.requestRestart = true;
-    }
-    if (ImGui::SliderFloat("Refraction Depth Bias", &solverParams.refractionBias, -1.0f, 1.0f)) {
-        solverParams.requestRestart = true;
-    }
-    if (ImGui::SliderFloat("Chromatic Aberration", &solverParams.chromaticAberration, 0.0f, 0.1f)) {
-        solverParams.requestRestart = true;
+    // --- Optics & Depth Effects ---
+    if (ImGui::CollapsingHeader("Optics & Depth Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::SliderFloat("Index of Refraction", &solverParams.iorParameter, 1.0f, 5.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Refraction Roughness", &solverParams.refractionRoughness, 0.0f, 1.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Reflection Roughness", &solverParams.reflectionRoughness, 0.0f, 1.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Dispersion", &solverParams.dispersion, 0.0f, 0.1f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Internal Reflectance", &solverParams.internalReflectance, 0.0f, 1.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Lens Distortion", &solverParams.lensDistortion, -1.0f, 1.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Refraction Depth Bias", &solverParams.refractionBias, -1.0f, 1.0f)) {
+            solverParams.requestRestart = true;
+        }
+        if (ImGui::SliderFloat("Chromatic Aberration", &solverParams.chromaticAberration, 0.0f, 0.5f)) {
+            solverParams.requestRestart = true;
+        }
     }
 
     ImGui::Separator();
@@ -273,8 +286,8 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     
     ImGui::Separator();
     ImGui::Text("Color Options");
-    ImGui::SliderFloat("Color Saturation", &solverParams.colorSaturation, 0.0f, 2.0f);
-    ImGui::SliderFloat("Base Color Absorption", &solverParams.absorptionFactor, 0.1f, 5.0f, "%.1f");
+    ImGui::SliderFloat("Saturation", &solverParams.colorSaturation, 0.0f, 2.0f);
+    ImGui::SliderFloat("Absorp. Factor", &solverParams.absorptionFactor, 0.1f, 50.0f, "%.1f");
     
     ImGui::Separator();
     ImGui::Text("Animation Controls");

@@ -36,6 +36,21 @@ float fresnelSchlick(float cosTheta, float F0){
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
+vec3 getOrthoVector(vec3 n) {
+    vec3 v = abs(n.z) < 0.999 ? vec3(0,0,1) : vec3(1,0,0);
+    return normalize(cross(n, v));
+}
+
+vec3 cosSampleHemisphere(vec3 n, inout uint seed) {
+    float u1 = rnd(seed);
+    float u2 = rnd(seed);
+    float r = sqrt(u1);
+    float phi = 2.0 * 3.14159265 * u2;
+    vec3 tangent = getOrthoVector(n);
+    vec3 bitangent = cross(n, tangent);
+    return normalize(tangent * (r * cos(phi)) + bitangent * (r * sin(phi)) + n * sqrt(1.0 - u1));
+}
+
 layout(std140, set = SWS_SCENE_AS_SET, binding = SWS_UNIFORM_DATA_BINDING)
 uniform UniformBlock { UniformData uni; } U;
 
@@ -188,16 +203,45 @@ void main()
     // --- Glass Logic (Existing) ---
     // отношение показателей преломления
     float ior = U.uni.iorParameter;
+    
+    // --- Dispersion Implementation ---
+    // Shift IOR based on random seed for this sample to simulate spectral separation
+    if (U.uni.dispersion > 0.0001) {
+        float spectralShift = rnd(prd.seed) * 2.0 - 1.0; // [-1, 1]
+        ior += spectralShift * U.uni.dispersion;
+    }
+    
     float eta = frontFace ? (1.0 / ior) : ior;
 
     // Френель
     float F0   = pow((ior - 1.0) / (ior + 1.0), 2.0);
     float cosI = clamp(dot(N, -V), 0.0, 1.0);
     float Fr   = fresnelSchlick(cosI, F0);
+    
+    // --- Internal Reflectance Control ---
+    // If inside, we can scale the importance of reflections vs transmissions
+    if (!frontFace) {
+        Fr *= U.uni.internalReflectance;
+    }
 
     // направления
     vec3 R = reflect(V, N);
+    
+    // Apply Reflection Roughness
+    if (U.uni.reflectionRoughness > 0.0001) {
+        vec3 target = cosSampleHemisphere(R, prd.seed);
+        R = normalize(mix(R, target, U.uni.reflectionRoughness));
+    }
+    
     vec3 T = refract(V, N, eta);   // при TIR вернёт 0
+
+    // Apply Refraction Roughness
+    if (dot(T,T) > 0.0 && U.uni.refractionRoughness > 0.0001) {
+        vec3 target = cosSampleHemisphere(T, prd.seed); // This might be wrong, should jitter around T or N?
+        // Better: jitter around T direction
+        vec3 jitter = cosSampleHemisphere(T, prd.seed);
+        T = normalize(mix(T, jitter, U.uni.refractionRoughness));
+    }
 
     // --- Refraction Bias ---
     // Mix refracted ray with incoming direction to "sink" or "flatten" the depth

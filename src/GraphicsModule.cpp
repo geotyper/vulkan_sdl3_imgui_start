@@ -155,6 +155,10 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
     static glm::vec3 lastPointColor = glm::vec3(1.0f);
     static glm::vec3 lastBackTop = glm::vec3(0.6f, 0.75f, 1.0f);
     static glm::vec3 lastBackBot = glm::vec3(1.0f, 0.9f, 0.85f);
+    static float lastRefrRough = 0.0f;
+    static float lastReflRough = 0.0f;
+    static float lastDisp = 0.0f;
+    static float lastIntRefl = 1.0f;
 
     if (solverParams.samplesPerFrame != lastSamples || 
         solverParams.maxBounces != lastBounces ||
@@ -168,6 +172,10 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
         glm::distance(solverParams.pointLightColor, lastPointColor) > 0.001f ||
         glm::distance(solverParams.backColorTop, lastBackTop) > 0.001f ||
         glm::distance(solverParams.backColorBot, lastBackBot) > 0.001f ||
+        std::abs(solverParams.refractionRoughness - lastRefrRough) > 0.0001f ||
+        std::abs(solverParams.reflectionRoughness - lastReflRough) > 0.0001f ||
+        std::abs(solverParams.dispersion - lastDisp) > 0.0001f ||
+        std::abs(solverParams.internalReflectance - lastIntRefl) > 0.0001f ||
         solverParams.requestRestart) 
     {
         step = 0;
@@ -184,6 +192,10 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
         lastPointColor = solverParams.pointLightColor;
         lastBackTop = solverParams.backColorTop;
         lastBackBot = solverParams.backColorBot;
+        lastRefrRough = solverParams.refractionRoughness;
+        lastReflRough = solverParams.reflectionRoughness;
+        lastDisp = solverParams.dispersion;
+        lastIntRefl = solverParams.internalReflectance;
     }
     // Check for Rebuild
     if (solverParams.requestRebuild) {
@@ -271,6 +283,8 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
                                 solverParams.absorptionFactor,
                                 solverParams.iorParameter, solverParams.lensDistortion, solverParams.refractionBias,
                                 solverParams.chromaticAberration,
+                                solverParams.refractionRoughness, solverParams.reflectionRoughness,
+                                solverParams.dispersion, solverParams.internalReflectance,
                                 solverParams.backColorTop, solverParams.backColorBot,
                                 solverParams.pointLightIntensity, solverParams.pointLightColor, cam.GetPosition());
 

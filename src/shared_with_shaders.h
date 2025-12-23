@@ -98,6 +98,10 @@ struct UniformData {
     float lensDistortion;
     float refractionBias;
     float chromaticAberration;
+    float refractionRoughness;
+    float reflectionRoughness;
+    float dispersion;
+    float internalReflectance;
     float _pad0;
     float _pad1;
     float _pad2;
