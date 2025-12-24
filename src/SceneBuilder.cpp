@@ -291,7 +291,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                 float yOffset = layer * layerSpacing;
                 glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
                 dummyInst.push_back({M, 0, cId});
-                allMeshes.push_back({v, ind, dummyInst});
+                if (!v.empty() && !ind.empty()) {
+                    allMeshes.push_back({v, ind, dummyInst});
+                }
                 
                 assignedMeshID = meshCounter++;
             } else if (params.shapeType == 3) {
@@ -344,7 +346,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                 float yOffset = layer * layerSpacing;
                 glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
                 dummyInst.push_back({M, 0, cId});
-                allMeshes.push_back({v, ind, dummyInst});
+                if (!v.empty() && !ind.empty()) {
+                    allMeshes.push_back({v, ind, dummyInst});
+                }
                 
                 assignedMeshID = meshCounter++;
             } else {            
@@ -410,7 +414,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                  glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
                  
                  dummyInst.push_back({M, 0, cId});
-                 allMeshes.push_back({v, ind, dummyInst});
+                  if (!v.empty() && !ind.empty()) {
+                      allMeshes.push_back({v, ind, dummyInst});
+                  }
                  
                  assignedMeshID = meshCounter;
                  meshCounter++; // Unique ID per poly
@@ -478,7 +484,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
             dummyInst.push_back({M, 0, 7}); 
         }
         
-        allMeshes.push_back({v, ind, dummyInst});
+        if (!v.empty() && !ind.empty()) {
+            allMeshes.push_back({v, ind, dummyInst});
+        }
         
         // Add to m_bodyInfos so it gets updated
         // Use layer = 0, colorID = 7

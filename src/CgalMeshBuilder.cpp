@@ -2449,6 +2449,21 @@ void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
         faces.push_back(f);
     }
 
+    // Map to reuse vertices at the same position (welding)
+    std::map<Point_3, SurfaceMesh::Vertex_index> vMap;
+    // Pre-populate with existing vertices
+    for (auto v : sm.vertices()) {
+        vMap[sm.point(v)] = v;
+    }
+
+    auto getOrAddV = [&](const Point_3& p) {
+        auto it = vMap.find(p);
+        if (it != vMap.end()) return it->second;
+        auto v = sm.add_vertex(p);
+        vMap[p] = v;
+        return v;
+    };
+
     for (const auto& f : faces) {
         if (sm.is_removed(f)) continue;
 
@@ -2469,14 +2484,8 @@ void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
             const double v = (ny == 0) ? 0.0 : static_cast<double>(j) / ny;
             for (int i = 0; i <= nx; ++i) {
                 const double u = (nx == 0) ? 0.0 : static_cast<double>(i) / nx;
-
-                if (j == 0  && i == 0)  { G[j][i] = ring[0]; continue; }
-                if (j == 0  && i == nx) { G[j][i] = ring[1]; continue; }
-                if (j == ny && i == nx) { G[j][i] = ring[2]; continue; }
-                if (j == ny && i == 0)  { G[j][i] = ring[3]; continue; }
-
                 const Point_3 P = bilerp(p00, p10, p11, p01, u, v);
-                G[j][i] = sm.add_vertex(P);
+                G[j][i] = getOrAddV(P);
             }
         }
 
@@ -2498,10 +2507,6 @@ void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
             for(auto nf : new_faces) sm.remove_face(nf);
         }
     }
-
-    // "Свариваем" дублирующиеся вершины, созданные на ребрах.
-    // Это восстанавливает топологию и предотвращает появление дыр.
-    PMP::weld_vertices(sm);
 
     sm.collect_garbage();
 }
