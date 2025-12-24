@@ -286,7 +286,7 @@ void GraphicsModule::RenderFrame(Camera& cam, float currentTime, float dt, int& 
                                 solverParams.refractionRoughness, solverParams.reflectionRoughness,
                                 solverParams.dispersion, solverParams.internalReflectance,
                                 solverParams.backColorTop, solverParams.backColorBot,
-                                solverParams.pointLightIntensity, solverParams.pointLightColor, cam.GetPosition());
+                                solverParams.pointLightIntensity, solverParams.pointLightColor, cam.GetPosition(), solverParams.backplaneColor);
 
     // --- RECORDING AND SUBMISSION ---
 

@@ -115,7 +115,7 @@ public:
     void LoadFromSingleMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<glm::mat4>& transforms);
 
     void LoadFromMultipleMeshes(const std::vector<rtx::MeshLoadData> &meshData);
-    void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, float refrRough, float reflRough, float disp, float intRefl, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos);
+    void UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, float refrRough, float reflRough, float disp, float intRefl, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos, const glm::vec3& backplaneColor);
     void AnimateInstances(float time, bool orbitAroundWorldZ);
     void UpdateInstances(const std::vector<InstanceData>& newInstances);
 

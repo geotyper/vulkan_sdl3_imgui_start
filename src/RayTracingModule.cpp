@@ -92,7 +92,7 @@ namespace rtx {
             );
     }
 
-    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, float refrRough, float reflRough, float disp, float intRefl, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos) {
+    void RayTracingModule::UpdateUniforms(float time, const glm::vec3& lightColor, float lightIntensity, int step, int paletteID, int samplesPerFrame, int maxBounces, float saturation, float absorption, float ior, float lens, float bias, float chromatic, float refrRough, float reflRough, float disp, float intRefl, const glm::vec3& backTop, const glm::vec3& backBot, float pointIntensity, const glm::vec3& pointColor, const glm::vec3& lightPos, const glm::vec3& backplaneColor) {
         UniformData ubo;
         ubo.uTime = time;
         ubo._pad00=0; ubo._pad01=0; ubo._pad02=0;
@@ -134,6 +134,7 @@ namespace rtx {
         ubo.pointLightColor = glm::vec4(pointColor, 1.0f);
         ubo.backColorTop = glm::vec4(backTop, 1.0f);
         ubo.backColorBot = glm::vec4(backBot, 1.0f);
+        ubo.backplaneColor = glm::vec4(backplaneColor, 1.0f);
 
         m_uniformDataUBO.UploadData(m_context, &ubo, sizeof(UniformData));
     }

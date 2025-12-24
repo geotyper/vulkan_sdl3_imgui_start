@@ -200,6 +200,48 @@ void main()
        return;
     }
 
+    // Backplane Material (ID 98)
+    if (colorId == 98) {
+        // Matte material (Lambertian Diffuse)
+        baseColor = U.uni.backplaneColor.rgb;
+        
+        // Use shading normal for consistent direction
+        vec3 target = cosSampleHemisphere(N, prd.seed);
+        
+        prd.throughput *= baseColor;
+        prd.rayOrigin = Pw + target * SURF_EPS;
+        prd.rayDir = target;
+        
+        // Matte surfaces don't reflect environment sharply, but we continue tracing for GI
+        
+        // Add direct lighting (Camera Flashlight) here too? 
+        // Yes, standard lighting model below will handle it if we didn't return early.
+        // But for path tracing we want to bounce.
+        // The code below adds direct lighting to prd.color. 
+        // If we return here, we miss direct lighting!
+        // We should NOT return early if we want lighting.
+        // BUT, the glass logic below does complex Fresnel/Refraction. We want to SKIP that.
+        
+        // So:
+        // 1. Calculate lighting/shadows (Camera Light)
+        vec3 lightPos = U.uni.lightPos.xyz;
+        float intensity = U.uni.lightPos.w;
+        vec3 lp_to_p = lightPos - Pw;
+        float dist = length(lp_to_p);
+        vec3 L = normalize(lp_to_p);
+        float atten = intensity / (dist * dist + 1.0);
+        float diff = max(dot(N, L), 0.0);
+        
+        vec3 lightColor = pow(U.uni.pointLightColor.rgb, vec3(2.2));
+        vec3 directLighting = (baseColor * diff) * lightColor * atten;
+        prd.color += directLighting * prd.throughput;
+
+        // 2. Bounce for GI
+        prd.done = false;
+        
+        return; // We handled lighting + bounce, so skip Glass logic
+    }
+
     // --- Glass Logic (Existing) ---
     // отношение показателей преломления
     float ior = U.uni.iorParameter;

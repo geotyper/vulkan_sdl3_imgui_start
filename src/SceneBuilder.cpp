@@ -524,18 +524,37 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         mInst.push_back({glm::mat4(1.0f), 0, 99}); 
         
         // The previous logic for LoadFromMultipleMeshes assigns meshIDs sequentially.
-        // If we added disc mesh first (ID 0), this will be ID 1.
         allMeshes.push_back({mv, mi, mInst});
+    }
+
+    // --- Backplane Mesh (ID 98 implicitly via instance logic, but let's just make it the last mesh) ---
+    // We create a simple huge quad on XZ plane at Y=0.
+    {
+        std::vector<Vertex> bv;
+        std::vector<uint32_t> bi;
+        
+        float sz = 100.0f; // Huge size
+        // 4 vertices (flat on XZ)
+        bv.push_back({{ -sz, 0, -sz, 1}, {0, 1, 0, 0}, {1,1,1,1}});
+        bv.push_back({{  sz, 0, -sz, 1}, {0, 1, 0, 0}, {1,1,1,1}});
+        bv.push_back({{  sz, 0,  sz, 1}, {0, 1, 0, 0}, {1,1,1,1}});
+        bv.push_back({{ -sz, 0,  sz, 1}, {0, 1, 0, 0}, {1,1,1,1}});
+        
+        bi = {0, 2, 1, 0, 3, 2};
+        
+        // No initial instance (handled in UpdatePhysics)
+        std::vector<rtx::InstanceData> dummyInst;
+        allMeshes.push_back({bv, bi, dummyInst});
     }
 
     // Load geometry
     m_loadedMeshCount = (uint32_t)allMeshes.size();
     rtxModule->LoadFromMultipleMeshes(allMeshes);
 
-    if (!params.animate) {
-        // If not animating, we don't need the world anymore
-        CleanupPhysics();
-    }
+    // if (!params.animate) {
+    //    // If not animating, we don't need the world anymore
+    //    CleanupPhysics();
+    // }
 }
 
 
@@ -555,7 +574,7 @@ void SceneBuilder::RestartSimulation() {
 }
 
 void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, const SolverParameters& params) {
-    if (!m_physicsInitialized || !rtxModule || !params.animate) return;
+    if (!m_physicsInitialized || !rtxModule) return;
     if (!b2World_IsValid(m_worldId)) return;
 
     // Handle Restart Request
@@ -569,7 +588,8 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
     }
 
     // Handle Pause or Manual Step
-    if (!params.paused || params.triggerStep) {
+    // Only step if Animate is ON, AND (Not Paused OR Manual Step Triggered)
+    if (params.animate && (!params.paused || params.triggerStep)) {
         // 1. Step Physics
         if (params.triggerStep) {
             // Manual Single Step
@@ -577,10 +597,10 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
         } else {
             // Continuous Run
             m_accumTime += dt;
-        const float stepSize = 1.0f / 60.0f;
-        while (m_accumTime >= stepSize) {
-            b2World_Step(m_worldId, stepSize, 12); // Increased iterations for stability
-            m_accumTime -= stepSize;
+            const float stepSize = 1.0f / 60.0f;
+            while (m_accumTime >= stepSize) {
+                b2World_Step(m_worldId, stepSize, 12); // Increased iterations for stability
+                m_accumTime -= stepSize;
             
             // 2. Animate Boundary (Rotate Shape)
             // Kinematic boundary rotates automatically due to angularVelocity
@@ -626,17 +646,41 @@ void SceneBuilder::UpdatePhysics(float dt, rtx::RayTracingModule* rtxModule, con
 
     // Mirrors
     if (params.useKaleidoscope) {
-         // Mirror is the last mesh added
-         // We can infer its ID: it's equal to the number of dynamic meshes.
-         // Or just: (total meshes loaded - 1). 
+         // Mirror is the last mesh added (BEFORE backplane, if backplane exists)
+         // We need to be careful with IDs.
+         // Let's count back.
+         // Backplane is ALWAYS added as the very last mesh now (see BuildScene).
+         // So Mirror is (Total - 2)
+         // But wait, mirror is conditional in BuildScene.
          
-         uint32_t mirrorMeshID = 0;
-         if (params.shapeType == 0) mirrorMeshID = 1; // Disc (0) + Mirror (1)
-         else mirrorMeshID = (uint32_t)m_bodyInfos.size(); // N Polys + Mirror
+         // Let's rely on BuildScene structure: 
+         // 1. Dynamic Meshes
+         // 2. Boundary Mesh (optional/conditional?) -> No, typically added. 
+         //    Wait, Boundary is added conditionally if params.showBoundary?
+         //    No, mesh is always added, instance is conditional.
          
+         // Actually, let's look at BuildScene again.
+         // allMeshes <-- Discs/Polys
+         // allMeshes <-- Boundary
+         // allMeshes <-- Mirror (Conditional!)
+         // allMeshes <-- Backplane (ALWAYS added now)
+         
+         // So:
+         // Backplane ID = m_loadedMeshCount - 1
+         // Mirror ID = m_loadedMeshCount - 2 (if params.useKaleidoscope)
+         
+         uint32_t mirrorMeshID = m_loadedMeshCount - 2; 
          if (mirrorMeshID < m_loadedMeshCount) {
               newInstances.push_back({glm::mat4(1.0f), mirrorMeshID, 99});
          }
+    }
+    
+    // Backplane Instance
+    if (params.showBackplane) {
+        uint32_t backplaneID = m_loadedMeshCount - 1;
+        // Position at Y = backplaneHeight
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(0, params.backplaneHeight, 0));
+        newInstances.push_back({M, backplaneID, 98}); // 98 = Backplane Material ID
     }
 
     rtxModule->UpdateInstances(newInstances);

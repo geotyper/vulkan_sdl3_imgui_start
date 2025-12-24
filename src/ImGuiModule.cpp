@@ -322,6 +322,20 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     } else {
         if (ImGui::Button("Pause Physics")) solverParams.paused = true;
     }
+
+    ImGui::Separator();
+    ImGui::Text("Backplane (Floor)");
+    if (ImGui::Checkbox("Enable Backplane", &solverParams.showBackplane)) {
+        // We can just rely on UpdatePhysics for non-structural changes, but visibility toggle 
+        // effectively adds/removes an instance so we might want to update instance buffer.
+        // Luckily UpdatePhysics does exactly that every frame.
+    }
+    if (solverParams.showBackplane) {
+        if (ImGui::SliderFloat("Depth (Y)", &solverParams.backplaneHeight, -10.0f, 5.0f)) {
+            // Updated in UpdatePhysics
+        }
+        ImGui::ColorEdit3("Color", &solverParams.backplaneColor.x);
+    }
     
     ImGui::SameLine();
     

@@ -71,6 +71,9 @@ struct SolverParameters {
     float pointLightIntensity = 10.0f;
     glm::vec3 pointLightColor = glm::vec3(1.0f);
     glm::vec3 backColorTop = glm::vec3(0.6f, 0.75f, 1.0f);
+    glm::vec3 backplaneColor = glm::vec3(0.2f, 0.2f, 0.2f); // Default dark grey
+    float backplaneHeight = -1.0f;
+    bool showBackplane = false;
     glm::vec3 backColorBot = glm::vec3(1.0f, 0.9f, 0.85f);
 };
 

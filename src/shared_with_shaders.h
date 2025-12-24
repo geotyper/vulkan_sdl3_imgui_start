@@ -108,6 +108,7 @@ struct UniformData {
     vec4  pointLightColor; // w = unused
     vec4  backColorTop;
     vec4  backColorBot;
+    vec4  backplaneColor; // w = unused
 };
 
 // shaders helper functions
