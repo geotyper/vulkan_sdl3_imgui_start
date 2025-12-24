@@ -2432,6 +2432,13 @@ void CgalMeshBuilder::applyCatmullClark(SurfaceMesh& sm, int iterations , bool k
         );
 }
 
+void CgalMeshBuilder::applyLinearSubdivision(SurfaceMesh& sm, int iterations)
+{
+    for (int i = 0; i < iterations; ++i) {
+        subdivideQuadFacesGrid(sm, 2, 2);
+    }
+}
+
 void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
 {
     if (nx <= 1 && ny <= 1) return;
@@ -2473,19 +2480,28 @@ void CgalMeshBuilder::subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny)
             }
         }
 
-        sm.remove_face(f);
-
+        // Add sub-faces (only remove original if we can successfully add quads)
+        std::vector<SM::Face_index> new_faces;
+        bool all_ok = true;
         for (int j = 0; j < ny; ++j) {
             for (int i = 0; i < nx; ++i) {
-                sm.add_face(G[j][i], G[j][i + 1], G[j + 1][i + 1], G[j + 1][i]);
+                auto nf = sm.add_face(G[j][i], G[j][i + 1], G[j + 1][i + 1], G[j + 1][i]);
+                if (nf == SM::null_face()) all_ok = false;
+                else new_faces.push_back(nf);
             }
+        }
+
+        if (all_ok) {
+            sm.remove_face(f);
+        } else {
+            // Rollback if any face failed (preventing holes / empty mesh)
+            for(auto nf : new_faces) sm.remove_face(nf);
         }
     }
 
-    // ИСПРАВЛЕНИЕ: "Свариваем" дублирующиеся вершины, созданные на ребрах.
-    // Эта строка объединит вершины, которые находятся в одной и той же позиции,
-    // восстанавливая корректную топологию "водонепроницаемой" сетки.
-    //CGAL::Polygon_mesh_processing::weld_vertices(sm);
+    // "Свариваем" дублирующиеся вершины, созданные на ребрах.
+    // Это восстанавливает топологию и предотвращает появление дыр.
+    PMP::weld_vertices(sm);
 
     sm.collect_garbage();
 }
@@ -3450,6 +3466,25 @@ void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm:
     double h = size * 0.5;
     double ht = thickness * 0.5;
 
+    // Vertex map to share vertices between boxes (stitching)
+    // Using a simple coordinate-based map
+    struct PointComp {
+        bool operator()(const P& a, const P& b) const {
+            if (a.x() != b.x()) return a.x() < b.x();
+            if (a.y() != b.y()) return a.y() < b.y();
+            return a.z() < b.z();
+        }
+    };
+    std::map<P, V, PointComp> vmap;
+
+    auto get_v = [&](const P& p) {
+        auto it = vmap.find(p);
+        if (it != vmap.end()) return it->second;
+        V v = sm.add_vertex(p);
+        vmap[p] = v;
+        return v;
+    };
+
     auto hasNeighbor = [&](const glm::vec2& pos, float dx, float dy) {
         if (!removeInternalFaces) return false;
         for (const auto& off : offsets) {
@@ -3464,24 +3499,23 @@ void CgalMeshBuilder::buildMultipleBoxes(SurfaceMesh& sm, const std::vector<glm:
         double ox = off.x * size;
         double oz = off.y * size;
 
-        // Create 8 vertices for this voxel
-        V v0 = sm.add_vertex(P(ox - h, -ht, oz - h));
-        V v1 = sm.add_vertex(P(ox + h, -ht, oz - h));
-        V v2 = sm.add_vertex(P(ox + h, -ht, oz + h));
-        V v3 = sm.add_vertex(P(ox - h, -ht, oz + h));
-        V v4 = sm.add_vertex(P(ox - h,  ht, oz - h));
-        V v5 = sm.add_vertex(P(ox + h,  ht, oz - h));
-        V v6 = sm.add_vertex(P(ox + h,  ht, oz + h));
-        V v7 = sm.add_vertex(P(ox - h,  ht, oz + h));
+        // Voxel corner positions
+        P p0 = P(ox - h, -ht, oz - h);
+        P p1 = P(ox + h, -ht, oz - h);
+        P p2 = P(ox + h, -ht, oz + h);
+        P p3 = P(ox - h, -ht, oz + h);
+        P p4 = P(ox - h,  ht, oz - h);
+        P p5 = P(ox + h,  ht, oz - h);
+        P p6 = P(ox + h,  ht, oz + h);
+        P p7 = P(ox - h,  ht, oz + h);
+
+        V v0 = get_v(p0); V v1 = get_v(p1); V v2 = get_v(p2); V v3 = get_v(p3);
+        V v4 = get_v(p4); V v5 = get_v(p5); V v6 = get_v(p6); V v7 = get_v(p7);
 
         // Add 6 faces selectively
         if (!hasNeighbor(off, 0, -1)) sm.add_face(v0, v1, v5, v4); // Front (-Z)
         if (!hasNeighbor(off, 0,  1)) sm.add_face(v2, v3, v7, v6); // Back (+Z)
         
-        // Bottom and Top are ALWAYS added unless we have layers? 
-        // But the user said "internal partitions", which usually means the vertical walls between segments.
-        // If we also had layers, we would check for neighbor above/below. 
-        // Currently layers are independent worlds or offsets, so Top/Bottom are always visible.
         sm.add_face(v0, v3, v2, v1); // Bottom (-Y)
         sm.add_face(v4, v5, v6, v7); // Top (+Y)
 

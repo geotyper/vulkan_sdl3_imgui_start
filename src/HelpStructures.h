@@ -24,12 +24,13 @@ struct SolverParameters {
     float fov = 35.0f;
     float lightIntensity = 3.0f;
     int shapeType = 0; // 0 = Disc, 1 = Poly
+
     int layerNumDiscs[5] = {7, 7, 7, 7, 7};
     int numLayers = 3;
     bool useKaleidoscope = false;
     bool makePyramid = false;
     int paletteID = 0;
-    float mirrorHeight = 10.0f; // 0 = Default, 1 = Neon, 2 = Warm
+    float mirrorHeight = 10.0f;
     bool animate = false;
     bool paused = false;
     bool requestRestart = false;
@@ -45,6 +46,7 @@ struct SolverParameters {
     float rotationSpeed = 0.5f;
 
     int samplesPerFrame = 1;
+    bool subdivisionSmooth = true;
     int maxBounces = 32;
 
     float colorSaturation = 1.0f;

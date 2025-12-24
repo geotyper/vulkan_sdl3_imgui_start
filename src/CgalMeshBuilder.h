@@ -66,6 +66,7 @@ public:
     static void subdivideQuadFacesGrid(SurfaceMesh& sm, int nx, int ny);
     static  void buildCubeWithGrid(SurfaceMesh &sm, double size, int nx, int ny);
     static void applyCatmullClark(SurfaceMesh &sm, int iterations = 1, bool keep_borders = true);
+    static void applyLinearSubdivision(SurfaceMesh &sm, int iterations = 1);
     static void circularizeBorderLoops(SurfaceMesh &sm, double scale);
 
     static void filletBorderLoops(SurfaceMesh& sm,

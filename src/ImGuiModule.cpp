@@ -185,8 +185,17 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
         ImGui::PopID();
     }
     
-    const char* items[] = { "Disc", "Random Poly", "Tetris" };
-    ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items));
+    const char* items[] = { "Disc", "Random Poly", "Tetris", "Custom Blocks" };
+    if (ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items))) {
+        solverParams.requestRebuild = true;
+    }
+
+    if (ImGui::SliderInt("Subdivision Iterations", &solverParams.subdivisionIterations, 0, 2)) {
+        solverParams.requestRebuild = true;
+    }
+    if (ImGui::Checkbox("Smooth Subdivision", &solverParams.subdivisionSmooth)) {
+        solverParams.requestRebuild = true;
+    }
     
     // Animation Toggle
     if (ImGui::Checkbox("Animate (Hexagon Mode)", &solverParams.animate)) {
@@ -342,11 +351,6 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
         }
     }
     
-    ImGui::Separator();
-    ImGui::Text("Mesh Processing");
-    if (ImGui::SliderInt("Catmull-Clark", &solverParams.subdivisionIterations, 0, 3)) {
-        solverParams.requestRebuild = true;
-    }
 
     ImGui::End();
 

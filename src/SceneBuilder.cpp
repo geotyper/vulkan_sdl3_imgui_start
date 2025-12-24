@@ -273,10 +273,71 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
                 // 2. Generate Visual Mesh
                 SurfaceMesh tetrisMesh;
                 CgalMeshBuilder::buildMultipleBoxes(tetrisMesh, tetrisOffsets, blockSize, containerThickness, params.solidTetris);
+                
+                if (params.subdivisionIterations > 0) {
+                    if (params.subdivisionSmooth)
+                        CgalMeshBuilder::applyCatmullClark(tetrisMesh, params.subdivisionIterations, true);
+                    else
+                        CgalMeshBuilder::applyLinearSubdivision(tetrisMesh, params.subdivisionIterations);
+                }
+                
                 CgalMeshBuilder::triangulateAll(tetrisMesh);
                 
                 std::vector<Vertex> v; std::vector<uint32_t> ind;
                 CgalMeshBuilder::toVertexIndexFlat(tetrisMesh, v, ind);
+                
+                std::vector<rtx::InstanceData> dummyInst; 
+                b2Vec2 pos = bodyDef.position; 
+                float yOffset = layer * layerSpacing;
+                glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
+                dummyInst.push_back({M, 0, cId});
+                allMeshes.push_back({v, ind, dummyInst});
+                
+                assignedMeshID = meshCounter++;
+            } else if (params.shapeType == 3) {
+                // Custom Blocks: L (4 pos), Square (2x2), Stick (1x4)
+                std::vector<glm::vec2> customOffsets;
+                int pieceType = std::uniform_int_distribution<int>(0, 5)(rng);
+                
+                if (pieceType == 0)      customOffsets = {{0,0}, {1,0}, {2,0}, {0,1}}; // L pos 1
+                else if (pieceType == 1) customOffsets = {{0,0}, {0,1}, {0,2}, {1,2}}; // L pos 2
+                else if (pieceType == 2) customOffsets = {{0,1}, {1,1}, {2,1}, {2,0}}; // L pos 3
+                else if (pieceType == 3) customOffsets = {{1,0}, {1,1}, {1,2}, {0,0}}; // L pos 4
+                else if (pieceType == 4) customOffsets = {{0,0}, {1,0}, {0,1}, {1,1}}; // Square
+                else                     customOffsets = {{0,0}, {1,0}, {2,0}, {3,0}}; // Stick
+
+                // Center the piece
+                glm::vec2 avgOffset(0,0);
+                for(auto o : customOffsets) avgOffset += o;
+                avgOffset /= (float)customOffsets.size();
+                for(auto& o : customOffsets) o -= avgOffset;
+
+                // 1. Create Physics
+                float blockSize = layerRadius * 1.5f;
+                b2ShapeDef customShapeDef = shapeDef;
+                customShapeDef.friction = 0.5f;
+                
+                for (auto off : customOffsets) {
+                    b2Polygon box = b2MakeOffsetBox(blockSize * 0.5f, blockSize * 0.5f, 
+                                                    {off.x * blockSize, off.y * blockSize}, 0.0f);
+                    b2CreatePolygonShape(bid, &customShapeDef, &box);
+                }
+
+                // 2. Generate Visual Mesh
+                SurfaceMesh customMesh;
+                CgalMeshBuilder::buildMultipleBoxes(customMesh, customOffsets, blockSize, containerThickness, params.solidTetris);
+                
+                if (params.subdivisionIterations > 0) {
+                    if (params.subdivisionSmooth)
+                        CgalMeshBuilder::applyCatmullClark(customMesh, params.subdivisionIterations, true);
+                    else
+                        CgalMeshBuilder::applyLinearSubdivision(customMesh, params.subdivisionIterations);
+                }
+                
+                CgalMeshBuilder::triangulateAll(customMesh);
+                
+                std::vector<Vertex> v; std::vector<uint32_t> ind;
+                CgalMeshBuilder::toVertexIndexFlat(customMesh, v, ind);
                 
                 std::vector<rtx::InstanceData> dummyInst; 
                 b2Vec2 pos = bodyDef.position; 
@@ -366,7 +427,10 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         CgalMeshBuilder::buildThickDisc(discMesh, 1.0, containerThickness, 24);
 
         if (params.subdivisionIterations > 0) {
-            CgalMeshBuilder::applyCatmullClark(discMesh, params.subdivisionIterations, true);
+            if (params.subdivisionSmooth)
+                CgalMeshBuilder::applyCatmullClark(discMesh, params.subdivisionIterations, true);
+            else
+                CgalMeshBuilder::applyLinearSubdivision(discMesh, params.subdivisionIterations);
         }
 
         CgalMeshBuilder::triangulateAll(discMesh);
@@ -383,7 +447,9 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
              M = glm::scale(M, glm::vec3(r, 1.0f, r));
              instances.push_back({M, 0, info.colorID});
         }
-        allMeshes.insert(allMeshes.begin(), {v, ind, instances}); // Insert at 0
+        if (!v.empty() && !ind.empty()) {
+            allMeshes.insert(allMeshes.begin(), {v, ind, instances}); // Insert at 0
+        }
         
         // Shift all assignedMeshIDs by 1? No, we used 0. Correct.
         // Wait, if we mix modes, logic gets complex. 

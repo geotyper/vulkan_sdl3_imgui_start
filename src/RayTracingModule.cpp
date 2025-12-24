@@ -298,6 +298,8 @@ namespace rtx {
 
         uint32_t meshId = 0;
         for (const auto& data : meshData) {
+            if (data.vertices.empty() || data.indices.empty()) continue;
+
             auto mesh = std::make_unique<MeshData>();
             mesh->vertexCount  = static_cast<uint32_t>(data.vertices.size());
             mesh->indexCount   = static_cast<uint32_t>(data.indices.size());
