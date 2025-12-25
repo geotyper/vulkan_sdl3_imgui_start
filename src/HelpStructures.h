@@ -75,6 +75,9 @@ struct SolverParameters {
     float backplaneHeight = -1.0f;
     bool showBackplane = false;
     glm::vec3 backColorBot = glm::vec3(1.0f, 0.9f, 0.85f);
+    
+    // Weights: Square, RectH, RectV, Rhombus, LineH, LineV
+    float mosaicWeights[6] = {1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 0.5f};
 };
 
 namespace rtx {

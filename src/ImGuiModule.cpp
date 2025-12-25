@@ -186,8 +186,22 @@ void ImGuiModule::renderMenu(VkCommandBuffer commandBuffer, SolverParameters& so
     }
     
     const char* items[] = { "Disc", "Random Poly", "Tetris", "Custom Blocks" };
-    if (ImGui::Combo("Shape", &solverParams.shapeType, items, IM_ARRAYSIZE(items))) {
+    if (ImGui::Combo("Shape Type", &solverParams.shapeType, "Disc\0Poly\0Tetris\0Custom Blocks\0Mosaic\0\0")) {
         solverParams.requestRebuild = true;
+    }
+
+    if (solverParams.shapeType == 4) {
+        ImGui::NewLine();
+        ImGui::Text("Mosaic Weights:");
+        bool changed = false;
+        changed |= ImGui::SliderFloat("Square", &solverParams.mosaicWeights[0], 0.0f, 5.0f);
+        changed |= ImGui::SliderFloat("Rect H", &solverParams.mosaicWeights[1], 0.0f, 5.0f);
+        changed |= ImGui::SliderFloat("Rect V", &solverParams.mosaicWeights[2], 0.0f, 5.0f);
+        changed |= ImGui::SliderFloat("Rhombus", &solverParams.mosaicWeights[3], 0.0f, 5.0f);
+        changed |= ImGui::SliderFloat("Line H", &solverParams.mosaicWeights[4], 0.0f, 5.0f);
+        changed |= ImGui::SliderFloat("Line V", &solverParams.mosaicWeights[5], 0.0f, 5.0f);
+        if (changed) solverParams.requestRebuild = true;
+        ImGui::NewLine();
     }
 
     if (ImGui::SliderInt("Subdivision Iterations", &solverParams.subdivisionIterations, 0, 2)) {

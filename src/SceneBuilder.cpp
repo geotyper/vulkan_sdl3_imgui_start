@@ -180,10 +180,226 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
         shapeDef.filter.categoryBits = layerCategory;
         shapeDef.filter.maskBits = layerCategory | boundaryCategory; // Self + Boundary
 
-        int numDiscsInLayer = params.layerNumDiscs[layer];
-        float layerRadius = params.layerDiscRadius[layer];
+        if (params.shapeType == 4) {
+             // --- Mosaic Mode (Generative Grid Tiling) ---
+             float layerRadius = params.layerDiscRadius[layer];
+             float cellSize = layerRadius * 2.2f; // Cell size dictates packing density
+             
+             // Define Grid Dimensions
+             // We want a grid that fully covers the hexagon (outerRadius)
+             // outerRadius is half-width (kind of). 
+             // Box range: [-outerRadius, outerRadius]
+             int dim = (int)(outerRadius * 2.2f / cellSize) + 4; // Safety margin
+             int offset = dim / 2;
+             
+             // Grid state: false = empty, true = occupied
+             std::vector<std::vector<bool>> grid(dim, std::vector<bool>(dim, false));
+             
+             std::vector<std::pair<int, int>> candidates;
+             // Populate candidates inside the circle/hexagon
+             for (int y = 0; y < dim; ++y) {
+                 for (int x = 0; x < dim; ++x) {
+                     float cx = (x - offset) * cellSize;
+                     float cy = (y - offset) * cellSize;
+                     // Strict Circular Boundary for placement center
+                     if (sqrt(cx*cx + cy*cy) < outerRadius * 0.9f) {
+                         candidates.push_back({x, y});
+                     }
+                 }
+             }
+             
+             // Shuffle candidates to create random growth pattern
+             std::shuffle(candidates.begin(), candidates.end(), rng);
 
-        for(int i=0; i < numDiscsInLayer; ++i) {
+             // Weight Accumulation
+             float totalWeight = 0.0f;
+             for(float w : params.mosaicWeights) totalWeight += w;
+             
+             if (totalWeight <= 0.001f) totalWeight = 1.0f; // Prevent div/0
+
+             for (auto [gx, gy] : candidates) {
+                 if (grid[gx][gy]) continue; // Already occupied
+                 
+                 // Try to pick a shape
+                 // We try X times to pick a valid shape based on weights?
+                 // Or we iterate shapes in weighted random order until one fits?
+                 // Weighted Random selection is better.
+                 
+                 // Create a list of shape types to try, weighted order?
+                 // Simpler: Just pick one. If it fits, place it. If not, try fallback (Square).
+                 
+                 float rVal = std::uniform_real_distribution<float>(0, totalWeight)(rng);
+                 int type = 0;
+                 float currentW = 0;
+                 for(int t=0; t<6; ++t) {
+                     currentW += params.mosaicWeights[t];
+                     if (rVal <= currentW) {
+                         type = t;
+                         break;
+                     }
+                 }
+                 
+                 // Define Shape dimensions (in cells)
+                 // 0: Square (1x1)
+                 // 1: RectH (2x1) -> Needs (gx+1, gy)
+                 // 2: RectV (1x2) -> Needs (gx, gy+1)
+                 // 3: Rhombus (1x1)
+                 // 4: LineH (3x1) -> Needs (gx+1, gy), (gx+2, gy)
+                 // 5: LineV (1x3) -> Needs (gx, gy+1), (gx, gy+2)
+                 
+                 std::vector<std::pair<int, int>> cellsToCheck;
+                 cellsToCheck.push_back({gx, gy}); // Always need self
+                 
+                 if (type == 1) { // RectH
+                     cellsToCheck.push_back({gx+1, gy});
+                 } else if (type == 2) { // RectV
+                     cellsToCheck.push_back({gx, gy+1});
+                 } else if (type == 4) { // LineH
+                     cellsToCheck.push_back({gx+1, gy});
+                     cellsToCheck.push_back({gx+2, gy});
+                 } else if (type == 5) { // LineV
+                     cellsToCheck.push_back({gx, gy+1});
+                     cellsToCheck.push_back({gx, gy+2});
+                 }
+                 
+                 // Check validity
+                 bool fits = true;
+                 for (auto p : cellsToCheck) {
+                     if (p.first < 0 || p.first >= dim || p.second < 0 || p.second >= dim || grid[p.first][p.second]) {
+                         fits = false; 
+                         break;
+                     }
+                     // Optional: Check boundary for extended cells too?
+                     float cx = (p.first - offset) * cellSize;
+                     float cy = (p.second - offset) * cellSize;
+                     if (sqrt(cx*cx + cy*cy) > outerRadius * 0.95f) { // Slightly loose logic for extensions
+                         fits = false; 
+                         break;
+                     }
+                 }
+                 
+                 if (!fits) {
+                     // Fallback strategy: Try 1x1 shapes directly if the chosen one failed
+                     // If we picked a large shape and it didn't fit, maybe a square fits?
+                     // Let's retry with Square (Type 0) or Rhombus (Type 3) if they have weight.
+                     // Simple fallback: Force Type 0 (Square)
+                     type = 0;
+                     // Re-check Square (just (gx,gy)) - we know (gx,gy) is free inside loop, but valid range?
+                     // Grid check is passed. Boundary check?
+                     float cx = (gx - offset) * cellSize;
+                     float cy = (gy - offset) * cellSize;
+                     if (sqrt(cx*cx + cy*cy) > outerRadius * 0.95f) continue;
+                     
+                     cellsToCheck.clear();
+                     cellsToCheck.push_back({gx, gy});
+                 }
+                 
+                 // Mark Occupied
+                 for(auto p : cellsToCheck) grid[p.first][p.second] = true;
+                 
+                 // Calculate World Center Position for Body
+                 // Average of cells
+                 float avgX = 0, avgY = 0;
+                 for(auto p : cellsToCheck) {
+                     avgX += (p.first - offset) * cellSize;
+                     avgY += (p.second - offset) * cellSize;
+                 }
+                 avgX /= cellsToCheck.size();
+                 avgY /= cellsToCheck.size();
+                 
+                 bodyDef.position = {avgX, avgY};
+                 bodyDef.rotation = b2Rot_identity;
+                 
+                 b2BodyId bid = b2CreateBody(m_worldId, &bodyDef);
+                 m_discBodies.push_back(bid);
+                 uint32_t cId = distColor(rng);
+                 
+                 // Generate Geometry
+                 std::vector<glm::vec2> polyPoints;
+                 
+                 // Dimensions
+                 // Shape center is at (0,0) relative to body
+                 // Total width = numCols * cellSize. Half-width = ...
+                 // We want tight packing.
+                 // A 1x1 block has size 'cellSize'. Half-extents = cellSize/2.
+                 // Gap? Let's add small gap for physics stability.
+                 float gap = cellSize * 0.05f;
+                 float s = cellSize * 0.5f - gap; 
+                 
+                 if (type == 0) { // Square
+                     polyPoints = {{-s,-s}, {s,-s}, {s,s}, {-s,s}};
+                 } else if (type == 1) { // RectH (2x1)
+                     float w = cellSize - gap;  // Half-width of 2-cell block is cellSize
+                     float h = s;
+                     polyPoints = {{-w,-h}, {w,-h}, {w,h}, {-w,h}};
+                 } else if (type == 2) { // RectV (1x2)
+                     float w = s;
+                     float h = cellSize - gap;
+                     polyPoints = {{-w,-h}, {w,-h}, {w,h}, {-w,h}};
+                 } else if (type == 3) { // Rhombus (1x1)
+                     // Diamond fitting in 1x1
+                     float d = cellSize * 0.5f - gap; 
+                     polyPoints = {{0,-d}, {d,0}, {0,d}, {-d,0}};
+                 } else if (type == 4) { // LineH (3x1)
+                     float w = cellSize * 1.5f - gap; 
+                     float h = s;
+                     polyPoints = {{-w,-h}, {w,-h}, {w,h}, {-w,h}};
+                 } else if (type == 5) { // LineV (1x3)
+                     float w = s;
+                     float h = cellSize * 1.5f - gap;
+                     polyPoints = {{-w,-h}, {w,-h}, {w,h}, {-w,h}};
+                 }
+                 
+                 // Physics Shape
+                 std::vector<b2Vec2> b2Pts;
+                 for(auto& p : polyPoints) b2Pts.push_back({p.x, p.y});
+                 b2Hull hull = b2ComputeHull(b2Pts.data(), (int)b2Pts.size());
+                 if (hull.count > 0) {
+                      b2Polygon polyShape = b2MakePolygon(&hull, 0.0f);
+                      b2CreatePolygonShape(bid, &shapeDef, &polyShape);
+                 }
+                 
+                 // Visual Mesh
+                 SurfaceMesh polyMesh;
+                 CgalMeshBuilder::buildThickPolygonFromPoints(polyMesh, polyPoints, containerThickness, false, 0.0);
+                 
+                  if (params.subdivisionIterations > 0) {
+                      CgalMeshBuilder::applyCatmullClark(polyMesh, params.subdivisionIterations, true);
+                  }
+                 CgalMeshBuilder::triangulateAll(polyMesh);
+                 
+                 std::vector<Vertex> v; std::vector<uint32_t> ind;
+                 CgalMeshBuilder::toVertexIndexFlat(polyMesh, v, ind);
+                 
+                 std::vector<rtx::InstanceData> dummyInst; 
+                 b2Vec2 pos = bodyDef.position; 
+                 float yOffset = layer * layerSpacing;
+                 glm::mat4 M = glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, yOffset, pos.y));
+                 dummyInst.push_back({M, 0, cId});
+                 
+                 if (!v.empty() && !ind.empty()) {
+                      allMeshes.push_back({v, ind, dummyInst});
+                 }
+                 
+                 uint32_t assignedMeshID = meshCounter++;
+                 m_bodyInfos.push_back({bid, layer, cId, assignedMeshID, toGlm(bodyDef.position)});
+             }
+
+        } else {
+             // --- Standard Random Distribution (Disc/Poly/Tetris/Blocks) ---
+             int numDiscsInLayer = params.layerNumDiscs[layer];
+             float layerRadius = params.layerDiscRadius[layer];
+
+             for(int i=0; i < numDiscsInLayer; ++i) {
+                 // ... (Copy of existing inner loop)
+                 // Wait, I can't just "Copy". I need to preserve the code I am replacing.
+                 // The easiest way is to wrap the existing loop in the else block.
+                 // But replace_file_content replaces a block completely.
+                 // So I must include the existing code in the replacement if I matched it.
+                 // My StartLine/EndLine spans the whole original loop.
+                 // So I must re-write the original loop in the "else".
+                 
+                 // RE-INSERTING ORIGINAL LOGIC HERE:
             // Random Independent Position
             bodyDef.position = { distPos(rng), distPos(rng) };
             
@@ -423,6 +639,7 @@ void SceneBuilder::BuildScene(rtx::RayTracingModule* rtxModule, StandardMeshRend
             }
             
             m_bodyInfos.push_back({bid, layer, cId, assignedMeshID, toGlm(bodyDef.position)});
+         }
         }
     }
     
